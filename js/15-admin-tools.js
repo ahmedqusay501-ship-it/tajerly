@@ -7,13 +7,19 @@ function exportMerchantsDirectoryPDF() {
   const list = activeMerchants();
   if (list.length === 0) { showToast('ما فيه محلات مسجلة بعد'); return; }
 
-  const rowsHtml = list.map(m => `<tr>
+  const rowsHtml = list.map(m => {
+    const s = computeMerchantLiveStats(m.id);
+    return `<tr>
       <td>${esc(m.shop)}</td>
       <td>${esc(m.name) || '—'}</td>
       <td>${esc(m.phone) || '—'}</td>
       <td style="text-align:right;">${esc(m.description) || '—'}</td>
       <td>${m.status === 'active' ? 'نشط' : 'معطل'}</td>
-    </tr>`).join('');
+      <td>${s.sales.toLocaleString()}</td>
+      <td>${s.merchantDue.toLocaleString()}</td>
+      <td>${s.platformDue.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
 
   const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
     <title>دليل التجار</title>
@@ -29,10 +35,10 @@ function exportMerchantsDirectoryPDF() {
       @media print { body { padding: 8px; } .table-scroll { overflow-x: visible; } }
     </style></head><body>
       <h1>دليل التجار</h1>
-      <div class="sub">تاريخ الإصدار: ${new Date().toLocaleDateString('ar-IQ')} — عدد المحلات: ${list.length}</div>
+      <div class="sub">تاريخ الإصدار: ${new Date().toLocaleDateString('ar-IQ')} — عدد المحلات: ${list.length}. الأرقام المالية (د) محسوبة لحظياً من كل طلبات التاجر المقبولة غير الملغية.</div>
       <div class="table-scroll">
       <table>
-        <thead><tr><th>اسم المحل</th><th>اسم صاحب المحل</th><th>رقم الهاتف</th><th>وصف المتجر</th><th>الحالة</th></tr></thead>
+        <thead><tr><th>اسم المحل</th><th>اسم صاحب المحل</th><th>رقم الهاتف</th><th>وصف المتجر</th><th>الحالة</th><th>رصيد المبيعات (د)</th><th>مستحقات التاجر (د)</th><th>مستحقات المنصة (د)</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
       </div>
@@ -184,9 +190,17 @@ function removeCustomDomain() {
 function resetMerchantMoney(id) {
   const m = data.merchants.find(x => x.id === id);
   if (!m) return;
-  openConfirmModal('تصفير أموال التاجر', `متأكد؟ راح يرجع رصيد "${m.shop}" وعدد عمليات البيع المسجلة له إلى صفر. الطلبات والزيارات ما تتأثر بهذا الإجراء.`, async () => {
+  openConfirmModal('تصفير أموال التاجر', `متأكد؟ راح يرجع رصيد "${m.shop}" وعدد عمليات البيع إلى صفر، وراح تُحذف طلباته المقبولة (المدفوعة) المرتبطة بهذا الرصيد — عشان "رصيد المبيعات" و"مستحقات التاجر" و"مستحقات المنصة" تختفي فعلياً من الداشبورد بنفس اللحظة، بدون ما تحتاج تروح لـ"تصفير أرصدة التجار" (اللي يصفر كل التجار سوا). طلباته الأخرى (قيد الانتظار/المرفوضة/الملغية) وعدد زياراته ما يتأثرون بهذا الإجراء.`, async () => {
     m.balance = 0;
     m.salesCount = 0;
+    // الطلبات المقبولة غير الملغية هي نفسها مصدر "رصيد المبيعات"/"مستحقات التاجر"/"مستحقات
+    // المنصة" المحسوبة لحظياً بـ computeMerchantLiveStats() — تصفير الرصيد بس، من غير حذفها،
+    // كان يخلي هذي الأرقام تبقى ظاهرة بالداشبورد وكأن التصفير ما اشتغل، وكان الحل المؤقت
+    // الرجوع لـ "تصفير أرصدة التجار" (اللي أصلاً ما يحذف الطلبات هو نفسه، بس يوهم إنه اشتغل
+    // لأنه يصفر كل التجار). حذفها هنا تحديداً (مو الطلبات الأخرى) يخلي التصفير سلس ومكتمل
+    // لهذا التاجر بس، بضغطة وحدة.
+    const paidOrders = data.orders.filter(o => o.merchantId === id && o.status === 'accepted' && !o.cancelled);
+    data.orders = data.orders.filter(o => !(o.merchantId === id && o.status === 'accepted' && !o.cancelled));
     let balanceSaved = true;
     if (window.authApi && m.authUid) {
       try {
@@ -197,8 +211,24 @@ function resetMerchantMoney(id) {
       }
     }
     await saveData();
-    showToast(balanceSaved ? 'تم تصفير أموال التاجر' : 'تعذر تصفير الرصيد بقاعدة البيانات (صلاحيات؟) — راح يرجع الرصيد القديم يظهر عند أول تحديث');
-    logAudit('تصفير أموال تاجر', m.shop);
+    let failCount = 0;
+    if (window.authApi && paidOrders.length > 0) {
+      const results = await Promise.allSettled(paidOrders.map(o =>
+        window.authApi.deleteDoc('orders', String(o.id)).then(() => { lastSyncedOrderSnapshots.delete(o.id); })
+      ));
+      failCount = results.filter(r => r.status === 'rejected').length;
+      if (failCount > 0) console.error('paid order delete failed for', failCount, 'of', paidOrders.length, 'orders', results);
+    }
+    if (!balanceSaved && failCount > 0) {
+      showToast(`تعذر تصفير الرصيد وحذف ${failCount} من ${paidOrders.length} طلب مقبول من قاعدة البيانات (صلاحيات؟) — راح ترجع تظهر عند أول تحديث`);
+    } else if (!balanceSaved) {
+      showToast('تعذر تصفير الرصيد بقاعدة البيانات (صلاحيات؟) — راح يرجع الرصيد القديم يظهر عند أول تحديث');
+    } else if (failCount > 0) {
+      showToast(`تصفّر الرصيد، لكن تعذر حذف ${failCount} من ${paidOrders.length} طلب مقبول من قاعدة البيانات (صلاحيات؟) — راح ترجع تظهر عند أول تحديث`);
+    } else {
+      showToast('تم تصفير أموال التاجر بالكامل');
+    }
+    logAudit('تصفير أموال تاجر', `${m.shop} — ${paidOrders.length} طلب مقبول محذوف`);
     renderAll();
   });
 }
