@@ -52,6 +52,84 @@ function lowStockBadgeHtml(m) {
   return count > 0 ? `<span class="notify-dot">${count}</span>` : '';
 }
 
+// ---------- NEW-ORDER SOUND ALARM ----------
+// A loud, hard-to-miss alert for the merchant (or their employee) when a fresh order lands
+// while their dashboard is open — separate from the low-stock alerts above, which are about
+// inventory, not incoming sales. Browsers block autoplay until the person has interacted
+// with the page at least once, so this stays off until the merchant explicitly turns it on
+// (toggleNewOrderSound), which also "unlocks" the audio element via that same click.
+let newOrderSoundEnabled = (localStorage.getItem('newOrderSoundEnabled') === '1');
+let newOrderTrackedMerchantId = null; // which merchant's pending orders we're currently watching
+let seenPendingOrderIds = null;       // Set of order ids already known about — anything new triggers the alarm
+let orderAlarmAutoStopHandle = null;
+
+function currentPendingOrderIds(m) {
+  return data.orders
+    .filter(o => o.merchantId === m.id && o.status === 'pending' && (!o.cancelStage || o.cancelStage === 'none'))
+    .map(o => o.id);
+}
+
+// Called once per merchant session (see renderMerchantPanel) so we never alarm for orders
+// that were already sitting there before the dashboard was opened — only genuinely new ones.
+function seedNewOrderTracking(m) {
+  seenPendingOrderIds = new Set(currentPendingOrderIds(m));
+  newOrderTrackedMerchantId = m.id;
+}
+
+function checkForNewOrdersAndAlert(m) {
+  if (newOrderTrackedMerchantId !== m.id) { seedNewOrderTracking(m); return; } // ما زرنا هذا التاجر بعد بهذي الجلسة
+  const currentIds = currentPendingOrderIds(m);
+  const newIds = currentIds.filter(id => !seenPendingOrderIds.has(id));
+  seenPendingOrderIds = new Set(currentIds);
+  if (newIds.length > 0 && newOrderSoundEnabled) playOrderAlarm(newIds.length);
+}
+
+function toggleNewOrderSound() {
+  newOrderSoundEnabled = !newOrderSoundEnabled;
+  localStorage.setItem('newOrderSoundEnabled', newOrderSoundEnabled ? '1' : '0');
+  if (newOrderSoundEnabled) {
+    // تشغيل وإيقاف فوري بنفس لحظة ضغطة الزر — هذا "يفتح" صلاحية تشغيل الصوت بالمتصفح
+    // لاحقاً تلقائياً من غير تفاعل جديد من المستخدم، لأن المتصفحات تمنع autoplay بدونها.
+    const audio = document.getElementById('new-order-alarm-audio');
+    if (audio) { audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(() => {}); }
+    showToast('تفعّل — رح تسمع صوت إنذار فور وصول أي طلب جديد وأنت فاتح لوحتك');
+  } else {
+    stopOrderAlarm();
+    showToast('تم إيقاف التنبيه الصوتي للطلبات');
+  }
+  if (typeof renderMerchantPanel === 'function') renderMerchantPanel();
+}
+
+function playOrderAlarm(count) {
+  const audio = document.getElementById('new-order-alarm-audio');
+  const subtitleEl = document.getElementById('new-order-alarm-subtitle');
+  if (subtitleEl) subtitleEl.textContent = count > 1 ? `عندك ${count} طلبات جديدة بانتظار المراجعة` : 'عندك طلب جديد بانتظار المراجعة';
+  const modal = document.getElementById('new-order-alarm-modal');
+  if (modal) modal.classList.add('show');
+  if (audio) {
+    audio.loop = true;
+    audio.currentTime = 0;
+    audio.play().catch(() => {}); // لو المتصفح رفض التشغيل التلقائي رغم كل شي، البانر المرئي يبقى كافي للتنبيه
+  }
+  // شبكة أمان: نوقف الرنين تلقائياً بعد دقيقتين حتى لو التاجر ترك الجهاز ولم يضغط "استلمت"،
+  // حتى ما يضل يرن للأبد بصمت بخلفية المتصفح.
+  clearTimeout(orderAlarmAutoStopHandle);
+  orderAlarmAutoStopHandle = setTimeout(stopOrderAlarm, 120000);
+}
+
+function stopOrderAlarm() {
+  const audio = document.getElementById('new-order-alarm-audio');
+  if (audio) { audio.pause(); audio.currentTime = 0; audio.loop = false; }
+  const modal = document.getElementById('new-order-alarm-modal');
+  if (modal) modal.classList.remove('show');
+  clearTimeout(orderAlarmAutoStopHandle);
+}
+
+// الزر بنافذة التنبيه نفسها — يوقف الرنين وينقل التاجر مباشرة لتبويب الطلبات ليراجعها
+function acknowledgeOrderAlarm() {
+  stopOrderAlarm();
+  if (typeof showMerchantDashTab === 'function') showMerchantDashTab('orders');
+}
 // ---------- MERCHANT-SIDE ANNOUNCEMENTS (admin broadcast inbox) ----------
 // Announcements addressed to this merchant: either a platform-wide 'all' message, or one
 // where this merchant's id is explicitly in the target list. Newest first.
