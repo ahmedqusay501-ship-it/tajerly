@@ -655,6 +655,10 @@
       <div><label>سعر الشحن السريع (د)</label><input type="number" id="zone-fast" placeholder="4000"></div>
       <div><label>سعر الشحن البطيء (د)</label><input type="number" id="zone-slow" placeholder="2000"></div>
     </div>
+    <div class="row2" style="margin-top:6px;">
+      <div><label>مدة التوصيل السريع (اختياري)</label><input id="zone-fast-days" placeholder="مثلاً: يوم واحد"></div>
+      <div><label>مدة التوصيل البطيء (اختياري)</label><input id="zone-slow-days" placeholder="مثلاً: 3-5 أيام"></div>
+    </div>
     <div class="row2" style="margin-top:6px; align-items:center;">
       <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="checkbox" id="zone-fast-enabled" checked style="width:auto;"> يتوفر شحن سريع بهذي المنطقة</label>
       <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="checkbox" id="zone-slow-enabled" checked style="width:auto;"> يتوفر شحن بطيء بهذي المنطقة</label>
@@ -824,6 +828,9 @@
     <div class="subtitle" style="margin-bottom:4px;">أي قطعة سعرها يساوي أو أقل من هذا المبلغ ما يُؤخذ منها أي عمولة إطلاقاً (لا رسم منصة ولا استقطاع القطعة أعلاه) — مفيد إذا عند هذا التاجر منتجات رخيصة جداً وما تريد الرسم ياكل من ربحه فيها. اتركه صفر لتعطيل الإعفاء.</div>
     <label>إعفاء أي قطعة سعرها ≤ (دينار)</label>
     <input type="number" id="approve-fee-exempt-max" onchange="setApproveFeeExemptMax(this.value)">
+    <div class="card-title" style="margin-top:14px;">نوع التوصيل المتاح لهذا التاجر</div>
+    <div class="subtitle" style="margin-bottom:4px;">يتحكم بالخيارات اللي تظهر للزبون وقت الشراء من متجر هذا التاجر تحديداً — تقدر تغيّره بأي وقت لاحقاً من نفس هذي الشاشة (زر "تعديل الرسوم")</div>
+    <div class="toggle-group" id="approve-delivery-speed-toggles"></div>
     <div class="modal-actions">
       <button class="btn secondary small" onclick="closeApproveModal()">إلغاء</button>
       <button class="btn small" onclick="confirmApprove()">حفظ</button>
