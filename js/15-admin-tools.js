@@ -343,6 +343,229 @@ function deleteMerchant(id) {
     renderAll();
   });
 }
+// ---------- GLOBAL ADMIN SEARCH (dashboard overview) ----------
+// One search box across merchants, orders (by customer phone or order id), and employees —
+// instead of hunting through separate tabs. Purely client-side over data already in memory,
+// so it's instant; clicking a result jumps straight to that merchant's accounting page.
+function adminGlobalSearch(query) {
+  const box = document.getElementById('admin-search-results');
+  if (!box) return;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+
+  const merchantHits = data.merchants.filter(m =>
+    (m.shop || '').toLowerCase().includes(q) ||
+    (m.name || '').toLowerCase().includes(q) ||
+    (m.phone || '').includes(q) ||
+    (m.username || '').toLowerCase().includes(q)
+  ).slice(0, 6);
+
+  const qDigits = q.replace(/\D/g, '');
+  const orderHits = qDigits.length >= 4 ? data.orders.filter(o =>
+    (o.customerPhone || '').includes(qDigits) || String(o.orderGroupId || o.id).includes(qDigits)
+  ).slice(0, 6) : [];
+
+  const employeeHits = data.employees.filter(e =>
+    (e.name || '').toLowerCase().includes(q) || (e.username || '').toLowerCase().includes(q)
+  ).slice(0, 6);
+
+  if (merchantHits.length === 0 && orderHits.length === 0 && employeeHits.length === 0) {
+    box.innerHTML = '<div class="empty" style="padding:10px;">ما فيه نتائج مطابقة</div>';
+    return;
+  }
+
+  let html = '';
+  if (merchantHits.length) {
+    html += `<div class="search-result-group-title">محلات</div>`;
+    html += merchantHits.map(m => `
+      <div class="search-result-row" onclick="jumpToMerchantAccounting(${m.id})">
+        <span>${esc(m.shop)} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span></span>
+        <span style="color:var(--text-mute);">${esc(m.phone || '')}</span>
+      </div>`).join('');
+  }
+  if (orderHits.length) {
+    html += `<div class="search-result-group-title">طلبات</div>`;
+    html += orderHits.map(o => {
+      const m = data.merchants.find(x => x.id === o.merchantId);
+      return `
+      <div class="search-result-row" onclick="jumpToMerchantAccounting(${o.merchantId})">
+        <span>${esc(o.customerName || 'زبون')} — ${esc(o.customerPhone || '')}</span>
+        <span style="color:var(--text-mute);">${m ? esc(m.shop) : 'محل محذوف'}</span>
+      </div>`;
+    }).join('');
+  }
+  if (employeeHits.length) {
+    html += `<div class="search-result-group-title">موظفين</div>`;
+    html += employeeHits.map(e => `
+      <div class="search-result-row" onclick="showView('employees')">
+        <span>${esc(e.name || e.username || '—')}</span>
+        <span style="color:var(--text-mute);">${e.ownerType === 'admin' ? 'موظف أدمن' : 'موظف تاجر'}</span>
+      </div>`).join('');
+  }
+  box.innerHTML = html;
+}
+function jumpToMerchantAccounting(merchantId) {
+  const input = document.getElementById('admin-search-input');
+  const box = document.getElementById('admin-search-results');
+  if (input) input.value = '';
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  showView('accounting'); // showView() already calls renderAll(), rebuilding #acc-merchant's options
+  const sel = document.getElementById('acc-merchant');
+  if (sel) { sel.value = String(merchantId); renderAccounting(); }
+}
+
+// ---------- MERCHANT RANKING (dashboard "المحلات" tab) ----------
+// Simple leaderboard by accepted, non-cancelled sales — reuses computeMerchantLiveStats,
+// the exact same numbers already shown per-merchant elsewhere on the dashboard.
+function renderMerchantRanking() {
+  const el = document.getElementById('merchant-ranking-list');
+  if (!el) return;
+  const active = activeMerchants().filter(m => m.status === 'active');
+  if (active.length === 0) { el.innerHTML = '<div class="empty">ما فيه محلات نشطة بعد</div>'; return; }
+  const ranked = active
+    .map(m => ({ m, s: computeMerchantLiveStats(m.id) }))
+    .sort((a, b) => b.s.sales - a.s.sales)
+    .slice(0, 10);
+  el.innerHTML = ranked.map((r, i) => `
+    <div class="list-item">
+      <span><b>#${i + 1}</b> ${esc(r.m.shop)}</span>
+      <span>${r.s.sales.toLocaleString()} د — ${r.s.ordersCount} طلب</span>
+    </div>`).join('');
+}
+
+// ---------- "NEEDS REVIEW" FLAG (unusually high cancellation rate) ----------
+// A lightweight, purely computed warning — no separate flag stored anywhere — so it can
+// never go stale: it's recalculated fresh from data.orders every time the dashboard renders.
+// Needs a minimum order count first so a brand-new store with 1 cancelled order out of 2
+// doesn't get flagged off a meaninglessly small sample.
+const NEEDS_REVIEW_MIN_ORDERS = 8;
+const NEEDS_REVIEW_CANCEL_RATE = 0.3; // 30%+ of a merchant's orders ending up cancelled
+function merchantNeedsReview(merchantId) {
+  const orders = data.orders.filter(o => o.merchantId === merchantId);
+  if (orders.length < NEEDS_REVIEW_MIN_ORDERS) return null;
+  const cancelled = orders.filter(o => o.cancelled).length;
+  const rate = cancelled / orders.length;
+  if (rate < NEEDS_REVIEW_CANCEL_RATE) return null;
+  return { rate, cancelled, total: orders.length };
+}
+function needsReviewBadgeHtml(merchantId) {
+  const flag = merchantNeedsReview(merchantId);
+  if (!flag) return '';
+  return ` <span class="badge warn-review" title="${Math.round(flag.rate * 100)}% من طلباته ملغاة (${flag.cancelled} من ${flag.total})">يحتاج مراجعة</span>`;
+}
+
+// ---------- PERIODIC REPORT (ready-made weekly/monthly Excel export) ----------
+// Reuses the exact same exportAccountingExcel() logic the manual "تصدير الكل — Excel" button
+// uses — just quietly sets the accounting filters to the last 7/30 days first, exports, then
+// restores whatever filters the admin had before, so this never disturbs their accounting view.
+function generatePeriodicReport(period) {
+  const fromEl = document.getElementById('acc-from');
+  const toEl = document.getElementById('acc-to');
+  const merchantEl = document.getElementById('acc-merchant');
+  const statusEl = document.getElementById('acc-status');
+  if (!fromEl || !toEl || !merchantEl || !statusEl) return;
+  const prev = { from: fromEl.value, to: toEl.value, merchant: merchantEl.value, status: statusEl.value };
+
+  const to = new Date();
+  const from = new Date(to.getTime() - (period === 'monthly' ? 30 : 7) * 24 * 60 * 60 * 1000);
+  fromEl.value = from.toISOString().slice(0, 10);
+  toEl.value = to.toISOString().slice(0, 10);
+  merchantEl.value = 'all';
+  statusEl.value = 'all';
+
+  exportAccountingExcel();
+
+  fromEl.value = prev.from; toEl.value = prev.to; merchantEl.value = prev.merchant; statusEl.value = prev.status;
+  renderAll();
+}
+
+// ---------- FULL PLATFORM BACKUP / RESTORE ----------
+// A point-in-time JSON snapshot of everything currently in `data` — for disaster recovery,
+// not routine use. Restoring rewrites every matching merchant/order/employee document back
+// to its value in the file; it does NOT delete anything created after the backup was taken
+// (this app stores each merchant/order as its own Firestore doc, not one big blob, so a
+// wholesale "delete everything not in the file" would risk wiping unrelated live records —
+// see the confirmation text below, which is explicit about this limit).
+function exportPlatformBackupJSON() {
+  const snapshot = {
+    backupVersion: 1,
+    createdAt: new Date().toISOString(),
+    merchants: data.merchants,
+    orders: data.orders,
+    employees: data.employees,
+    announcements: data.announcements,
+    ledgerClosures: data.ledgerClosures,
+    auditLog: data.auditLog,
+    supportChats: data.supportChats,
+    settings: data.settings,
+    nextId: data.nextId
+  };
+  const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url; a.download = `tajerly-backup-${stamp}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  logAudit('تصدير نسخة احتياطية كاملة', `${data.merchants.length} تاجر — ${data.orders.length} طلب`);
+  showToast('تم تحميل النسخة الاحتياطية');
+}
+function triggerRestoreBackup() {
+  document.getElementById('backup-restore-file-input').click();
+}
+function handleRestoreBackupFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    let snapshot;
+    try { snapshot = JSON.parse(e.target.result); }
+    catch (err) { showToast('الملف مو JSON صالح'); input.value = ''; return; }
+    if (!snapshot || !Array.isArray(snapshot.merchants) || !Array.isArray(snapshot.orders)) {
+      showToast('هذا الملف مو نسخة احتياطية صالحة من تاجرلي');
+      input.value = ''; return;
+    }
+    const dateLabel = snapshot.createdAt ? new Date(snapshot.createdAt).toLocaleString('ar-IQ') : 'غير معروف';
+    openConfirmModal(
+      'استرجاع نسخة احتياطية؟',
+      `راح يعيد كتابة بيانات كل تاجر وطلب موجود بهذي النسخة (بتاريخ ${dateLabel} — ${(snapshot.merchants||[]).length} تاجر، ${(snapshot.orders||[]).length} طلب) فوق البيانات الحالية بنفس الأرقام التعريفية. أي تاجر أو طلب انسوى بعد تاريخ هذي النسخة يضل موجود ولازم تحذفه يدوياً إذا ما تريده — هذا ما يمسح شي تلقائياً. تأكد قبل ما توافق.`,
+      () => confirmRestoreBackup(snapshot)
+    );
+    input.value = '';
+  };
+  reader.onerror = () => showToast('تعذر قراءة الملف');
+  reader.readAsText(file);
+}
+async function confirmRestoreBackup(snapshot) {
+  showToast('جاري استرجاع النسخة الاحتياطية...');
+  data.merchants = snapshot.merchants || [];
+  data.orders = snapshot.orders || [];
+  data.employees = snapshot.employees || [];
+  data.announcements = snapshot.announcements || [];
+  data.ledgerClosures = snapshot.ledgerClosures || [];
+  data.auditLog = snapshot.auditLog || [];
+  data.supportChats = snapshot.supportChats || [];
+  if (snapshot.settings) {
+    // adminUsername/adminPassword deliberately excluded — those live in their own protected
+    // 'admin-credentials' doc (see saveAdminCredentials); restoring them here could lock the
+    // admin out of their own account with an old, forgotten password.
+    const { adminUsername: _au, adminPassword: _ap, ...restoredSettings } = snapshot.settings;
+    data.settings = { ...data.settings, ...restoredSettings };
+  }
+  if (snapshot.nextId) data.nextId = Math.max(data.nextId, snapshot.nextId);
+
+  // Force every doc to be re-written to Firestore on this save, not just whatever changed
+  // in-memory this session — saveData() normally only pushes diffs against these snapshots.
+  lastSyncedMerchantSnapshots.clear();
+  lastSyncedOrderSnapshots.clear();
+
+  const ok = await saveData();
+  await logAudit('استرجاع نسخة احتياطية كاملة', `${data.merchants.length} تاجر — ${data.orders.length} طلب`);
+  showToast(ok ? 'تم استرجاع النسخة الاحتياطية' : 'صار خطأ أثناء الاسترجاع — تأكد من الاتصال بالإنترنت');
+  renderAll();
+}
+
 function renderMerchantActions() {
   const list = document.getElementById('merchant-actions-list');
   const active = activeMerchants();

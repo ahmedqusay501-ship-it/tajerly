@@ -196,6 +196,22 @@
   .badge.disabled { background: #94A3B8; }
   .badge.rejected { background: var(--danger); }
   .badge.removed { background: #64748B; }
+  .badge.warn-review { background: var(--warn); }
+
+  /* ---- Admin global search (dashboard overview) ---- */
+  .search-results-box {
+    margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    max-height: 320px; overflow-y: auto;
+  }
+  .search-result-group-title {
+    font-size: 10.5px; font-weight: 700; color: var(--text-mute); padding: 6px 10px 2px;
+  }
+  .search-result-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 8px 10px; font-size: 12.5px; cursor: pointer; border-bottom: 1px solid #F1F5F9;
+  }
+  .search-result-row:last-child { border-bottom: none; }
+  .search-result-row:hover { background: #F8FAFC; }
 
   .invoice-line {
     display: flex; justify-content: space-between; align-items: center; gap: 8px;

@@ -179,7 +179,7 @@ function renderDashboard() {
       return `
       <div class="list-item" style="flex-direction:column; align-items:stretch;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-          <span>${esc(m.shop)} <button class="btn secondary small" style="margin-right:6px;" onclick="exportMerchantAccountingExcel(${m.id})">تصدير حسابه Excel</button></span>
+          <span>${esc(m.shop)}${needsReviewBadgeHtml(m.id)} <button class="btn secondary small" style="margin-right:6px;" onclick="exportMerchantAccountingExcel(${m.id})">تصدير حسابه Excel</button></span>
           <span><span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> — ${m.salesCount} عملية</span>
         </div>
         <div class="grid3" style="margin:8px 0 0; gap:6px;">
@@ -197,6 +197,7 @@ function renderDashboard() {
     }).join('');
 
   renderAdminLedger();
+  renderMerchantRanking();
 
   renderDashboardCharts();
 }

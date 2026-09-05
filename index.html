@@ -378,6 +378,20 @@
         <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-fees">0</div><div class="stat-label">رسومك (د)</div></div>
         <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-active">0</div><div class="stat-label">تاجر نشط</div></div>
       </div>
+
+      <div class="card" style="position:relative;">
+        <div class="card-title">بحث شامل</div>
+        <div class="subtitle" style="margin-bottom:8px;">دور باسم محل، اسم صاحبه، رقم هاتف (محل أو زبون)، يوزر، أو رقم طلب — بضغطة وحدة</div>
+        <input id="admin-search-input" placeholder="اكتب للبحث..." oninput="adminGlobalSearch(this.value)">
+        <div id="admin-search-results" class="search-results-box" style="display:none;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">تقرير جاهز للفترة</div>
+        <div class="subtitle" style="margin-bottom:8px;">يجهز ويحمّل تقرير Excel كامل (كل التجار، كل الطلبات، والملخص العام) لآخر 7 أو 30 يوم مباشرة، بدون ما تروح لصفحة الحسابات وتحدد التواريخ يدوياً</div>
+        <button class="btn small" onclick="generatePeriodicReport('weekly')">تقرير آخر 7 أيام</button>
+        <button class="btn small secondary" onclick="generatePeriodicReport('monthly')">تقرير آخر 30 يوم</button>
+      </div>
     </div>
 
     <div class="dash-tab" data-dashtab-content="charts">
@@ -403,6 +417,12 @@
         <button class="btn small" onclick="exportAccountingExcel()">تصدير الكل — Excel</button>
         <button class="btn small secondary" onclick="exportMerchantsDirectoryPDF()">تصدير الكل — PDF (دليل التجار)</button>
       </div>
+      <div class="card">
+        <div class="card-title">الأفضل مبيعاً</div>
+        <div class="subtitle" style="margin-bottom:8px;">ترتيب المحلات حسب إجمالي المبيعات المقبولة (غير الملغاة) — أعلى 10 محلات</div>
+        <div id="merchant-ranking-list"><div class="empty">ما فيه بيانات كافية بعد</div></div>
+      </div>
+
       <div class="card">
         <div class="card-title">قائمة المحلات</div>
         <div id="d-merchant-list"><div class="empty">ما فيه محلات مسجلة بعد</div></div>
@@ -716,6 +736,14 @@
 <div class="view" id="view-admin_tools">
   <h2>إجراءات حساسة</h2>
   <div class="subtitle" style="margin-bottom:12px;">هذي الصفحة ما تنعرض أبداً لأي موظف — حتى لو منحته كل الصلاحيات — لأنها تتحكم بأرصدة التجار وبيانات دخولك انت كأدمن</div>
+
+  <div class="card">
+    <div class="card-title">نسخة احتياطية كاملة</div>
+    <div class="subtitle" style="margin-bottom:8px;">تصدير يحمّل ملف JSON فيه كل بيانات المنصة (المحلات، الطلبات، الموظفين، الإعدادات، سجل التدقيق...) — احفظه بمكان آمن. الاسترجاع يعيد كتابة بيانات كل تاجر/طلب موجود بالملف فوق البيانات الحالية بنفس الـ ID، لكنه ما يحذف تلقائياً أي تاجر أو طلب انسوى بعد تاريخ النسخة — هذا الإجراء حساس ولازم يكون آخر حل عند فقدان بيانات فعلي.</div>
+    <button class="btn small" onclick="exportPlatformBackupJSON()">تحميل نسخة احتياطية (JSON)</button>
+    <button class="btn danger small" onclick="triggerRestoreBackup()">استرجاع من نسخة احتياطية</button>
+    <input type="file" id="backup-restore-file-input" accept="application/json" style="display:none;" onchange="handleRestoreBackupFile(this)">
+  </div>
 
   <div class="card">
     <div class="card-title">تصفير الحسابات المالية</div>
