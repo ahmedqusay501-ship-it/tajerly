@@ -176,6 +176,16 @@ async function initStorage() {
       async listOrdersByMerchant(merchantAuthUid) {
         const snap = await getDocs(query(collection(db, 'orders'), where('merchantAuthUid', '==', merchantAuthUid)));
         return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
+      // Same "all-or-nothing" problem as listOrdersByMerchant above, but for 'employees':
+      // firestore.rules' isOwningMerchantOfEmployee() depends on each employee doc's
+      // merchantId field, so an unfiltered getDocs(collection('employees')) is denied for
+      // the WHOLE collection for a merchant (or their employee) even though some of those
+      // documents are theirs to see. Filtering by the same merchantId the rule checks lets
+      // Firestore verify every possible matching document passes before running the query.
+      async listEmployeesByMerchant(merchantId) {
+        const snap = await getDocs(query(collection(db, 'employees'), where('merchantId', '==', merchantId)));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
       }
     };
 
@@ -538,13 +548,34 @@ async function fetchRemoteData() {
     // Figure out, before firing the batch, whether the signed-in identity is a merchant or
     // a merchant's employee, and if so which merchant's orders to filter by.
     let ordersPromise;
+    // 'employees' has the EXACT same all-or-nothing problem as 'orders' (see below) —
+    // isOwningMerchantOfEmployee() in firestore.rules depends on each employee doc's
+    // merchantId, so an unfiltered listCollection('employees') is denied for the WHOLE
+    // collection for a merchant or their employee, even for their own records. This is
+    // the actual bug behind "a newly-added employee disappears from the employees list"
+    // (the merchant's fetchRemoteData() never got their employees back at all — it was
+    // silently swallowed as an expected permission-denied) AND "an employee's login
+    // throws an error even though their username/password is correct in Firebase" (that
+    // employee's own fetchRemoteData(), called right after Firebase Auth sign-in inside
+    // platformLogin(), also got denied, so their own record wasn't in `data.employees`
+    // yet for platformLogin()'s lookup to find). Fixed the same way orders was fixed:
+    // figure out the right merchantId to filter by BEFORE firing the batch below.
+    let employeesPromise;
     try {
       const uid = window.authApi.currentUid();
       let filterAuthUid = null;
+      let employeeFilterMerchantId = null;
+      let ownEmployeeDocOnly = null;
       if (uid) {
         const ownMerchant = data.merchants.find(m => m.authUid === uid);
         if (ownMerchant) {
           filterAuthUid = ownMerchant.authUid;
+          // Only a merchant reading THEIR OWN uid's employees passes
+          // isOwningMerchantOfEmployee() (it requires merchants/{request.auth.uid} to
+          // exist) — so this merchantId-filtered list is only valid when WE are the
+          // merchant, never when we're one of their employees (see the ownerType ===
+          // 'merchant' branch below, which deliberately does NOT reuse this).
+          employeeFilterMerchantId = ownMerchant.id;
         } else {
           // Not a merchant themselves — a direct get() on their own employee doc (always
           // allowed by the rules) tells us if they're a merchant's employee, without
@@ -553,16 +584,38 @@ async function fetchRemoteData() {
           if (empDoc && empDoc.ownerType === 'merchant' && empDoc.status === 'active') {
             const owningMerchant = data.merchants.find(m => m.id === empDoc.merchantId);
             if (owningMerchant && owningMerchant.authUid) filterAuthUid = owningMerchant.authUid;
+            // NOT employeeFilterMerchantId here on purpose: isOwningMerchantOfEmployee()
+            // needs merchants/{request.auth.uid} to exist, which is false for an
+            // employee's own uid, so a merchantId-filtered list of the whole team would
+            // still be denied for this identity (Firestore can't prove every possible
+            // matching doc — i.e. every colleague's doc — passes the rule for THIS
+            // caller). Merchant employees don't have an 'employees' permission anyway
+            // (see MERCHANT_EMPLOYEE_PERMS) — they only ever need their own doc, which
+            // IS covered by the direct request.auth.uid == empUid clause in the rule.
+            ownEmployeeDocOnly = { _uid: uid, ...empDoc };
+          } else if (empDoc && empDoc.ownerType === 'admin') {
+            // Admin employees are deliberately NOT delegated any access to the full
+            // 'employees' collection (see firestore.rules comment: employee management
+            // isn't delegable, not even to an admin employee) — the rule only lets them
+            // read their OWN doc. Wrap it as a single-item "list" so at least their own
+            // login/session lookup (data.employees.find(...)) still works.
+            ownEmployeeDocOnly = { _uid: uid, ...empDoc };
           }
-          // Otherwise: the real admin, an admin employee, or an anonymous/unmatched
-          // identity — the unfiltered listCollection('orders') below already covers those.
+          // Otherwise: the real admin, or an anonymous/unmatched identity — the
+          // unfiltered listCollection('orders'/'employees') below already covers those.
         }
       }
       ordersPromise = filterAuthUid ? window.authApi.listOrdersByMerchant(filterAuthUid) : window.authApi.listCollection('orders');
+      employeesPromise = ownEmployeeDocOnly
+        ? Promise.resolve([ownEmployeeDocOnly])
+        : (employeeFilterMerchantId != null
+            ? window.authApi.listEmployeesByMerchant(employeeFilterMerchantId)
+            : window.authApi.listCollection('employees'));
     } catch (e) {
       // Any failure while figuring this out just falls back to the old unfiltered attempt
       // — never worse than before this fix.
       ordersPromise = window.authApi.listCollection('orders');
+      employeesPromise = window.authApi.listCollection('employees');
     }
 
     // Each collection is fetched independently now (Promise.allSettled instead of
@@ -575,7 +628,7 @@ async function fetchRemoteData() {
       window.authApi.listCollection('merchants'),
       ordersPromise,
       window.authApi.listCollection('join_requests'),
-      window.authApi.listCollection('employees'),
+      employeesPromise,
       window.authApi.listCollection('employee_requests'),
       window.authApi.listCollection('support_chats')
     ]);
