@@ -57,6 +57,12 @@ async function pollForUpdates() {
         if (emp && emp.ownerType === 'merchant') renderMerchantPanel();
         else renderAll();
       }
+      // نظام تنبيه الطلبات الجديدة — loggedInMerchantId موجود سواء كان الداخل تاجر
+      // نفسه أو موظف تابع له (يتحدد وقت تسجيل الدخول)، فيغطي الحالتين بسطر واحد.
+      if ((currentRole === 'merchant' || currentRole === 'employee') && loggedInMerchantId) {
+        const alertMerchant = data.merchants.find(x => x.id === loggedInMerchantId);
+        if (alertMerchant) checkForNewOrdersAndAlert(alertMerchant);
+      }
       updateSupportFab();
     } else if (publicStoreMerchantId && document.getElementById('public-store-screen').style.display !== 'none') {
       renderStorefrontInto(publicStoreMerchantId, document.getElementById('public-storefront-content'));
