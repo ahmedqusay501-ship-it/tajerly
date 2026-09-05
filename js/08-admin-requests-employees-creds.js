@@ -983,8 +983,14 @@ function renderMerchantPanel() {
   const panel = document.getElementById('merchant-panel');
   if (!m) { panel.innerHTML = ''; return; }
   ensureMerchantTheme(m);
+  // أول مرة نعرض لوحة هذا التاجر بهذي الجلسة (تسجيل دخول جديد أو تبديل حساب) — نأخذ
+  // "صورة" من الطلبات الحالية بدون أي تنبيه، حتى ما يرن الإنذار على طلبات قديمة أصلاً.
+  if (newOrderTrackedMerchantId !== m.id) seedNewOrderTracking(m);
 
   panel.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <button class="btn small ${newOrderSoundEnabled ? '' : 'secondary'}" onclick="toggleNewOrderSound()">${newOrderSoundEnabled ? '🔔 التنبيه الصوتي مفعّل' : '🔕 فعّل تنبيه الطلبات الصوتي'}</button>
+    </div>
     <div class="toggle-group" id="merchant-dash-subnav">
       <div class="toggle" data-mdashtab="store" onclick="showMerchantDashTab('store')">المتجر</div>
       <div class="toggle" data-mdashtab="orders" onclick="showMerchantDashTab('orders')">الطلبات</div>
