@@ -1,4 +1,51 @@
 // ---------- ADMIN ACTIONS ----------
+// Simple contact/profile directory for every registered store — not financial data, just
+// who they are: store name, owner name, phone, and store description. Uses the same
+// print-to-PDF technique as exportMerchantAccountingPDF (see there for why: client-side PDF
+// libraries don't shape Arabic text correctly, the browser's own print engine does).
+function exportMerchantsDirectoryPDF() {
+  const list = activeMerchants();
+  if (list.length === 0) { showToast('ما فيه محلات مسجلة بعد'); return; }
+
+  const rowsHtml = list.map(m => `<tr>
+      <td>${esc(m.shop)}</td>
+      <td>${esc(m.name) || '—'}</td>
+      <td>${esc(m.phone) || '—'}</td>
+      <td style="text-align:right;">${esc(m.description) || '—'}</td>
+      <td>${m.status === 'active' ? 'نشط' : 'معطل'}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+    <title>دليل التجار</title>
+    <style>
+      body { font-family: 'Cairo', Tahoma, Arial, sans-serif; padding: 24px; color:#1E293B; }
+      h1 { font-size: 18px; margin-bottom: 2px; }
+      .sub { color:#64748B; font-size:12px; margin-bottom:18px; }
+      table { width:100%; border-collapse:collapse; font-size:12px; }
+      th, td { border:1px solid #E2E8F0; padding:6px 8px; text-align:center; }
+      th { background:#D1FAE5; }
+      .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      @media (max-width: 480px) { table { font-size: 10.5px; } th, td { padding: 5px 5px; } }
+      @media print { body { padding: 8px; } .table-scroll { overflow-x: visible; } }
+    </style></head><body>
+      <h1>دليل التجار</h1>
+      <div class="sub">تاريخ الإصدار: ${new Date().toLocaleDateString('ar-IQ')} — عدد المحلات: ${list.length}</div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>اسم المحل</th><th>اسم صاحب المحل</th><th>رقم الهاتف</th><th>وصف المتجر</th><th>الحالة</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      </div>
+    </body></html>`;
+
+  const printWin = window.open('', '_blank');
+  if (!printWin) { showToast('المتصفح منع فتح نافذة الطباعة — فعّل النوافذ المنبثقة واعد المحاولة'); return; }
+  printWin.document.open();
+  printWin.document.write(html);
+  printWin.document.close();
+  setTimeout(() => { try { printWin.focus(); printWin.print(); } catch (e) {} }, 350);
+  showToast('اختر "حفظ كـ PDF" من نافذة الطباعة اللي فتحت');
+}
 function resetFinancials(type) {
   openConfirmModal('تصفير الأرصدة', 'متأكد؟ هذا يصفر كل الأرصدة المالية ولا يمكن التراجع.', () => {
     if (type === 'merchants') {
@@ -132,9 +179,13 @@ function removeCustomDomain() {
 function resetMerchantAccount(id) {
   const m = data.merchants.find(x => x.id === id);
   if (!m) return;
-  openConfirmModal('تصفير حساب التاجر', `متأكد؟ راح تنمسح كل معاملات "${m.shop}" المالية وطلباته نهائياً وتختفي من الداشبورد. بيانات الحساب والمنتجات تبقى محفوظة.`, async () => {
+  openConfirmModal('تصفير حساب التاجر', `متأكد؟ راح تنمسح كل معاملات "${m.shop}" المالية وطلباته نهائياً وتختفي من الداشبورد، وراح يرجع عدد الطلبات وعدد الزيارات إلى صفر. بيانات الحساب والمنتجات تبقى محفوظة.`, async () => {
     m.balance = 0;
     m.salesCount = 0;
+    // عدد الطلبات نفسه يرجع صفر تلقائياً بعد حذف طلبات هذا التاجر تحت (لأنه محسوب لحظياً من
+    // data.orders)، لكن الزيارات (m.visits) رقم مستقل ما يتأثر بحذف الطلبات — لازم تصفيره هنا
+    // يدوياً حتى يختفي من داشبورد الأدمن ومن لوحة التاجر نفسه ("زيارات متجرك").
+    m.visits = 0;
     const removedOrders = data.orders.filter(o => o.merchantId === id);
     data.orders = data.orders.filter(o => o.merchantId !== id);
 

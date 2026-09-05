@@ -47,12 +47,40 @@ function baseChartOptions() {
     }
   };
 }
+// Keeps the merchant dropdown above the charts in sync with the real, current merchant list
+// (so it's "تفاعلية حسب الموجود" — reflects whoever actually exists right now — instead of a
+// fixed, hardcoded set) without wiping out whichever merchant the admin already had selected.
+function populateChartMerchantFilter() {
+  const sel = document.getElementById('chart-merchant-filter');
+  if (!sel) return;
+  const current = sel.value || 'all';
+  const active = activeMerchants();
+  sel.innerHTML = '<option value="all">كل المنصة</option>' +
+    active.map(m => `<option value="${m.id}">${esc(m.shop)}</option>`).join('');
+  sel.value = active.some(m => String(m.id) === current) ? current : 'all';
+}
+function changeChartMerchantFilter() {
+  renderDashboardCharts();
+}
 function renderDashboardCharts() {
   if (typeof Chart === 'undefined') return;
+  populateChartMerchantFilter();
+  const filterEl = document.getElementById('chart-merchant-filter');
+  const filterId = filterEl ? filterEl.value : 'all';
+  const isAll = !filterId || filterId === 'all';
+  const m = isAll ? null : data.merchants.find(x => String(x.id) === String(filterId));
+
+  const relevantOrders = isAll ? data.orders : data.orders.filter(o => o.merchantId === m.id);
+
+  const titleOrders = document.getElementById('chart-orders-title');
+  const titleFees = document.getElementById('chart-fees-title');
+  if (titleOrders) titleOrders.textContent = isAll ? 'الطلبات آخر 7 أيام' : `طلبات "${m.shop}" آخر 7 أيام`;
+  if (titleFees) titleFees.textContent = isAll ? 'رسوم المنصة المحصّلة آخر 7 أيام (دينار)' : `رسوم المنصة من "${m.shop}" آخر 7 أيام (دينار)`;
+
   const days = last7Days();
   const labels = days.map(d => d.label);
-  const ordersPerDay = days.map(d => data.orders.filter(o => new Date(o.date).toDateString() === d.dateStr).length);
-  const feesPerDay = days.map(d => data.orders.filter(o => new Date(o.date).toDateString() === d.dateStr)
+  const ordersPerDay = days.map(d => relevantOrders.filter(o => new Date(o.date).toDateString() === d.dateStr).length);
+  const feesPerDay = days.map(d => relevantOrders.filter(o => new Date(o.date).toDateString() === d.dateStr)
     .reduce((s,o) => s + o.feeFromCustomer + o.feeFromMerchant + (o.itemDeduction || 0), 0));
 
   upsertChart('chart-orders-trend', {
@@ -151,7 +179,7 @@ function renderDashboard() {
       return `
       <div class="list-item" style="flex-direction:column; align-items:stretch;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-          <span>${m.shop}</span>
+          <span>${esc(m.shop)} <button class="btn secondary small" style="margin-right:6px;" onclick="exportMerchantAccountingExcel(${m.id})">تصدير حسابه Excel</button></span>
           <span><span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> — ${m.salesCount} عملية</span>
         </div>
         <div class="grid3" style="margin:8px 0 0; gap:6px;">

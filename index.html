@@ -382,16 +382,27 @@
 
     <div class="dash-tab" data-dashtab-content="charts">
       <div class="card">
-        <div class="card-title">الطلبات آخر 7 أيام</div>
+        <div class="card-title">فلترة الرسوم البيانية</div>
+        <div class="subtitle" style="margin-bottom:8px;">اختر محل معين لتشوف رسومه وحده، أو اتركها "كل المنصة" للرسوم العامة</div>
+        <select id="chart-merchant-filter" onchange="changeChartMerchantFilter()"><option value="all">كل المنصة</option></select>
+      </div>
+      <div class="card">
+        <div class="card-title" id="chart-orders-title">الطلبات آخر 7 أيام</div>
         <div class="chart-wrap"><canvas id="chart-orders-trend"></canvas></div>
       </div>
       <div class="card">
-        <div class="card-title">رسوم المنصة المحصّلة آخر 7 أيام (دينار)</div>
+        <div class="card-title" id="chart-fees-title">رسوم المنصة المحصّلة آخر 7 أيام (دينار)</div>
         <div class="chart-wrap"><canvas id="chart-fees-trend"></canvas></div>
       </div>
     </div>
 
     <div class="dash-tab" data-dashtab-content="merchants">
+      <div class="card">
+        <div class="card-title">تصدير حسابات كل المحلات</div>
+        <div class="subtitle" style="margin-bottom:8px;">تصدير Excel يعطيك نفس تقسيمات الحسابات المستخدمة بالمنصة (ملخص عام + ملخص كل تاجر + ورقة مفصّلة لكل تاجر). تصدير PDF يعطيك دليل تجار مبسّط: اسم المحل، اسم صاحبه، رقم هاتفه، ووصف متجره.</div>
+        <button class="btn small" onclick="exportAccountingExcel()">تصدير الكل — Excel</button>
+        <button class="btn small secondary" onclick="exportMerchantsDirectoryPDF()">تصدير الكل — PDF (دليل التجار)</button>
+      </div>
       <div class="card">
         <div class="card-title">قائمة المحلات</div>
         <div id="d-merchant-list"><div class="empty">ما فيه محلات مسجلة بعد</div></div>
