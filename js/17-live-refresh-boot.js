@@ -21,7 +21,7 @@
 // something in that fingerprint actually changed, so an idle tick with no news is cheap
 // and doesn't flicker the UI.
 function dataFingerprint() {
-  const orders = data.orders.map(o => `${o.id}:${o.status}:${o.deliveryStatus || ''}:${o.cancelled ? 1 : 0}:${o.cancelStage || ''}`).join(',');
+  const orders = data.orders.map(o => `${o.id}:${o.status}:${o.deliveryStatus || ''}:${o.cancelled ? 1 : 0}:${o.cancelStage || ''}:${o.removalStatus || ''}`).join(',');
   const merchants = data.merchants.map(m => `${m.id}:${m.status}:${m.customDomain || ''}:${(m.commissionRequests || []).map(r => r.id + '-' + r.status).join('.')}`).join(',');
   const employees = data.employees.map(e => `${e.id}:${e.status}`).join(',');
   const announcements = (data.announcements || []).map(a => `${a.id}:${(a.readBy || []).length}`).join(',');
