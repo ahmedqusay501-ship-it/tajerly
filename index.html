@@ -807,6 +807,20 @@
 </div>
 
 <!-- Approve merchant modal (enter username/password) + admin-controlled fee settings for this merchant -->
+<audio id="new-order-alarm-audio" src="order-alarm.wav" preload="auto"></audio>
+
+<!-- تظهر فوق كل شي وتوقف الاستخدام لحد ما التاجر يضغط "استلمت" — هذا مقصود، الهدف إنه ينتبه فوراً -->
+<div class="modal-overlay" id="new-order-alarm-modal">
+  <div class="modal-box" style="max-width:380px; text-align:center;">
+    <div style="font-size:40px; line-height:1;">🔔</div>
+    <div class="modal-title">وصلك طلب جديد!</div>
+    <div class="subtitle" id="new-order-alarm-subtitle" style="margin-bottom:14px;">عندك طلب جديد بانتظار المراجعة</div>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn small" onclick="acknowledgeOrderAlarm()">استلمت — إيقاف الإنذار</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="approve-modal">
   <div class="modal-box" style="max-height:85vh; overflow-y:auto;">
     <div class="modal-title" id="approve-modal-title">قبول التاجر — أدخل بيانات الدخول</div>
