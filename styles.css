@@ -622,6 +622,25 @@
     display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
     margin-inline-start: 6px; vertical-align: middle;
   }
+
+  /* ---- Admin alert center: numbered nav badges, topbar bell, pulsing "needs attention" cards ---- */
+  .nav-badge-count {
+    display: inline-block; min-width: 16px; background: var(--danger); color: #fff;
+    font-size: 10px; font-weight: 800; border-radius: 20px; padding: 1px 6px;
+    margin-inline-start: 6px; vertical-align: middle; text-align: center; line-height: 1.4;
+  }
+  #admin-alert-bell-btn { position: relative; display: none; }
+  #admin-alert-bell-count {
+    position: absolute; top: -6px; left: -6px; display: none; min-width: 16px;
+    background: var(--danger); color: #fff; font-size: 9.5px; font-weight: 800;
+    border-radius: 20px; padding: 1px 5px; border: 2px solid var(--ink);
+  }
+  @keyframes admin-alert-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.55); }
+    50% { box-shadow: 0 0 0 7px rgba(220,38,38,0); }
+  }
+  .alert-pulse { animation: admin-alert-pulse 1.4s ease-in-out infinite; border-radius: 10px; }
+  #admin-alert-modal .modal-box { animation: admin-alert-pulse 1.2s ease-in-out infinite; }
   .support-chat-box { background: #FFFFFF; border-radius: 12px; padding: 16px; width: 94%; max-width: 420px;
     box-shadow: 0 20px 50px rgba(0,0,0,0.3); display: flex; flex-direction: column; height: 78vh; max-height: 560px; }
   .support-chat-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

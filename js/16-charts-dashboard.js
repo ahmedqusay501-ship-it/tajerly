@@ -198,6 +198,7 @@ function renderDashboard() {
 
   renderAdminLedger();
   renderMerchantRanking();
+  renderMerchantJoinStats();
 
   renderDashboardCharts();
 }
@@ -219,4 +220,8 @@ function renderAll() {
   renderAdminSupportList();
   updateSupportNavBadge();
   updateSupportFab();
+  // Admin alert center: strict/loud notifications for join requests, removal requests,
+  // cancel requests, delivery-ready orders, and unread support messages (see
+  // 18-admin-alerts.js). Runs last so it reflects everything renderAll() just refreshed above.
+  checkAdminAlertsAndNotify();
 }

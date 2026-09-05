@@ -374,6 +374,7 @@ function platformLogout() {
   ordersLoadDenied = false;
   ordersLoadWarningShown = false;
   applyMerchantDashboardColor(null);
+  resetAdminAlertTracking(); // next admin login re-seeds fresh instead of reusing a stale session's "seen" state
   clearSession();
   if (window.authApi) window.authApi.signOutMain().catch(() => {});
   showLoginScreen();

@@ -339,6 +339,10 @@
     </select>
     <span class="role-chip" id="topbar-role"></span>
     <span><span data-i18n="topbar_welcome">مرحباً،</span> <b id="topbar-name"></b></span>
+    <button class="logout-btn" id="admin-alert-bell-btn" onclick="toggleAdminAlertSound()" title="تفعيل/إيقاف الإنذار الصوتي لتنبيهات الإدارة">
+      <span id="admin-alert-bell-icon">🔕</span>
+      <span id="admin-alert-bell-count"></span>
+    </button>
     <button class="logout-btn" onclick="platformLogout()" data-i18n="topbar_logout">تسجيل خروج</button>
   </div>
 </div>
@@ -373,10 +377,34 @@
   <div id="dashboard-content">
     <div class="dash-tab active" data-dashtab-content="overview">
       <div id="id-collision-warning"></div>
+
+      <div class="card" id="admin-alert-summary-parent">
+        <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span>تنبيهات تحتاج انتباهك الآن</span>
+          <button class="btn small secondary" onclick="toggleAdminAlertSound()" id="admin-alert-toggle-inline-btn">تفعيل الإنذار الصوتي</button>
+        </div>
+        <div class="subtitle" style="margin-bottom:8px;">تتحدث لحظياً — أي طلب انضمام، حذف قطعة، إلغاء، توصيل جاهز، أو رسالة دعم جديدة تظهر هنا فوراً ويرن لك إنذار صوتي إذا كان مفعّل</div>
+        <div id="admin-alert-summary-card"><div class="empty">جاري التحقق...</div></div>
+      </div>
+
       <div class="grid3">
         <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-orders">0</div><div class="stat-label">عمليات اليوم</div></div>
         <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-fees">0</div><div class="stat-label">رسومك (د)</div></div>
         <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-active">0</div><div class="stat-label">تاجر نشط</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">انضمام التجار الجدد</div>
+        <div class="subtitle" style="margin-bottom:8px;">محسوبة لحظياً من تاريخ تقديم كل طلب انضمام — تتحدث تلقائياً من غير ما تحتاج تعمل شي</div>
+        <div class="grid3">
+          <div class="stat"><div class="stat-num" id="join-stat-daily">0</div><div class="stat-label">اليوم</div></div>
+          <div class="stat"><div class="stat-num" id="join-stat-weekly">0</div><div class="stat-label">آخر 7 أيام</div></div>
+          <div class="stat"><div class="stat-num" id="join-stat-monthly">0</div><div class="stat-label">آخر 30 يوم</div></div>
+        </div>
+        <div class="grid3" style="margin-top:6px;">
+          <div class="stat"><div class="stat-num" id="join-stat-avg">0</div><div class="stat-label">متوسط الانضمام/يوم (آخر 30 يوم)</div></div>
+        </div>
+        <div class="chart-wrap" style="margin-top:10px;"><canvas id="chart-merchant-joins"></canvas></div>
       </div>
 
       <div class="card" style="position:relative;">
@@ -863,6 +891,19 @@
   </div>
 </div>
 
+<!-- ---- Admin alert center: one loud alarm for everything the admin needs to act on ---- -->
+<audio id="admin-alert-audio" src="order-alarm.wav" preload="auto"></audio>
+<div class="modal-overlay" id="admin-alert-modal">
+  <div class="modal-box" style="max-width:400px; text-align:center;">
+    <div style="font-size:40px; line-height:1;">🚨</div>
+    <div class="modal-title">تنبيه جديد يحتاج انتباهك!</div>
+    <div class="subtitle" id="admin-alert-modal-body" style="margin-bottom:14px; text-align:right;"></div>
+    <div class="modal-actions" style="justify-content:center; flex-wrap:wrap;">
+      <button class="btn small" onclick="acknowledgeAdminAlert()">استلمت — إيقاف الإنذار</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="approve-modal">
   <div class="modal-box" style="max-height:85vh; overflow-y:auto;">
     <div class="modal-title" id="approve-modal-title">قبول التاجر — أدخل بيانات الدخول</div>
@@ -1265,6 +1306,7 @@
 <script src="js/14-shipping-pricing.js"></script>
 <script src="js/15-admin-tools.js"></script>
 <script src="js/16-charts-dashboard.js"></script>
+<script src="js/18-admin-alerts.js"></script>
 <script src="js/17-live-refresh-boot.js"></script>
 </body>
 </html>
