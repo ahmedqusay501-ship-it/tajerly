@@ -740,8 +740,11 @@
   </div>
 
   <div class="card">
-    <div class="card-title">سجل التدقيق</div>
-    <div class="subtitle" style="margin-bottom:8px;">كل إجراء حساس صار بالمنصة — قبول/رفض تاجر، حذف، تصفير كلمة مرور، تغيير بيانات دخول الأدمن، وغيرها — مين سواه ومتى.</div>
+    <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+      <span>سجل التدقيق</span>
+      <button class="btn danger small" onclick="clearAuditLog()">مسح السجل بالكامل</button>
+    </div>
+    <div class="subtitle" style="margin-bottom:8px;">كل إجراء حساس صار بالمنصة — قبول/رفض تاجر، حذف، تصفير كلمة مرور، تغيير بيانات دخول الأدمن، وغيرها — مين سواه ومتى. تكدر تحذف إجراء وحد بالضغط على "حذف" جنبه، أو تمسح السجل بالكامل من الزر فوق.</div>
     <div id="audit-log-list"></div>
   </div>
 </div><!-- /view-admin_tools -->

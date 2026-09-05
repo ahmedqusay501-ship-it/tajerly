@@ -179,6 +179,40 @@ async function logAudit(action, details) {
   }
 }
 
+// Deletes a single audit-log entry (after the admin confirms). We log the deletion itself as
+// a fresh entry right after — same accountability principle used everywhere else in this file
+// (تصفير حساب تاجر، حذف تاجر، ...): an admin action that erases a record must still leave a
+// trace of who erased it and when, so the log can never be silently edited without evidence.
+function deleteAuditLogEntry(id) {
+  const entry = (data.auditLog || []).find(e => e.id === id);
+  if (!entry) return;
+  openConfirmModal('حذف إجراء من السجل', `متأكد راح تحذف هذا الإجراء نهائياً؟ — "${entry.action}${entry.details ? ' — ' + entry.details : ''}"`, async () => {
+    data.auditLog = (data.auditLog || []).filter(e => e.id !== id);
+    try { await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); } catch (e2) {
+      if (!(e2 && (e2.code === 'permission-denied' || /permission/i.test(e2.message || '')))) console.error('Failed to persist audit log deletion:', e2);
+    }
+    await logAudit('حذف إجراء من سجل التدقيق', `${entry.action}${entry.details ? ' — ' + entry.details : ''} (بتاريخ ${new Date(entry.ts).toLocaleString('ar-IQ')})`);
+    showToast('تم حذف الإجراء من السجل');
+    renderAuditLog();
+  });
+}
+
+// Wipes the whole log, then immediately writes one fresh entry recording the wipe itself —
+// so "من مسح السجل ومتى" stays known even after everything before it is gone.
+function clearAuditLog() {
+  const count = (data.auditLog || []).length;
+  if (count === 0) { showToast('السجل فاضي أصلاً'); return; }
+  openConfirmModal('مسح السجل بالكامل', `متأكد راح تمسح كل السجل نهائياً؟ (${count} إجراء) — هذا الإجراء لا يمكن التراجع عنه.`, async () => {
+    data.auditLog = [];
+    try { await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); } catch (e) {
+      if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) console.error('Failed to persist audit log clear:', e);
+    }
+    await logAudit('مسح سجل التدقيق بالكامل', `${count} إجراء`);
+    showToast('تم مسح السجل بالكامل');
+    renderAuditLog();
+  });
+}
+
 let auditLogPage = 1;
 const AUDIT_LOG_PAGE_SIZE = 10;
 function changeAuditLogPage(page) {
@@ -199,6 +233,7 @@ function renderAuditLog() {
     <div class="list-item" style="align-items:flex-start;">
       <span>${esc(entry.action)}${entry.details ? ' — ' + esc(entry.details) : ''}<br>
       <span style="color:var(--text-mute); font-size:11px;">${esc(entry.actor)} · ${new Date(entry.ts).toLocaleString('ar-IQ')}</span></span>
+      <button class="btn danger small" onclick="deleteAuditLogEntry('${entry.id}')">حذف</button>
     </div>`).join('');
   const pager = totalPages > 1 ? `
     <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:12px;">

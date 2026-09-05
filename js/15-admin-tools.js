@@ -176,6 +176,68 @@ function removeCustomDomain() {
   renderAll();
 }
 
+// ---------- GRANULAR PER-MERCHANT RESETS ----------
+// The three functions below split resetMerchantAccount() above into independent pieces —
+// so the admin can, for example, zero out just a merchant's balance without touching their
+// order history, or clear their visit counter without touching money or orders at all.
+
+function resetMerchantMoney(id) {
+  const m = data.merchants.find(x => x.id === id);
+  if (!m) return;
+  openConfirmModal('تصفير أموال التاجر', `متأكد؟ راح يرجع رصيد "${m.shop}" وعدد عمليات البيع المسجلة له إلى صفر. الطلبات والزيارات ما تتأثر بهذا الإجراء.`, async () => {
+    m.balance = 0;
+    m.salesCount = 0;
+    let balanceSaved = true;
+    if (window.authApi && m.authUid) {
+      try {
+        await window.authApi.saveDoc('merchant_private', m.authUid, { balance: 0, salesCount: 0 });
+      } catch (e) {
+        balanceSaved = false;
+        console.error('Failed to reset merchant balance in database:', e);
+      }
+    }
+    await saveData();
+    showToast(balanceSaved ? 'تم تصفير أموال التاجر' : 'تعذر تصفير الرصيد بقاعدة البيانات (صلاحيات؟) — راح يرجع الرصيد القديم يظهر عند أول تحديث');
+    logAudit('تصفير أموال تاجر', m.shop);
+    renderAll();
+  });
+}
+
+function resetMerchantOrders(id) {
+  const m = data.merchants.find(x => x.id === id);
+  if (!m) return;
+  openConfirmModal('تصفير طلبات التاجر', `متأكد؟ راح تنمسح كل طلبات "${m.shop}" نهائياً وتختفي من الداشبورد وسجل حساباته. رصيده الحالي وعدد الزيارات ما يتأثرون بهذا الإجراء.`, async () => {
+    const removedOrders = data.orders.filter(o => o.merchantId === id);
+    data.orders = data.orders.filter(o => o.merchantId !== id);
+    await saveData();
+    let failCount = 0;
+    if (window.authApi && removedOrders.length > 0) {
+      const results = await Promise.allSettled(removedOrders.map(o =>
+        window.authApi.deleteDoc('orders', String(o.id)).then(() => { lastSyncedOrderSnapshots.delete(o.id); })
+      ));
+      failCount = results.filter(r => r.status === 'rejected').length;
+      if (failCount > 0) console.error('order delete failed for', failCount, 'of', removedOrders.length, 'orders', results);
+    }
+    showToast(failCount > 0
+      ? `تصفّرت الطلبات محلياً، لكن تعذر حذف ${failCount} من ${removedOrders.length} من قاعدة البيانات (صلاحيات؟) — راح ترجع تظهر عند أول تحديث`
+      : 'تم تصفير طلبات التاجر');
+    logAudit('تصفير طلبات تاجر', `${m.shop} — ${removedOrders.length} طلب`);
+    renderAll();
+  });
+}
+
+function resetMerchantVisits(id) {
+  const m = data.merchants.find(x => x.id === id);
+  if (!m) return;
+  openConfirmModal('تصفير زيارات المتجر', `متأكد راح يرجع عدد زيارات "${m.shop}" إلى صفر؟ الرصيد والطلبات ما يتأثرون بهذا الإجراء.`, () => {
+    m.visits = 0;
+    saveData();
+    showToast('تم تصفير زيارات المتجر');
+    logAudit('تصفير زيارات تاجر', m.shop);
+    renderAll();
+  });
+}
+
 function resetMerchantAccount(id) {
   const m = data.merchants.find(x => x.id === id);
   if (!m) return;
@@ -274,7 +336,10 @@ function renderMerchantActions() {
         <button class="btn ${m.ownDelivery ? 'secondary' : 'warn'} small" onclick="openOwnDeliveryModal(${m.id})">${m.ownDelivery ? 'تعديل التوصيل الخاص' : 'توصيل خاص بالمحل'}</button>
         <button class="btn ${m.customDomain ? 'secondary' : 'warn'} small" onclick="openCustomDomainModal(${m.id})">${m.customDomain ? 'تعديل الدومين' : 'إضافة دومين مخصص'}</button>
         <button class="btn warn small" onclick="toggleMerchantStatus(${m.id})">${m.status==='active'?'تعطيل':'تفعيل'}</button>
-        <button class="btn danger small" onclick="resetMerchantAccount(${m.id})">تصفير الحساب</button>
+        <button class="btn danger small" onclick="resetMerchantMoney(${m.id})">تصفير الأموال</button>
+        <button class="btn danger small" onclick="resetMerchantOrders(${m.id})">تصفير الطلبات</button>
+        <button class="btn danger small" onclick="resetMerchantVisits(${m.id})">تصفير الزيارات</button>
+        <button class="btn danger small" onclick="resetMerchantAccount(${m.id})">تصفير الحساب بالكامل</button>
         <button class="btn danger small" onclick="deleteMerchant(${m.id})">حذف نهائي</button>
       </span>
     </div>`;
