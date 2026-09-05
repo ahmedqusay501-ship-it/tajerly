@@ -38,7 +38,11 @@ async function pollForUpdates() {
     const openModal = document.querySelector('.modal-overlay.show:not(#support-chat-modal)');
     const active = document.activeElement;
     const isTyping = active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) && active.id !== 'support-chat-input';
-    if (openModal || isTyping) return; // try again next tick instead of interrupting the person
+    // Also skip while an order write from THIS tab is still in flight — otherwise this
+    // fetch can land between "we changed an order locally" and "that write actually
+    // reached Firestore", pull the still-old remote copy, and stomp the local change right
+    // back (accept/reject/cancel appearing to silently fail until repeated or reloaded).
+    if (openModal || isTyping || pendingOrderWrites > 0) return; // try again next tick instead
 
     const before = dataFingerprint();
     await fetchRemoteData(); // re-fetches settings + merchants + orders + employees and normalizes them, without re-routing the screen
@@ -46,6 +50,13 @@ async function pollForUpdates() {
     // The open support chat modal (if any) has its own re-render below, independent of the
     // fingerprint short-circuit, so a reply lands even if nothing else on the page changed.
     if (document.getElementById('support-chat-modal').classList.contains('show')) renderSupportChatMessages(true);
+    // Guest order-tracking results (searchMyOrders) had no live refresh at all — a customer
+    // had to manually hit "بحث" again to see a merchant's/admin's cancel decision land,
+    // which is exactly the "status doesn't update quickly" complaint. Re-run the same
+    // lookup they already did. Placed BEFORE the fingerprint short-circuit below: a guest
+    // has no read access to the real orders collection at all, so their fingerprint never
+    // moves and that check would otherwise always skip this.
+    if (trackOrderMerchantId && lastTrackedGroups.length) searchMyOrders(true);
     if (dataFingerprint() === before) return; // nothing else actually changed, skip the rest of the re-render
 
     // Refresh whichever screen is actually on-screen right now

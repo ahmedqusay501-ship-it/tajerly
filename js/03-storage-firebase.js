@@ -447,6 +447,13 @@ function ensureEmployeeDefaults(e) {
 // every order so saveData() only re-writes orders that actually changed, instead of
 // re-uploading the entire order history on every single save.
 let lastSyncedOrderSnapshots = new Map();
+// Counts order writes currently in flight to Firestore. The 5s live-refresh poll
+// (see pollForUpdates in 17-live-refresh-boot.js) checks this before overwriting local
+// `data` with a fresh fetch — otherwise a poll tick landing between "we changed an order
+// locally" and "that write actually reached Firestore" would fetch the still-old remote
+// copy and stomp the local change right back, making an action (cancel, accept, reject...)
+// look like it silently failed until the person repeats it or reloads a few times.
+let pendingOrderWrites = 0;
 // Same idea, but for merchants — and much more important here than it was for orders.
 // saveData() used to unconditionally re-write EVERY merchant's full document on every single
 // save, no matter which merchant the action was actually about. For a regular merchant/

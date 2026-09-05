@@ -318,7 +318,7 @@ function groupOrders(orders) {
 function renderPendingOrders(m) {
   // Same exclusion as renderReadyForShipping — an order mid-cancellation-review is
   // handled from the "طلبات إلغاء من الزبائن" card, not accepted/rejected here.
-  const pending = data.orders.filter(o => o.merchantId === m.id && o.status === 'pending' && (!o.cancelStage || o.cancelStage === 'none')).slice().reverse();
+  const pending = data.orders.filter(o => o.merchantId === m.id && o.status === 'pending' && !o.cancelled && (!o.cancelStage || o.cancelStage === 'none')).slice().reverse();
   if (pending.length === 0) return '<div class="empty">ما فيه طلبات جديدة حالياً</div>';
   const groups = groupOrders(pending);
   return groups.map(g => {
@@ -369,7 +369,7 @@ function renderPendingOrders(m) {
 }
 
 function acceptInvoice(groupId) {
-  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && o.status === 'pending');
+  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && o.status === 'pending' && !o.cancelled);
   if (items.length === 0) return;
   if (items.some(o => o.removalStatus === 'requested')) {
     showToast('لازم تنتظر رد الأدمن على طلب حذف القطعة قبل قبول الفاتورة');
@@ -406,7 +406,7 @@ function acceptInvoice(groupId) {
 }
 
 function rejectInvoice(groupId) {
-  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && o.status === 'pending');
+  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && o.status === 'pending' && !o.cancelled);
   if (items.length === 0) return;
   items.forEach(o => {
     o.status = 'rejected';

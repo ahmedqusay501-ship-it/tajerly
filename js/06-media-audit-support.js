@@ -113,9 +113,11 @@ async function saveData() {
         const json = JSON.stringify(o);
         if (lastSyncedOrderSnapshots.get(o.id) !== json) {
           changedOrders.push(o);
+          pendingOrderWrites++;
           window.authApi.saveDoc('orders', String(o.id), o)
             .then(() => lastSyncedOrderSnapshots.set(o.id, json))
-            .catch(e => console.error('order sync failed for', o.id, e));
+            .catch(e => console.error('order sync failed for', o.id, e))
+            .finally(() => pendingOrderWrites--);
         }
       });
       // Keep the public order_tracking "view" copy (see firestore.rules) in sync with

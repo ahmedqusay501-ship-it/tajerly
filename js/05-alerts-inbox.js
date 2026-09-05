@@ -65,7 +65,7 @@ let orderAlarmAutoStopHandle = null;
 
 function currentPendingOrderIds(m) {
   return data.orders
-    .filter(o => o.merchantId === m.id && o.status === 'pending' && (!o.cancelStage || o.cancelStage === 'none'))
+    .filter(o => o.merchantId === m.id && o.status === 'pending' && !o.cancelled && (!o.cancelStage || o.cancelStage === 'none'))
     .map(o => o.id);
 }
 

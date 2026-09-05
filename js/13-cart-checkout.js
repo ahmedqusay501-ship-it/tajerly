@@ -661,17 +661,21 @@ function orderTrackBadgeClass(o) {
   return o.status;
 }
 
-async function searchMyOrders() {
+// `silent` is true for the 5-second background re-check (see pollForUpdates) so it never
+// flashes "جاري البحث..." over results the customer is already looking at, and never
+// stomps an error/empty message with a loading flicker for something that isn't a real
+// user-initiated search.
+async function searchMyOrders(silent) {
   const results = document.getElementById('order-track-results');
   const phoneRaw = document.getElementById('order-track-phone').value;
   const phone = normalizePhoneDigits(phoneRaw);
-  if (!phone) { results.innerHTML = `<div class="empty">اكتب رقم الهاتف اللي طلبت فيه أول شي</div>`; return; }
-  if (!trackOrderMerchantId) { results.innerHTML = `<div class="empty">تعذر تحديد المتجر</div>`; return; }
+  if (!phone) { if (!silent) results.innerHTML = `<div class="empty">اكتب رقم الهاتف اللي طلبت فيه أول شي</div>`; return; }
+  if (!trackOrderMerchantId) { if (!silent) results.innerHTML = `<div class="empty">تعذر تحديد المتجر</div>`; return; }
 
   const m = data.merchants.find(x => x.id === trackOrderMerchantId);
-  if (!m || !m.authUid) { results.innerHTML = `<div class="empty">تعذر تحديد المتجر</div>`; return; }
+  if (!m || !m.authUid) { if (!silent) results.innerHTML = `<div class="empty">تعذر تحديد المتجر</div>`; return; }
 
-  results.innerHTML = `<div class="empty">جاري البحث...</div>`;
+  if (!silent) results.innerHTML = `<div class="empty">جاري البحث...</div>`;
 
   // Hard isolation: keyed by this store's merchantAuthUid + the phone number — a phone
   // number that ordered from ten other stores on the platform will never surface those
@@ -689,7 +693,7 @@ async function searchMyOrders() {
       groups = (trackDoc && Array.isArray(trackDoc.orders)) ? trackDoc.orders : [];
     } catch (e) {
       console.error('order_tracking lookup failed:', e);
-      results.innerHTML = `<div class="empty">صار خطأ بالبحث — تأكد من الاتصال بالإنترنت وحاول مرة ثانية</div>`;
+      if (!silent) results.innerHTML = `<div class="empty">صار خطأ بالبحث — تأكد من الاتصال بالإنترنت وحاول مرة ثانية</div>`;
       return;
     }
   } else {
@@ -703,7 +707,7 @@ async function searchMyOrders() {
   }
 
   if (!groups.length) {
-    results.innerHTML = `<div class="empty">ما لكينا أي طلب بهذا الرقم بهذا المتجر</div>`;
+    if (!silent) results.innerHTML = `<div class="empty">ما لكينا أي طلب بهذا الرقم بهذا المتجر</div>`;
     return;
   }
 
