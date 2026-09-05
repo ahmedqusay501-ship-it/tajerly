@@ -71,7 +71,7 @@ function renderZonesList() {
   if (zones.length === 0) { list.innerHTML = '<div class="empty">ما فيه مناطق محددة بعد</div>'; return; }
   list.innerHTML = zones.map(z => `
     <div class="list-item">
-      <span>${z.name} — سريع: ${zoneOffersSpeed(z,'fast') ? z.fastPrice.toLocaleString() + ' د' : 'غير متوفر'} / بطيء: ${zoneOffersSpeed(z,'slow') ? z.slowPrice.toLocaleString() + ' د' : 'غير متوفر'}</span>
+      <span>${z.name} — سريع: ${zoneOffersSpeed(z,'fast') ? z.fastPrice.toLocaleString() + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${zoneOffersSpeed(z,'slow') ? z.slowPrice.toLocaleString() + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
       <span>
         <button class="btn secondary small" onclick="editShippingZone('${z.id}')">تعديل</button>
         <button class="btn danger small" onclick="deleteShippingZone('${z.id}')">حذف</button>
@@ -135,11 +135,15 @@ function addShippingZone() {
   const nameInput = document.getElementById('zone-name');
   const fastInput = document.getElementById('zone-fast');
   const slowInput = document.getElementById('zone-slow');
+  const fastDaysInput = document.getElementById('zone-fast-days');
+  const slowDaysInput = document.getElementById('zone-slow-days');
   const fastEnabledInput = document.getElementById('zone-fast-enabled');
   const slowEnabledInput = document.getElementById('zone-slow-enabled');
   const name = nameInput.value.trim();
   const fastPrice = parseFloat(fastInput.value) || 0;
   const slowPrice = parseFloat(slowInput.value) || 0;
+  const fastDays = fastDaysInput.value.trim();
+  const slowDays = slowDaysInput.value.trim();
   const fastEnabled = fastEnabledInput.checked;
   const slowEnabled = slowEnabledInput.checked;
   if (!name) { showToast('اكتب اسم المحافظة أو المنطقة'); return; }
@@ -148,15 +152,17 @@ function addShippingZone() {
   if (existing) {
     existing.fastPrice = fastPrice;
     existing.slowPrice = slowPrice;
+    existing.fastDays = fastDays;
+    existing.slowDays = slowDays;
     existing.fastEnabled = fastEnabled;
     existing.slowEnabled = slowEnabled;
     showToast('تم تحديث المنطقة');
   } else {
-    data.settings.shippingZones.push({ id: 'z' + genId(), name, fastPrice, slowPrice, fastEnabled, slowEnabled });
+    data.settings.shippingZones.push({ id: 'z' + genId(), name, fastPrice, slowPrice, fastDays, slowDays, fastEnabled, slowEnabled });
     showToast('تمت إضافة المنطقة');
   }
   saveData();
-  nameInput.value = ''; fastInput.value = ''; slowInput.value = '';
+  nameInput.value = ''; fastInput.value = ''; slowInput.value = ''; fastDaysInput.value = ''; slowDaysInput.value = '';
   fastEnabledInput.checked = true; slowEnabledInput.checked = true;
   renderZonesList();
 }
@@ -166,6 +172,8 @@ function editShippingZone(id) {
   document.getElementById('zone-name').value = z.name;
   document.getElementById('zone-fast').value = z.fastPrice;
   document.getElementById('zone-slow').value = z.slowPrice;
+  document.getElementById('zone-fast-days').value = z.fastDays || '';
+  document.getElementById('zone-slow-days').value = z.slowDays || '';
   document.getElementById('zone-fast-enabled').checked = z.fastEnabled !== false;
   document.getElementById('zone-slow-enabled').checked = z.slowEnabled !== false;
 }
