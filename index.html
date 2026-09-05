@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تاجرلي — منصة التجارة الإلكترونية</title>
+<meta name="description" content="تاجرلي — منصة تدير بيها متاجرك الإلكترونية، طلبات الزبائن، الشحن، والحسابات المالية بمكان واحد.">
+<meta name="theme-color" content="#0F172A">
+<meta property="og:title" content="تاجرلي — منصة التجارة الإلكترونية">
+<meta property="og:description" content="افتح متجرك الإلكتروني وتابع طلباتك وحساباتك بسهولة مع تاجرلي.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230F172A'/%3E%3Ctext x='50' y='68' font-size='54' font-family='Arial, sans-serif' font-weight='800' fill='%2310B981' text-anchor='middle'%3Eت%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ BOOT LOADING SCREEN ============ -->
+<div id="boot-loading">
+  <div class="boot-brand"><svg class="brand-mark" width="22" height="22" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyA" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyA)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenA)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenA)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>تاجرلي</div>
+  <!-- Merchant/admin/employee boot: the platform's own mark, pulsing -->
+  <div class="boot-icon-3d boot-role-merchant-only boot-logo-pulse" id="boot-logo-platform">
+    <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyG" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyG)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenG)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenG)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>
+  </div>
+
+  <!-- Customer boot (opened a merchant's store link): that merchant's own uploaded logo,
+       pulsing, next to a small Tajerly mark. Starts on a generic placeholder icon; is swapped
+       for the real logo the moment it's known — instantly from the local cache below on a
+       repeat visit to this same store link, or via updateBootMerchantLogo() once the merchant
+       record loads on a first visit (see openPublicStore). -->
+  <div class="boot-icon-3d boot-role-customer-only boot-customer-logos">
+    <div class="boot-logo-pulse" id="boot-logo-merchant">
+      <img id="boot-logo-merchant-img" alt="" style="display:none;">
+      <svg id="boot-logo-merchant-placeholder" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg"><path d="M4 9l1-4h14l1 4M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M4 9h16M9 13a3 3 0 0 0 6 0" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <span class="boot-logo-sep">+</span>
+    <div class="boot-logo-secondary">
+      <svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyH" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenH" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyH)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenH)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenH)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>
+    </div>
+  </div>
+
+  <div class="boot-note" data-i18n="boot_note">جاري تجهيز الصفحة...</div>
+</div>
+<script src="js/00-boot-early.js"></script>
+
+<!-- ============ HOME / LANDING SCREEN ============ -->
+<div class="auth-wrap home-wrap" id="home-screen" style="display:none;">
+  <div class="home-layout">
+  <div class="home-hero" aria-hidden="true">
+    <svg viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="heroGreen" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#059669"/>
+        </linearGradient>
+        <linearGradient id="heroCard" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#EEF2F7"/>
+        </linearGradient>
+      </defs>
+      <circle cx="210" cy="210" r="190" fill="#FFFFFF" opacity=".06"/>
+      <circle cx="210" cy="210" r="150" fill="#FFFFFF" opacity=".05"/>
+      <!-- floating shop card -->
+      <g transform="translate(70,150)">
+        <rect x="0" y="0" width="180" height="130" rx="14" fill="url(#heroCard)"/>
+        <rect x="16" y="18" width="80" height="10" rx="5" fill="#0F172A" opacity=".85"/>
+        <rect x="16" y="36" width="120" height="7" rx="3.5" fill="#94A3B8"/>
+        <rect x="16" y="50" width="90" height="7" rx="3.5" fill="#CBD5E1"/>
+        <rect x="16" y="72" width="60" height="34" rx="8" fill="url(#heroGreen)"/>
+        <rect x="86" y="72" width="60" height="34" rx="8" fill="#F1F5F9"/>
+      </g>
+      <!-- shopping bag -->
+      <g transform="translate(230,70)">
+        <path d="M10 34l6-24h60l6 24" stroke="#0F172A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <rect x="0" y="34" width="92" height="86" rx="10" fill="url(#heroGreen)"/>
+        <path d="M26 34a20 20 0 0 0 40 0" stroke="#0F172A" stroke-width="6" fill="none" stroke-linecap="round"/>
+        <circle cx="46" cy="77" r="7" fill="#0F172A"/>
+      </g>
+      <!-- growth chart badge -->
+      <g transform="translate(255,200)">
+        <circle cx="45" cy="45" r="45" fill="#0F172A"/>
+        <path d="M18 58l16-18 12 10 20-26" stroke="#34D399" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M56 24h10v10" stroke="#34D399" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <!-- boxes -->
+      <g transform="translate(90,300)">
+        <rect x="0" y="0" width="56" height="50" rx="6" fill="#1E293B"/>
+        <path d="M0 14h56M28 14v36" stroke="#475569" stroke-width="3"/>
+      </g>
+      <g transform="translate(150,318)">
+        <rect x="0" y="0" width="40" height="34" rx="5" fill="url(#heroGreen)"/>
+        <path d="M0 10h40M20 10v24" stroke="#0F172A" stroke-width="2.4" opacity=".5"/>
+      </g>
+      <!-- sparkles -->
+      <g fill="#34D399">
+        <path d="M330 40l3 8 8 3-8 3-3 8-3-8-8-3 8-3z"/>
+        <path d="M55 90l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>
+      </g>
+    </svg>
+  </div>
+  <div class="home-card">
+    <div class="lang-switcher-row">
+      <select id="home-lang-switcher-select" onchange="setLang(this.value)" data-i18n-aria-label="lang_switcher_label">
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+        <option value="ku">کوردی</option>
+      </select>
+    </div>
+
+    <div class="home-logo">
+      <svg width="76" height="76" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="homeNavyGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#0F172A"/>
+            <stop offset="1" stop-color="#1E293B"/>
+          </linearGradient>
+          <linearGradient id="homeGreenGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#34D399"/>
+            <stop offset="1" stop-color="#10B981"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#homeNavyGrad)"/>
+        <g transform="translate(256,178)">
+          <rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#homeGreenGrad)"/>
+          <path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#homeGreenGrad)"/>
+          <circle cx="50" cy="160" r="9" fill="#0F172A"/>
+        </g>
+      </svg>
+      <div class="home-brand-name">تاجرلي</div>
+      <div class="home-brand-tag" data-i18n="home_brand_tag">متجرك الإلكتروني مجاناً — بدون اشتراك شهري</div>
+    </div>
+
+    <div class="home-about">
+      <b>نبذة عن المنصة:</b><br>
+      تاجرلي منصة تجارة إلكترونية عراقية تخلّي أي صاحب محل أو مشروع صغير يفتح متجره الإلكتروني الخاص مجاناً وخلال دقائق — بدون اشتراك شهري وبدون ما يحتاج برمجة. كل شي بمكان وحد: منتجاتك، طلباتك، حساباتك، وموظفينك.
+      <a onclick="openAboutModal()">اقرأ المزيد عن المنصة ←</a>
+    </div>
+
+    <div class="home-actions">
+      <button class="btn home-action-btn" onclick="showLoginScreen()">
+        <span class="home-action-icon"></span>
+        <span>
+          <span class="home-action-title" data-i18n="home_login_title">تسجيل الدخول</span>
+          <span class="home-action-sub" data-i18n="home_login_sub">عندك حساب؟ ادخل من هنا</span>
+        </span>
+      </button>
+      <button class="btn secondary home-action-btn" onclick="showJoinScreen()">
+        <span class="home-action-icon"></span>
+        <span>
+          <span class="home-action-title" data-i18n="home_join_title">تقديم طلب انضمام</span>
+          <span class="home-action-sub" data-i18n="home_join_sub">تاجر جديد؟ افتح متجرك مجاناً</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="auth-switch" style="margin-top:18px;">
+      <a onclick="openLegalModal()" data-i18n="join_legal_link">الشروط والأحكام وسياسة الخصوصية</a>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div class="auth-wrap" id="login-screen">
+  <div class="home-layout">
+  <div class="home-hero" aria-hidden="true">
+    <svg viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="loginGreen" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#059669"/>
+        </linearGradient>
+      </defs>
+      <circle cx="210" cy="210" r="190" fill="#FFFFFF" opacity=".06"/>
+      <circle cx="210" cy="210" r="150" fill="#FFFFFF" opacity=".05"/>
+      <!-- shield / secure access -->
+      <g transform="translate(140,90)">
+        <path d="M70 0l70 26v58c0 62-30 100-70 116C30 184 0 146 0 84V26z" fill="url(#loginGreen)"/>
+        <path d="M42 92l20 20 36-40" stroke="#0F172A" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <!-- key -->
+      <g transform="translate(70,260) rotate(-20)">
+        <circle cx="22" cy="22" r="22" fill="#0F172A"/>
+        <circle cx="22" cy="22" r="9" fill="none" stroke="#34D399" stroke-width="5"/>
+        <rect x="42" y="17" width="46" height="10" rx="5" fill="#0F172A"/>
+        <rect x="72" y="27" width="10" height="14" rx="3" fill="#0F172A"/>
+      </g>
+      <!-- floating dots -->
+      <g fill="#34D399">
+        <circle cx="330" cy="80" r="4"/>
+        <circle cx="345" cy="300" r="5"/>
+        <circle cx="60" cy="110" r="3.5"/>
+      </g>
+      <g fill="#34D399">
+        <path d="M300 320l3 8 8 3-8 3-3 8-3-8-8-3 8-3z"/>
+      </g>
+    </svg>
+  </div>
+  <div class="auth-card">
+    <div class="lang-switcher-row">
+      <select id="lang-switcher-select" onchange="setLang(this.value)" data-i18n-aria-label="lang_switcher_label">
+        <option value="ar">العربية</option>
+        <option value="en">English</option>
+        <option value="ku">کوردی</option>
+      </select>
+    </div>
+    <div class="auth-brand">
+      <div class="auth-brand-name"><svg class="brand-mark" width="20" height="20" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyB" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyB)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenB)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenB)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>تاجرلي</div>
+      <div class="auth-brand-tag" data-i18n="brand_tagline_login">منصة التجارة الإلكترونية المتكاملة</div>
+    </div>
+    <div class="auth-title" data-i18n="login_title">تسجيل الدخول</div>
+    <label data-i18n="login_username_label">اسم المستخدم</label>
+    <input id="login-username" data-i18n-placeholder="login_username_placeholder" placeholder="اسم المستخدم" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+    <label data-i18n="login_password_label">كلمة المرور</label>
+    <input type="password" id="login-password" data-i18n-placeholder="login_password_placeholder" placeholder="كلمة المرور" onkeydown="if(event.key==='Enter')platformLogin()">
+    <button class="btn" style="width:100%;" onclick="withBtnLoading(this, t('login_btn_loading'), () => platformLogin())" data-i18n="login_btn">دخول</button>
+    <div class="auth-error" id="login-error"></div>
+    <div class="auth-switch"><span data-i18n="login_no_account">تاجر جديد ما عندك حساب؟</span> <a onclick="showJoinScreen()" data-i18n="login_join_link">قدّم طلب انضمام</a></div>
+    <div class="auth-switch" style="margin-top:4px;"><a onclick="openAboutModal()" data-i18n="login_about_link">نبذة عن المنصة</a> · <a onclick="openLegalModal()" data-i18n="login_legal_link">الشروط والأحكام وسياسة الخصوصية</a></div>
+    <div class="auth-switch" style="margin-top:4px;"><a onclick="showHomeScreen()" data-i18n="back_to_home_link">→ رجوع للصفحة الرئيسية</a></div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ PUBLIC JOIN SCREEN (merchant application, no login needed) ============ -->
+<div class="auth-wrap" id="join-screen" style="display:none;">
+  <div class="home-layout">
+  <div class="home-hero" aria-hidden="true">
+    <svg viewBox="0 0 420 420" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="joinGreen" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#059669"/>
+        </linearGradient>
+      </defs>
+      <circle cx="210" cy="210" r="190" fill="#FFFFFF" opacity=".06"/>
+      <circle cx="210" cy="210" r="150" fill="#FFFFFF" opacity=".05"/>
+      <!-- clipboard / application form -->
+      <g transform="translate(120,70)">
+        <rect x="0" y="10" width="150" height="200" rx="14" fill="#FFFFFF"/>
+        <rect x="45" y="0" width="60" height="24" rx="8" fill="url(#joinGreen)"/>
+        <rect x="20" y="50" width="110" height="9" rx="4.5" fill="#CBD5E1"/>
+        <rect x="20" y="72" width="90" height="9" rx="4.5" fill="#E2E8F0"/>
+        <rect x="20" y="100" width="70" height="9" rx="4.5" fill="#E2E8F0"/>
+        <circle cx="30" cy="130" r="8" fill="url(#joinGreen)"/>
+        <path d="M26 130l3 3 6-7" stroke="#0F172A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="46" y="126" width="70" height="8" rx="4" fill="#E2E8F0"/>
+        <circle cx="30" cy="158" r="8" fill="url(#joinGreen)"/>
+        <path d="M26 158l3 3 6-7" stroke="#0F172A" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="46" y="154" width="55" height="8" rx="4" fill="#E2E8F0"/>
+        <rect x="20" y="182" width="110" height="18" rx="9" fill="#0F172A"/>
+      </g>
+      <!-- new shop badge -->
+      <g transform="translate(255,255)">
+        <circle cx="45" cy="45" r="45" fill="#0F172A"/>
+        <path d="M45 26v38M26 45h38" stroke="#34D399" stroke-width="7" stroke-linecap="round"/>
+      </g>
+      <g fill="#34D399">
+        <path d="M320 70l3 8 8 3-8 3-3 8-3-8-8-3 8-3z"/>
+        <circle cx="70" cy="300" r="4"/>
+      </g>
+    </svg>
+  </div>
+  <div class="auth-card" style="max-width:420px;">
+    <div class="auth-brand">
+      <div class="auth-brand-name"><svg class="brand-mark" width="20" height="20" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyC" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyC)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenC)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenC)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>تاجرلي</div>
+      <div class="auth-brand-tag" data-i18n="join_title">طلب انضمام تاجر جديد</div>
+    </div>
+    <div class="auth-title" data-i18n="join_form_title">عبّي بياناتك</div>
+    <div class="auth-sub" data-i18n="join_form_sub">راح تراجع الإدارة طلبك وترسلك بيانات دخول حسابك بعد الموافقة</div>
+    <div class="auth-switch" style="margin-top:-4px; margin-bottom:8px;"><a onclick="openAboutModal()" data-i18n="join_about_link">نبذة عن المنصة قبل لا تسجل</a></div>
+    <label data-i18n="join_name_label">اسمك</label><input id="req-name" data-i18n-placeholder="join_name_placeholder" placeholder="مثلاً: احمد محمد">
+    <label data-i18n="join_shop_label">اسم المحل</label><input id="req-shop" data-i18n-placeholder="join_shop_placeholder" placeholder="مثلاً: محل احمد للملابس">
+    <label data-i18n="join_phone_label">رقم الهاتف</label><input id="req-phone" placeholder="07xx xxx xxxx">
+    <label data-i18n="join_governorate_label">المحافظة</label>
+    <select id="req-governorate" onchange="populateAreaSelect('req-area', this.value)">
+      <option>بغداد</option><option>البصرة</option><option>نينوى</option><option>أربيل</option>
+      <option>النجف</option><option>كربلاء</option><option>الأنبار</option><option>ديالى</option>
+      <option>كركوك</option><option>واسط</option><option>ذي قار</option><option>بابل</option>
+      <option>ميسان</option><option>المثنى</option><option>القادسية</option><option>صلاح الدين</option>
+      <option>دهوك</option><option>السليمانية</option>
+    </select>
+    <label data-i18n="join_area_label">المنطقة/الحي</label>
+    <select id="req-area"></select>
+    <label data-i18n="join_category_label">محله بشنو مختص</label>
+    <select id="req-category">
+      <option>ملابس وأزياء</option><option>إكسسوارات</option><option>إلكترونيات وموبايلات</option>
+      <option>مواد منزلية</option><option>مستحضرات تجميل</option><option>ألعاب أطفال</option>
+      <option>أحذية</option><option>أخرى</option>
+    </select>
+    <label data-i18n="join_description_label">وصف مختصر عن محلك وشنو نوع البضاعة اللي تبيعها</label>
+    <textarea id="req-description" rows="3" data-i18n-placeholder="join_description_placeholder" placeholder="مثلاً: نبيع ملابس رجالية تركية الصنع، أسعار متوسطة، توصيل لكل العراق"></textarea>
+    <label data-i18n="join_daily_orders_label">كم طلب متوقع يجيك باليوم تقريباً؟</label>
+    <input type="number" min="0" step="1" id="req-daily-orders" data-i18n-placeholder="join_daily_orders_placeholder" placeholder="مثلاً: 5">
+    <div class="join-honesty-note" data-i18n="join_daily_orders_note">يرجى كتابة عدد الطلبات الحقيقية بكل شفافية، هذا الرقم يساعدنا نجهزلك الخدمة المناسبة</div>
+    <button class="btn" style="width:100%;" onclick="withBtnLoading(this, t('join_submit_loading'), () => submitRequest())" data-i18n="join_submit_btn">إرسال الطلب</button>
+    <div class="auth-switch"><span data-i18n="join_have_account">عندك حساب مسبقاً؟</span> <a onclick="showLoginScreen()" data-i18n="join_back_to_login">رجوع لتسجيل الدخول</a></div>
+    <div class="auth-switch" style="margin-top:4px;"><a onclick="openLegalModal()" data-i18n="join_legal_link">الشروط والأحكام وسياسة الخصوصية</a></div>
+    <div class="auth-switch" style="margin-top:4px;"><a onclick="showHomeScreen()" data-i18n="back_to_home_link">→ رجوع للصفحة الرئيسية</a></div>
+  </div>
+  </div>
+</div>
+
+<!-- ============ PUBLIC STOREFRONT (customer-facing store link, no login) ============ -->
+<div id="public-store-screen" style="display:none;">
+  <div class="public-topbar">
+    <span class="public-topbar-left">
+      <svg class="brand-mark" width="20" height="20" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyD" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyD)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenD)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenD)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>
+      <span style="font-weight:700; font-size:13.5px;" id="public-store-brand">متجر</span>
+    </span>
+    <select id="public-lang-switcher-select" class="public-lang-switcher" onchange="setLang(this.value)" data-i18n-aria-label="lang_switcher_label">
+      <option value="ar">AR</option>
+      <option value="en">EN</option>
+      <option value="ku">KU</option>
+    </select>
+    <button class="track-order-btn" onclick="openOrderTrackModal(publicStoreMerchantId)" data-i18n="track_order_btn">تتبع طلبي</button>
+  </div>
+  <div class="view active public-store-view" style="padding:16px; margin:0 auto;">
+    <div id="public-storefront-content"></div>
+    <div class="public-footer">
+      <svg class="brand-mark" width="18" height="18" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:6px;"><defs><linearGradient id="bmNavyF" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyF)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenF)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenF)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg><br>
+      <span data-i18n="public_footer_made_by">تم إنشاء هذا المتجر مجاناً بواسطة موقع تاجرلي —</span> <a href="?join=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_get_store">للحصول على متجر اضغط هنا</a>
+      <br><a onclick="openLegalModal()" style="text-decoration:underline; cursor:pointer;" data-i18n="public_footer_legal">الشروط وسياسة الخصوصية</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MAIN APP (after login) ============ -->
+<div id="app-shell" style="display:none;">
+<div class="topbar">
+  <div class="topbar-left">
+    <button class="sidebar-toggle" id="sidebar-toggle-btn" onclick="toggleSidebar()" aria-label="القائمة" data-i18n-aria-label="sidebar_toggle_aria">☰</button>
+    <div class="topbar-brand"><svg class="brand-mark" width="20" height="20" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyE" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenE" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyE)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenE)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenE)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>تاجرلي</div>
+  </div>
+  <div class="topbar-user">
+    <select id="app-lang-switcher-select" class="app-lang-switcher" onchange="setLang(this.value)" data-i18n-aria-label="lang_switcher_label">
+      <option value="ar">AR</option>
+      <option value="en">EN</option>
+      <option value="ku">KU</option>
+    </select>
+    <span class="role-chip" id="topbar-role"></span>
+    <span><span data-i18n="topbar_welcome">مرحباً،</span> <b id="topbar-name"></b></span>
+    <button class="logout-btn" id="admin-alert-bell-btn" onclick="toggleAdminAlertSound()" title="تفعيل/إيقاف الإنذار الصوتي لتنبيهات الإدارة">
+      <span id="admin-alert-bell-icon">🔕</span>
+      <span id="admin-alert-bell-count"></span>
+    </button>
+    <button class="logout-btn" onclick="platformLogout()" data-i18n="topbar_logout">تسجيل خروج</button>
+  </div>
+</div>
+<div class="app-body">
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+<nav class="sidebar" id="sidebar">
+  <div id="nav"></div>
+</nav>
+<main class="main-content" id="main-content">
+
+<!-- ============ ADMIN DASHBOARD ============ -->
+<div class="view" id="view-dashboard">
+  <div class="page-head">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="page-head-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="8" height="10" rx="2" fill="currentColor" opacity=".9"/><rect x="13" y="3" width="8" height="6" rx="2" fill="currentColor" opacity=".55"/><rect x="13" y="11" width="8" height="10" rx="2" fill="currentColor" opacity=".9"/><rect x="3" y="15" width="8" height="6" rx="2" fill="currentColor" opacity=".55"/></svg>
+      </div>
+      <div>
+        <h2>لوحة الأدمن</h2>
+        <div class="subtitle" style="margin-bottom:0;">نظرة عامة على المنصة</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toggle-group" id="dash-subnav">
+    <div class="toggle selected" data-dashtab="overview" onclick="showDashboardTab('overview')">نظرة عامة</div>
+    <div class="toggle" data-dashtab="charts" onclick="showDashboardTab('charts')">الرسوم البيانية</div>
+    <div class="toggle" data-dashtab="merchants" onclick="showDashboardTab('merchants')">المحلات</div>
+    <div class="toggle" data-dashtab="settlements" onclick="showDashboardTab('settlements')">التسويات اليومية</div>
+  </div>
+
+  <div id="dashboard-content">
+    <div class="dash-tab active" data-dashtab-content="overview">
+      <div id="id-collision-warning"></div>
+
+      <div class="card" id="admin-alert-summary-parent">
+        <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <span>تنبيهات تحتاج انتباهك الآن</span>
+          <button class="btn small secondary" onclick="toggleAdminAlertSound()" id="admin-alert-toggle-inline-btn">تفعيل الإنذار الصوتي</button>
+        </div>
+        <div class="subtitle" style="margin-bottom:8px;">تتحدث لحظياً — أي طلب انضمام، حذف قطعة، إلغاء، توصيل جاهز، أو رسالة دعم جديدة تظهر هنا فوراً ويرن لك إنذار صوتي إذا كان مفعّل</div>
+        <div id="admin-alert-summary-card"><div class="empty">جاري التحقق...</div></div>
+      </div>
+
+      <div class="grid3">
+        <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-orders">0</div><div class="stat-label">عمليات اليوم</div></div>
+        <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-fees">0</div><div class="stat-label">رسومك (د)</div></div>
+        <div class="stat"><div class="stat-icon"></div><div class="stat-num" id="d-active">0</div><div class="stat-label">تاجر نشط</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">انضمام التجار الجدد</div>
+        <div class="subtitle" style="margin-bottom:8px;">محسوبة لحظياً من تاريخ تقديم كل طلب انضمام — تتحدث تلقائياً من غير ما تحتاج تعمل شي</div>
+        <div class="grid3">
+          <div class="stat"><div class="stat-num" id="join-stat-daily">0</div><div class="stat-label">اليوم</div></div>
+          <div class="stat"><div class="stat-num" id="join-stat-weekly">0</div><div class="stat-label">آخر 7 أيام</div></div>
+          <div class="stat"><div class="stat-num" id="join-stat-monthly">0</div><div class="stat-label">آخر 30 يوم</div></div>
+        </div>
+        <div class="grid3" style="margin-top:6px;">
+          <div class="stat"><div class="stat-num" id="join-stat-avg">0</div><div class="stat-label">متوسط الانضمام/يوم (آخر 30 يوم)</div></div>
+        </div>
+        <div class="chart-wrap" style="margin-top:10px;"><canvas id="chart-merchant-joins"></canvas></div>
+      </div>
+
+      <div class="card" style="position:relative;">
+        <div class="card-title">بحث شامل</div>
+        <div class="subtitle" style="margin-bottom:8px;">دور باسم محل، اسم صاحبه، رقم هاتف (محل أو زبون)، يوزر، أو رقم طلب — بضغطة وحدة</div>
+        <input id="admin-search-input" placeholder="اكتب للبحث..." oninput="adminGlobalSearch(this.value)">
+        <div id="admin-search-results" class="search-results-box" style="display:none;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">تقرير جاهز للفترة</div>
+        <div class="subtitle" style="margin-bottom:8px;">يجهز ويحمّل تقرير Excel كامل (كل التجار، كل الطلبات، والملخص العام) لآخر 7 أو 30 يوم مباشرة، بدون ما تروح لصفحة الحسابات وتحدد التواريخ يدوياً</div>
+        <button class="btn small" onclick="generatePeriodicReport('weekly')">تقرير آخر 7 أيام</button>
+        <button class="btn small secondary" onclick="generatePeriodicReport('monthly')">تقرير آخر 30 يوم</button>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-dashtab-content="charts">
+      <div class="card">
+        <div class="card-title">فلترة الرسوم البيانية</div>
+        <div class="subtitle" style="margin-bottom:8px;">اختر محل معين لتشوف رسومه وحده، أو اتركها "كل المنصة" للرسوم العامة</div>
+        <select id="chart-merchant-filter" onchange="changeChartMerchantFilter()"><option value="all">كل المنصة</option></select>
+      </div>
+      <div class="card">
+        <div class="card-title" id="chart-orders-title">الطلبات آخر 7 أيام</div>
+        <div class="chart-wrap"><canvas id="chart-orders-trend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title" id="chart-fees-title">رسوم المنصة المحصّلة آخر 7 أيام (دينار)</div>
+        <div class="chart-wrap"><canvas id="chart-fees-trend"></canvas></div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-dashtab-content="merchants">
+      <div class="card">
+        <div class="card-title">تصدير حسابات كل المحلات</div>
+        <div class="subtitle" style="margin-bottom:8px;">تصدير Excel يعطيك نفس تقسيمات الحسابات المستخدمة بالمنصة (ملخص عام + ملخص كل تاجر + ورقة مفصّلة لكل تاجر). تصدير PDF يعطيك دليل تجار: اسم المحل، اسم صاحبه، رقم هاتفه، وصف متجره، وأرقامه المالية (رصيد المبيعات، مستحقات التاجر، مستحقات المنصة).</div>
+        <button class="btn small" onclick="exportAccountingExcel()">تصدير الكل — Excel</button>
+        <button class="btn small secondary" onclick="exportMerchantsDirectoryPDF()">تصدير الكل — PDF (دليل التجار)</button>
+      </div>
+      <div class="card">
+        <div class="card-title">الأفضل مبيعاً</div>
+        <div class="subtitle" style="margin-bottom:8px;">ترتيب المحلات حسب إجمالي المبيعات المقبولة (غير الملغاة) — أعلى 10 محلات</div>
+        <div id="merchant-ranking-list"><div class="empty">ما فيه بيانات كافية بعد</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">قائمة المحلات</div>
+        <div id="d-merchant-list"><div class="empty">ما فيه محلات مسجلة بعد</div></div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-dashtab-content="settlements">
+      <div class="card">
+        <div class="card-title">التسويات المالية اليومية</div>
+        <div class="subtitle" style="margin-bottom:8px;">كل يوم صفحة لحاله — تصفح الأيام بالأسهم من غير ما تحدد تاريخ، وبآخر كل صفحة تلاقي مجموع مستحقات التجار ومستحقات المنصة من هذا اليوم بالضبط. تقدر تسكّر (تحذف) صفحة يوم معين لتاجر بعد ما توصل مستحقاته، وتحدد إذا الإغلاق من عند الطرفين أو من عند طرف وحد بس.</div>
+        <select id="ledger-admin-merchant" onchange="changeAdminLedgerMerchant()" style="margin-bottom:10px;"><option value="all">كل التجار</option></select>
+        <div id="ledger-admin-nav" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;"></div>
+        <div id="d-settlements"><div class="empty">ما فيه عمليات بيع مسجلة</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">إدارة صفحات السجل (حذف)</div>
+        <div class="subtitle" style="margin-bottom:8px;">كل صفحة رقمها هو رقم يومها بالشهر (مثلاً صفحة يوم 1 بالشهر = صفحة رقم 1). اختر تاجر معين من القائمة فوق، وبعدها تكدر تحذف صفحة وحدة، عدة صفحات محددة، أو كل صفحاته دفعة وحدة — هذا الإجراء نهائي ولازم يصير لكل تاجر لحاله.</div>
+        <div id="ledger-pages-manager"><div class="empty">اختر تاجر معين من القائمة فوق</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MERCHANT REQUESTS (admin approval queue) ============ -->
+<div class="view" id="view-requests">
+  <h2>طلبات انضمام التجار</h2>
+  <div class="subtitle">راجع طلبات التجار الجدد ووافق عليهم أو ارفضهم</div>
+
+  <div class="card">
+    <div class="card-title">رابط دعوة التجار</div>
+    <div class="subtitle" style="margin-bottom:8px;">انسخ هذا الرابط وارسله لأي تاجر تريد يفتح محل — راح يوديه مباشرة لصفحة تعبئة طلب الانضمام، وطلبه راح يظهر بالأسفل بانتظار موافقتك</div>
+    <div class="link-chip" onclick="copyJoinLink()" id="join-link-chip"></div>
+  </div>
+
+  <div class="card" id="pending-requests-card">
+    <div class="card-title">طلبات بانتظار الموافقة</div>
+    <div id="pending-list"><div class="empty">ما فيه طلبات حالياً</div></div>
+  </div>
+
+  <div class="card" id="removal-requests-card">
+    <div class="card-title">طلبات حذف قطع من الفواتير</div>
+    <div class="subtitle" style="margin-bottom:8px;">لما تاجر يبلّغ إن قطعة داخل فاتورة زبون غير متوفرة، تظهر هنا وما تنحذف إلا بموافقتك</div>
+    <div id="removal-requests-list"><div class="empty">ما فيه طلبات حذف حالياً</div></div>
+  </div>
+
+  <div class="card" id="cancel-requests-admin-card">
+    <div class="card-title">طلبات إلغاء الطلبات من الزبائن</div>
+    <div class="subtitle" style="margin-bottom:8px;">تظهر هنا فور ما يطلب زبون الإلغاء، وتوضح إذا التاجر أكد الإلغاء وهو الآن بانتظار موافقتك النهائية</div>
+    <div id="cancel-requests-admin-list"><div class="empty">ما فيه طلبات إلغاء حالياً</div></div>
+  </div>
+
+  <div class="card" id="commission-requests-card">
+    <div class="card-title">طلبات إعفاء العمولة</div>
+    <div class="subtitle" style="margin-bottom:8px;">تاجر يطلب إعفاء منتج معين من عمولة المنصة — لو وافقت ما تنستقطع أي عمولة أو استقطاع قطعة من هذا المنتج أبداً، ولو رفضت يستمر الاستقطاع متل قبل</div>
+    <div id="commission-requests-list"><div class="empty">ما فيه طلبات إعفاء عمولة حالياً</div></div>
+  </div>
+</div>
+
+<!-- ============ ANNOUNCEMENTS (admin -> merchants broadcast messages) ============ -->
+<div class="view" id="view-announcements">
+  <h2>رسائل للتجار</h2>
+  <div class="subtitle">ارسل رسالة جماعية لكل التجار، أو لتجار محددين — تظهر عندهم بتبويب "رسائل الإدارة" بلوحتهم</div>
+
+  <div class="card">
+    <div class="card-title">رسالة جديدة</div>
+    <label>نص الرسالة</label>
+    <textarea id="ann-text" rows="4" placeholder="مثلاً: راح يصير توقف مؤقت بالتوصيل يوم الجمعة القادم بسبب..."></textarea>
+    <label style="margin-top:10px;">المستلمين</label>
+    <select id="ann-target" onchange="renderAnnouncementTargetPicker()">
+      <option value="all">كل التجار</option>
+      <option value="specific">تجار محددين</option>
+    </select>
+    <div id="ann-target-picker" style="display:none; margin-top:8px; max-height:180px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; padding:8px;"></div>
+    <button class="btn" style="margin-top:12px;" onclick="sendAnnouncement()">إرسال</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">الرسائل المرسلة سابقاً</div>
+    <div id="ann-sent-list"><div class="empty">ما أرسلت أي رسالة بعد</div></div>
+  </div>
+</div>
+
+<!-- ============ MERCHANT SUPPORT (admin side — one thread per merchant) ============ -->
+<div class="view" id="view-support">
+  <h2>دعم التجار</h2>
+  <div class="subtitle">رسائل ومشاكل وصلت من التجار — رد عليها وأنهِ الجلسة عند الانتهاء</div>
+  <div class="card">
+    <div class="card-title">المحادثات</div>
+    <div id="admin-support-list"><div class="empty">ما فيه محادثات دعم حالياً</div></div>
+  </div>
+</div>
+
+<!-- ============ EMPLOYEES (admin sets up any employee's login — merchant or admin team) ============ -->
+<div class="view" id="view-employees">
+  <h2>الموظفين</h2>
+  <div class="subtitle">وافق على طلبات موظفي التجار وحدد لهم يوزر نيم وباسورد، أو ضيف موظفين لفريق الإدارة عندك مباشرة</div>
+
+  <div class="card" id="pending-employee-card">
+    <div class="card-title">طلبات موظفين جدد (من التجار)</div>
+    <div class="subtitle" style="margin-bottom:8px;">التاجر يحدد بيانات موظفه وصلاحياته، وانت تحدد يوزر نيم وباسورد الدخول تاعه</div>
+    <div id="pending-employee-list"><div class="empty">ما فيه طلبات موظفين حالياً</div></div>
+  </div>
+
+  <div class="card" id="admin-employee-card">
+    <div class="card-title">موظفين فريق الإدارة</div>
+    <div class="subtitle" style="margin-bottom:8px;">موظفين تضيفهم انت مباشرة لمساعدتك بإدارة المنصة — تحدد صلاحياتهم ويوزر نيم وباسورد الدخول تاعهم بنفس الوقت</div>
+    <button class="btn" onclick="openAdminEmployeeModal()">إضافة موظف للإدارة</button>
+    <div id="admin-employee-list" style="margin-top:10px;"><div class="empty">ما ضفت موظفين للإدارة بعد</div></div>
+  </div>
+
+  <div class="card" id="active-merchant-employee-card">
+    <div class="card-title">موظفين التجار النشطين</div>
+    <div class="subtitle" style="margin-bottom:8px;">صلاحيات هذولا يحددها التاجر نفسه — انت تكدر تصفّر كلمة المرور أو تحذف الحساب بس</div>
+    <div id="active-merchant-employee-list"><div class="empty">ما فيه موظفين نشطين عند التجار حالياً</div></div>
+  </div>
+</div>
+
+<!-- ============ ACCOUNTING / FINANCIAL REPORTS ============ -->
+<div class="view" id="view-accounting">
+  <h2>الحسابات</h2>
+  <div class="subtitle">تقرير مالي دقيق بكل العمليات — فلتر حسب التاريخ أو التاجر أو الحالة، وصدّره ملف إكسل وقت ما تريد</div>
+
+  <div class="card">
+    <div class="card-title">الفلاتر</div>
+    <div class="row2">
+      <div><label>من تاريخ</label><input type="date" id="acc-from" onchange="renderAccounting()"></div>
+      <div><label>إلى تاريخ</label><input type="date" id="acc-to" onchange="renderAccounting()"></div>
+    </div>
+    <label>التاجر</label>
+    <select id="acc-merchant" onchange="renderAccounting()"><option value="all">كل التجار</option></select>
+    <label>حالة الطلب</label>
+    <select id="acc-status" onchange="renderAccounting()">
+      <option value="all">كل الحالات</option>
+      <option value="pending">بانتظار المتجر</option>
+      <option value="accepted">مقبول</option>
+      <option value="rejected">مرفوض</option>
+      <option value="removed">محذوفة من الفاتورة</option>
+    </select>
+    <button class="btn secondary small" style="margin-top:10px;" onclick="resetAccountingFilters()">إعادة تعيين الفلاتر</button>
+  </div>
+
+  <div class="grid3" id="acc-summary"></div>
+  <div class="grid3" id="acc-summary2"></div>
+
+  <div class="card">
+    <div class="card-title">تصدير Excel</div>
+    <div class="subtitle" style="margin-bottom:8px;">يصدّر ملف إكسل فيه ثلاث صفحات: تفاصيل كل الطلبات، ملخص لكل تاجر، والملخص العام — حسب الفلاتر المحددة فوق</div>
+    <button class="btn" onclick="withBtnLoading(this, 'جاري التصدير...', () => new Promise(r => setTimeout(() => { exportAccountingExcel(); r(); }, 30)))">تحميل تقرير Excel</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">تصفير سجل المحاسبة</div>
+    <div class="subtitle" style="margin-bottom:8px;">يمسح نهائياً كل العمليات المسجّلة لغاية التاريخ المحدد، حتى تبدأ تسجيل جديد من بعده. الأرصدة المتراكمة للتجار ما تتأثر بهذا الإجراء — استخدم "تصفير أرصدة التجار" بصفحة الإعدادات لو تريد تصفيرها هي كمان. ننصحك تصدّر تقرير Excel قبل التصفير للاحتفاظ بنسخة.</div>
+    <label>تصفير كل العمليات لغاية تاريخ</label>
+    <input type="date" id="reset-until-date">
+    <button class="btn danger small" style="margin-top:10px;" onclick="resetAccountingUntilDate()">تصفير العمليات لغاية هذا التاريخ</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">ملخص حسب التاجر</div>
+    <div id="acc-merchant-summary"><div class="empty">ما فيه بيانات</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">تفاصيل العمليات</div>
+    <div class="subtitle" style="margin-bottom:8px;">حدد أي عمليات تريد حذفها نهائياً من السجل، أو استخدم "تحديد الكل" لحذف كل العمليات المطابقة للفلاتر فوق</div>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+      <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:12px; cursor:pointer;">
+        <input type="checkbox" id="acc-select-all" style="width:auto;" onchange="toggleSelectAllAccountingOrders(this.checked)"> تحديد الكل
+      </label>
+      <button class="btn danger small" id="acc-delete-selected-btn" onclick="deleteSelectedAccountingOrders()" disabled>حذف المحدد (<span id="acc-selected-count">0</span>)</button>
+    </div>
+    <div id="acc-orders-table"><div class="empty">ما فيه عمليات مطابقة للفلاتر</div></div>
+  </div>
+</div>
+
+<!-- ============ MERCHANT DUES BY PERIOD (اليوم / آخر أسبوع / آخر شهر) ============ -->
+<div class="view" id="view-dues">
+  <h2>المستحقات حسب التاجر</h2>
+  <div class="subtitle">لكل تاجر: المبلغ المستحق له (صافي مبيعاته) والمبلغ المستحق للمنصة (الرسوم المستقطعة) — اليوم، آخر أسبوع، وآخر شهر. محسوبة من الطلبات المقبولة غير الملغاة فقط، ودايماً بالنسبة للحظة الحالية بغض النظر عن أي فلتر تاريخ ثاني بالموقع.</div>
+
+  <div class="card">
+    <label>فلترة حسب التاجر</label>
+    <select id="dues-merchant" onchange="renderMerchantPeriodDues()"><option value="all">كل التجار</option></select>
+  </div>
+
+  <div class="grid3" id="dues-totals"></div>
+
+  <div class="card">
+    <div class="card-title">التفصيل حسب التاجر</div>
+    <div id="acc-merchant-periods"><div class="empty">ما فيه بيانات</div></div>
+  </div>
+</div>
+
+<!-- ============ MERCHANT DASHBOARD ============ -->
+<div class="view" id="view-merchant">
+  <h2>لوحة التاجر</h2>
+  <div class="subtitle">إدارة متجرك، منتجاتك، وطلباتك</div>
+  <div id="merchant-panel"></div>
+</div>
+
+<!-- ============ STOREFRONT PREVIEW (admin-only testing tool) ============ -->
+<div class="view" id="view-store">
+  <h2>معاينة المتاجر</h2>
+  <div class="subtitle">هذي أداة داخلية للأدمن لمعاينة شكل أي متجر — الزبون يدخل مباشرة من رابط المتجر الخاص بالتاجر</div>
+  <div class="card">
+    <label>اختر المتجر</label>
+    <select id="store-select" onchange="renderStorefront()"></select>
+  </div>
+  <div id="storefront-content"></div>
+</div>
+
+<!-- ============ PRICING SETTINGS ============ -->
+<div class="view" id="view-settings">
+  <h2>إعدادات التسعير (الافتراضية)</h2>
+  <div class="subtitle">هذي القيم تُطبّق تلقائياً على أي تاجر جديد ينضم — وبعدها تقدر تعدلها لكل تاجر لحاله من لوحة التاجر</div>
+
+  <div class="card">
+    <div class="card-title">١. مصدر رسم المنصة</div>
+    <div class="toggle-group" id="fee-source-toggles"></div>
+    <label style="margin-top:10px;">طريقة حساب الرسم</label>
+    <div class="toggle-group" id="fee-type-toggles"></div>
+    <label id="fee-amount-label">مبلغ الرسم (دينار)</label>
+    <input type="number" id="fee-amount" onchange="saveSettings()">
+    <div id="both-fields" style="display:none;">
+      <div class="row2">
+        <div><label id="fee-customer-label">من الزبون</label><input type="number" id="fee-customer" onchange="saveSettings()"></div>
+        <div><label id="fee-merchant-label">من التاجر</label><input type="number" id="fee-merchant" onchange="saveSettings()"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">١ب. استقطاع ثابت من كل قطعة (اختياري)</div>
+    <div class="subtitle" style="margin-bottom:4px;">قيمة إضافية بجانب رسم المنصة أعلاه — تُخصم من رصيد التاجر فقط عند قبول كل طلب، ولا تُضاف على سعر القطعة ولا تظهر للزبون إطلاقاً. هذي القيمة الافتراضية لأي تاجر جديد، وتقدر تعدلها لكل تاجر لحاله من "قبول التاجر" أو "تعديل رسوم المنصة"</div>
+    <label>الاستقطاع (دينار لكل قطعة)</label>
+    <input type="number" id="item-deduction" onchange="saveSettings()">
+  </div>
+
+  <div class="card">
+    <div class="card-title">٢. أجرة التوصيل الافتراضية</div>
+    <div class="toggle-group" id="shipping-toggle-group"></div>
+    <label>مبلغ الأجرة (دينار)</label>
+    <div class="toggle-group">
+      <span class="toggle" onclick="setShippingAmount(500)">500</span>
+      <span class="toggle" onclick="setShippingAmount(750)">750</span>
+      <span class="toggle" onclick="setShippingAmount(1000)">1000</span>
+    </div>
+    <input type="number" id="shipping-amount" onchange="saveSettings()">
+  </div>
+
+  <div class="card">
+    <div class="card-title">٣. مناطق الشحن للزبون (سريع / بطيء)</div>
+    <div class="subtitle">حدد سعر التوصيل السريع والبطيء لكل محافظة، وحدد إذا أصلاً تريد توفر الشحن السريع أو البطيء بيها — مثلاً محافظة بعيدة توفرلها بطيء بس. الزبون يشوف بس الخيارات المتوفرة لمحافظته. لو ما حددت محافظة معينة، تنطبق عليها أسعار "باقي المحافظات"</div>
+    <div id="zones-list"><div class="empty">ما فيه مناطق محددة بعد</div></div>
+    <label>اسم المحافظة/المنطقة</label>
+    <input list="gov-list" id="zone-name" placeholder="مثلاً: بغداد">
+    <datalist id="gov-list"></datalist>
+    <div class="row2">
+      <div><label>سعر الشحن السريع (د)</label><input type="number" id="zone-fast" placeholder="4000"></div>
+      <div><label>سعر الشحن البطيء (د)</label><input type="number" id="zone-slow" placeholder="2000"></div>
+    </div>
+    <div class="row2" style="margin-top:6px;">
+      <div><label>مدة التوصيل السريع (اختياري)</label><input id="zone-fast-days" placeholder="مثلاً: يوم واحد"></div>
+      <div><label>مدة التوصيل البطيء (اختياري)</label><input id="zone-slow-days" placeholder="مثلاً: 3-5 أيام"></div>
+    </div>
+    <div class="row2" style="margin-top:6px; align-items:center;">
+      <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="checkbox" id="zone-fast-enabled" checked style="width:auto;"> يتوفر شحن سريع بهذي المنطقة</label>
+      <label style="display:flex; align-items:center; gap:6px; margin:0;"><input type="checkbox" id="zone-slow-enabled" checked style="width:auto;"> يتوفر شحن بطيء بهذي المنطقة</label>
+    </div>
+    <button class="btn small" onclick="addShippingZone()">إضافة / تحديث المنطقة</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">٤. إدارة المناطق (أحياء/أقضية) داخل كل محافظة</div>
+    <div class="subtitle">هذي المناطق تظهر بقائمة "المنطقة" بكل مكان بالمنصة — بالتسجيل، وبالشراء، وبتوصيل التجار الخاص. إضافة منطقة جديدة هنا بس من صلاحية الأدمن.</div>
+    <label>المحافظة</label>
+    <select id="admin-area-governorate" onchange="renderAdminAreasList()"></select>
+    <div id="admin-areas-list" style="margin-top:8px;"></div>
+    <label style="margin-top:8px;">اسم المنطقة الجديدة</label>
+    <input id="admin-new-area-name" placeholder="مثلاً: حي الجامعة">
+    <button class="btn small" style="margin-top:8px;" onclick="addAdminArea()">+ إضافة المنطقة</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">٥. معاينة فورية لكل عملية بيع</div>
+    <div class="subtitle" id="preview-note" style="margin-bottom:8px;"></div>
+    <div class="grid3" id="preview-grid"></div>
+  </div>
+</div>
+
+<!-- ============ ADMIN DELIVERY CONTROL (delegable to a 'shipping' employee) ============ -->
+<div class="view" id="view-shipping">
+  <h2>التوصيل</h2>
+
+  <div id="shipping-content">
+  <div class="card">
+    <div class="card-title">إدارة حالة الطلبات المجهّزة</div>
+    <div class="subtitle" style="margin-bottom:8px;">أي فاتورة جهّزها التاجر وسلّمها للتوصيل — تكدر تسجلها واصلة، أو غير واصلة (ترجع للتاجر يجهزها من جديد)، أو تلغيها مع كتابة السبب</div>
+    <div class="toggle-group" id="shipping-speed-subnav" style="margin-bottom:12px;">
+      <div class="toggle" data-speedtab="fast" onclick="showShippingSpeedTab('fast')">توصيل سريع</div>
+      <div class="toggle" data-speedtab="slow" onclick="showShippingSpeedTab('slow')">توصيل بطيء</div>
+    </div>
+    <div id="admin-shipping-control-list"><div class="empty">ما فيه طلبات مجهّزة بانتظار التوصيل حالياً</div></div>
+  </div>
+  </div><!-- /shipping-content -->
+</div><!-- /view-shipping -->
+
+<!-- ============ SENSITIVE ADMIN-ONLY ACTIONS (never delegable to any employee) ============ -->
+<div class="view" id="view-admin_tools">
+  <h2>إجراءات حساسة</h2>
+  <div class="subtitle" style="margin-bottom:12px;">هذي الصفحة ما تنعرض أبداً لأي موظف — حتى لو منحته كل الصلاحيات — لأنها تتحكم بأرصدة التجار وبيانات دخولك انت كأدمن</div>
+
+  <div class="card">
+    <div class="card-title">نسخة احتياطية كاملة</div>
+    <div class="subtitle" style="margin-bottom:8px;">تصدير يحمّل ملف JSON فيه كل بيانات المنصة (المحلات، الطلبات، الموظفين، الإعدادات، سجل التدقيق...) — احفظه بمكان آمن. الاسترجاع يعيد كتابة بيانات كل تاجر/طلب موجود بالملف فوق البيانات الحالية بنفس الـ ID، لكنه ما يحذف تلقائياً أي تاجر أو طلب انسوى بعد تاريخ النسخة — هذا الإجراء حساس ولازم يكون آخر حل عند فقدان بيانات فعلي.</div>
+    <button class="btn small" onclick="exportPlatformBackupJSON()">تحميل نسخة احتياطية (JSON)</button>
+    <button class="btn danger small" onclick="triggerRestoreBackup()">استرجاع من نسخة احتياطية</button>
+    <input type="file" id="backup-restore-file-input" accept="application/json" style="display:none;" onchange="handleRestoreBackupFile(this)">
+  </div>
+
+  <div class="card">
+    <div class="card-title">تصفير الحسابات المالية</div>
+    <button class="btn danger small" onclick="resetFinancials('merchants')">تصفير أرصدة التجار</button>
+    <div style="font-size:11px; color:#999; margin-top:8px;">يصفر الأرقام المالية فقط — بيانات الحساب الأساسية تبقى محفوظة</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">إجراءات على تاجر محدد</div>
+    <div id="merchant-actions-list"><div class="empty">ما فيه تجار مسجلين</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">بيانات دخول الأدمن</div>
+    <div class="subtitle" style="margin-bottom:8px;">لحماية المنصة — لازم تكتب اسم المستخدم وكلمة المرور الحاليين بالضبط قبل ما تكدر تغيرهم</div>
+    <label>اسم المستخدم الحالي</label><input id="old-admin-username" placeholder="اسم المستخدم الحالي">
+    <label>كلمة المرور الحالية</label><input type="password" id="old-admin-password" placeholder="كلمة المرور الحالية">
+    <label style="margin-top:10px;">اسم المستخدم الجديد</label><input id="new-admin-username" placeholder="اتركه فارغاً إذا ما تريد تغييره">
+    <label>كلمة المرور الجديدة</label><input type="password" id="new-admin-password" placeholder="اتركها فارغة إذا ما تريد تغييرها">
+    <div class="auth-error" id="admin-cred-error"></div>
+    <button class="btn small" onclick="changeAdminPassword()">تحديث بيانات الدخول</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+      <span>سجل التدقيق</span>
+      <button class="btn danger small" onclick="clearAuditLog()">مسح السجل بالكامل</button>
+    </div>
+    <div class="subtitle" style="margin-bottom:8px;">كل إجراء حساس صار بالمنصة — قبول/رفض تاجر، حذف، تصفير كلمة مرور، تغيير بيانات دخول الأدمن، وغيرها — مين سواه ومتى. تكدر تحذف إجراء وحد بالضغط على "حذف" جنبه، أو تمسح السجل بالكامل من الزر فوق.</div>
+    <div id="audit-log-list"></div>
+  </div>
+</div><!-- /view-admin_tools -->
+
+</main><!-- /main-content -->
+</div><!-- /app-body -->
+<!-- Merchant-only floating button to open their support chat with the admin -->
+<button class="support-fab" id="support-fab" onclick="openSupportChat()" aria-label="دعم التاجر">
+  <span class="support-fab-badge" id="support-fab-badge" style="display:none;"></span>
+</button>
+</div><!-- /app-shell -->
+
+<div class="toast" id="toast"></div>
+
+<!-- Generic confirm modal -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="confirm-title">تأكيد</div>
+    <div class="modal-text" id="confirm-text"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeConfirmModal()">إلغاء</button>
+      <button class="btn danger small" id="confirm-yes-btn">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<!-- Close/settle a daily-ledger page — admin-only. A merchant never sees this modal or any
+     delete control on their own ledger; only the admin can close a day's page, and only the
+     admin chooses whether that closes it for both sides, just the admin view, or just the
+     merchant view (see closeLedgerDay()). -->
+<div class="modal-overlay" id="close-ledger-modal">
+  <div class="modal-box">
+    <div class="modal-title">إغلاق سجل هذا اليوم</div>
+    <div class="modal-text" id="close-ledger-text"></div>
+    <div style="display:flex; flex-direction:column; gap:8px; margin:12px 0; text-align:right;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+        <input type="radio" name="close-ledger-scope" value="both" checked style="width:auto;">
+        حذف نهائي من عند الطرفين (الأدمن والتاجر) — ما يرجع يظهر لأي حد
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+        <input type="radio" name="close-ledger-scope" value="admin" style="width:auto;">
+        إخفاء من صفحتي (الأدمن) بس — يبقى ظاهر عند التاجر
+      </label>
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer;">
+        <input type="radio" name="close-ledger-scope" value="merchant" style="width:auto;">
+        إخفاء من صفحة التاجر بس — يبقى ظاهر عندي
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeLedgerModalHide()">إلغاء</button>
+      <button class="btn danger small" id="close-ledger-confirm-btn">تأكيد الإغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merchant support chat — shared by both the merchant (their own thread, opened from the
+     floating button) and the admin (opened from a row in view-support). Which side is
+     talking is decided at render time from currentRole, see renderSupportChatModal(). -->
+<div class="modal-overlay" id="support-chat-modal">
+  <div class="support-chat-box">
+    <div class="support-chat-header">
+      <div class="modal-title" id="support-chat-title" style="margin-bottom:0;">دعم التاجر</div>
+      <button class="btn secondary small" onclick="closeSupportChatModal()">✕</button>
+    </div>
+    <div id="support-chat-end-row" style="display:none; margin-bottom:8px;">
+      <button class="btn danger small" onclick="endSupportSession()">إنهاء الجلسة وحذف الرسائل</button>
+    </div>
+    <div class="support-chat-messages" id="support-chat-messages"></div>
+    <div class="support-chat-inputrow">
+      <textarea id="support-chat-input" rows="1" placeholder="اكتب رسالتك هنا..."></textarea>
+      <button class="btn small" onclick="sendSupportChatMessage()">إرسال</button>
+    </div>
+  </div>
+</div>
+
+<!-- Approve merchant modal (enter username/password) + admin-controlled fee settings for this merchant -->
+<audio id="new-order-alarm-audio" src="order-alarm.wav" preload="auto"></audio>
+
+<!-- تظهر فوق كل شي وتوقف الاستخدام لحد ما التاجر يضغط "استلمت" — هذا مقصود، الهدف إنه ينتبه فوراً -->
+<div class="modal-overlay" id="new-order-alarm-modal">
+  <div class="modal-box" style="max-width:380px; text-align:center;">
+    <div style="font-size:40px; line-height:1;">🔔</div>
+    <div class="modal-title">وصلك طلب جديد!</div>
+    <div class="subtitle" id="new-order-alarm-subtitle" style="margin-bottom:14px;">عندك طلب جديد بانتظار المراجعة</div>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="btn small" onclick="acknowledgeOrderAlarm()">استلمت — إيقاف الإنذار</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---- Admin alert center: one loud alarm for everything the admin needs to act on ---- -->
+<audio id="admin-alert-audio" src="order-alarm.wav" preload="auto"></audio>
+<div class="modal-overlay" id="admin-alert-modal">
+  <div class="modal-box" style="max-width:400px; text-align:center;">
+    <div style="font-size:40px; line-height:1;">🚨</div>
+    <div class="modal-title">تنبيه جديد يحتاج انتباهك!</div>
+    <div class="subtitle" id="admin-alert-modal-body" style="margin-bottom:14px; text-align:right;"></div>
+    <div class="modal-actions" style="justify-content:center; flex-wrap:wrap;">
+      <button class="btn small" onclick="acknowledgeAdminAlert()">استلمت — إيقاف الإنذار</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="approve-modal">
+  <div class="modal-box" style="max-height:85vh; overflow-y:auto;">
+    <div class="modal-title" id="approve-modal-title">قبول التاجر — أدخل بيانات الدخول</div>
+    <div id="approve-credentials-fields">
+      <label>اسم المستخدم</label><input id="approve-username">
+      <label>كلمة المرور</label><input type="password" id="approve-password">
+    </div>
+    <div class="card-title" style="margin-top:14px;">مصدر رسم المنصة لهذا التاجر</div>
+    <div class="subtitle" style="margin-bottom:4px;">هذا القرار بيد الأدمن فقط — التاجر ما يقدر يغيّره من لوحته</div>
+    <div class="toggle-group" id="approve-fee-source-toggles"></div>
+    <label style="margin-top:8px;">طريقة حساب الرسم</label>
+    <div class="toggle-group" id="approve-fee-type-toggles"></div>
+    <div id="approve-fee-amount-fields"></div>
+    <div class="card-title" style="margin-top:14px;">استقطاع ثابت من كل قطعة (اختياري)</div>
+    <div class="subtitle" style="margin-bottom:4px;">مبلغ إضافي يُخصم من رصيد التاجر عن كل قطعة تُباع، بجانب رسم المنصة أعلاه — ما يُضاف على سعر القطعة ولا يظهر للزبون إطلاقاً</div>
+    <label>الاستقطاع (دينار لكل قطعة)</label>
+    <input type="number" id="approve-item-deduction" onchange="setApproveItemDeduction(this.value)">
+    <div class="card-title" style="margin-top:14px;">إعفاء القطع الرخيصة من العمولة (اختياري)</div>
+    <div class="subtitle" style="margin-bottom:4px;">أي قطعة سعرها يساوي أو أقل من هذا المبلغ ما يُؤخذ منها أي عمولة إطلاقاً (لا رسم منصة ولا استقطاع القطعة أعلاه) — مفيد إذا عند هذا التاجر منتجات رخيصة جداً وما تريد الرسم ياكل من ربحه فيها. اتركه صفر لتعطيل الإعفاء.</div>
+    <label>إعفاء أي قطعة سعرها ≤ (دينار)</label>
+    <input type="number" id="approve-fee-exempt-max" onchange="setApproveFeeExemptMax(this.value)">
+    <div class="card-title" style="margin-top:14px;">نوع التوصيل المتاح لهذا التاجر</div>
+    <div class="subtitle" style="margin-bottom:4px;">يتحكم بالخيارات اللي تظهر للزبون وقت الشراء من متجر هذا التاجر تحديداً — تقدر تغيّره بأي وقت لاحقاً من نفس هذي الشاشة (زر "تعديل الرسوم")</div>
+    <div class="toggle-group" id="approve-delivery-speed-toggles"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeApproveModal()">إلغاء</button>
+      <button class="btn small" onclick="confirmApprove()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Terms & Privacy modal — reachable from login screen and storefront footer -->
+<div class="modal-overlay" id="legal-modal">
+  <div class="modal-box" style="max-width:600px; max-height:85vh; overflow-y:auto; text-align:right;">
+    <div class="modal-title">الشروط والأحكام وسياسة الخصوصية</div>
+    <div style="font-size:11.5px; color:var(--text-mute); margin-bottom:10px;">آخر تحديث: يُعتبر استمرار استخدامك للمنصة موافقة على أحدث نسخة من هذي الشروط، مهما كان تاريخ اطلاعك عليها.</div>
+    <div style="font-size:12.5px; line-height:1.9; color:var(--text);">
+
+      <b>١. التعريفات</b><br>
+      «المنصة» تعني موقع وتطبيق تاجرلي بكل أقسامه (متاجر التجار، لوحات التحكم، صفحات الزبائن). «التاجر» هو كل شخص أو جهة سجّل متجراً إلكترونياً عبر المنصة لعرض وبيع منتجاته. «الزبون» هو كل شخص يتصفح المنصة أو يشتري منها. «الطلب» يعني أي عملية شراء تمّت عبر متجر تاجر على المنصة. استخدام كلمة «نحن» أو «الإدارة» بهذه الوثيقة يقصد بها الجهة المشغّلة للمنصة.<br><br>
+
+      <b>٢. قبول الشروط</b><br>
+      تسجيلك كتاجر، أو إتمامك أي طلب شراء كزبون، أو مجرد استخدامك للمنصة بأي شكل، يعني موافقتك الكاملة وغير المشروطة على هذه الشروط وسياسة الخصوصية. إذا كنت لا توافق على أي بند منها، يجب التوقف عن استخدام المنصة فوراً.<br><br>
+
+      <b>٣. طبيعة المنصة ودورها</b><br>
+      تاجرلي منصة تقنية وسيطة (Marketplace) تتيح للتجار إنشاء متاجرهم الإلكترونية وعرض منتجاتهم، وتتيح للزبائن تصفح هذه المتاجر وإتمام طلبات الشراء منها. المنصة ليست طرفاً بائعاً ولا مالكة للمنتجات المعروضة، ولا تتحمل أي مسؤولية عن جودة المنتج أو مطابقته للوصف أو صلاحيته أو مصدره — هذه المسؤولية تقع بالكامل على عاتق التاجر صاحب المنتج. دور المنصة يقتصر على توفير البنية التقنية، وتسهيل عملية الطلب والدفع والتوصيل، وتنظيم العلاقة المالية بين التاجر والزبون.<br><br>
+
+      <b>٤. شروط انضمام التاجر والتزاماته</b><br>
+      يلتزم التاجر عند التسجيل بتقديم بيانات صحيحة وحقيقية (الاسم، اسم المحل، رقم الهاتف، المحافظة). يخضع طلب الانضمام لمراجعة الإدارة ولها الحق بقبوله أو رفضه دون إبداء أسباب. يتحمّل التاجر وحده مسؤولية:<br>
+      &nbsp;&nbsp;• صحّة ودقّة وصف منتجاته وأسعارها وصورها ومدى مطابقتها للواقع.<br>
+      &nbsp;&nbsp;• شرعية المنتجات المعروضة وعدم مخالفتها للقوانين النافذة أو حقوق الملكية الفكرية للغير.<br>
+      &nbsp;&nbsp;• توفر الكمية المعلنة وتحديث المخزون أولاً بأول.<br>
+      &nbsp;&nbsp;• تجهيز الطلبات المقبولة بالوقت المناسب وتسليمها لجهة التوصيل (المنصة أو توصيله الخاص حسب حالة متجره).<br>
+      يحق للإدارة تعطيل أو حذف أي متجر يخالف هذه الالتزامات أو يسيء استخدام المنصة، دون إشعار مسبق إذا اقتضت الضرورة ذلك.<br><br>
+
+      <b>٥. المنتجات والأسعار</b><br>
+      الأسعار المعروضة بكل متجر يحددها التاجر نفسه وهو المسؤول الوحيد عن دقتها. تُضاف رسوم التوصيل (إن وُجدت) للسعر الأساسي وتظهر بالتفصيل قبل تأكيد الطلب. تحتفظ المنصة بحق تصحيح أي خطأ تقني واضح بالأسعار (كخطأ إدخال أو عطل بالنظام) حتى بعد تقديم الطلب، مع إشعار الزبون بأي فرق قبل تنفيذه.<br><br>
+
+      <b>٦. الطلبات والدفع</b><br>
+      يتم تأكيد الطلب من الزبون عبر متجر التاجر، وينتقل للتاجر ليقرر قبوله أو رفضه. الدفع حالياً يتم عند الاستلام (Cash on Delivery) حصراً، حيث يدفع الزبون المبلغ نقداً لمندوب التوصيل عند استلام طلبه — ولا يوجد أي بوابة دفع إلكتروني مفعّلة على المنصة حالياً. يحق للتاجر أو الإدارة إلغاء أي طلب قبل تجهيزه إذا تعذّر تنفيذه (نفاد الكمية، بيانات زبون غير صحيحة، ونحوها) مع إشعار الزبون.<br><br>
+
+      <b>٧. التوصيل والاستلام والإرجاع</b><br>
+      يكون التوصيل إما عبر فريق التوصيل التابع للمنصة (حسب مناطق وأسعار التوصيل المعلنة)، أو عبر وسيلة التوصيل الخاصة بالتاجر إذا كان مستثنى من نظام توصيل المنصة — ويُعرض ذلك للزبون بوضوح قبل تأكيد الطلب. في حال رفض الزبون استلام الطلب أو تعذّر الوصول إليه لأسباب خارجة عن إرادة التاجر أو المنصة، يُعتبر الطلب «مرجّعاً» وتُعاد الكمية لمخزون التاجر تلقائياً. سياسة الاستبدال أو الإرجاع بعد الاستلام (لعيب بالمنتج مثلاً) تخضع لما يحدده كل تاجر بمتجره، والمنصة غير طرف في هذه العملية إلا بحدود التوسط لحل النزاع إن أمكن.<br><br>
+
+      <b>٨. الكوبونات والعروض</b><br>
+      قد يوفّر بعض التجار كوبونات خصم خاصة بمتاجرهم. هذه الكوبونات من إنشاء وصلاحية التاجر نفسه، وتخضع لشروط الاستخدام والمدة التي يحددها، والمنصة غير مسؤولة عن أي كوبون منتهي أو مُلغى من قبل التاجر.<br><br>
+
+      <b>٩. الخصوصية وحماية بيانات الزبون</b><br>
+      نجمع فقط البيانات الضرورية لإتمام الطلب: الاسم الكامل، رقم الهاتف، العنوان التفصيلي، والمحافظة/المنطقة. تُستخدم هذه البيانات حصراً لغرض تنفيذ الطلب وتوصيله والتواصل بخصوصه، ولا تُشارك مع أي جهة خارج التاجر صاحب الطلب وجهة التوصيل المكلّفة به. لا تبيع المنصة ولا تؤجّر بيانات الزبائن لأي طرف ثالث لأغراض تسويقية. تُخزَّن البيانات على خوادم آمنة بموجب ضوابط وصول تمنع اطلاع أي طرف غير مخوّل عليها.<br><br>
+
+      <b>١٠. أمن حسابات التجار والموظفين</b><br>
+      كل حساب (تاجر أو موظف) مسؤول بشكل كامل عن سرية بيانات دخوله وعدم مشاركتها مع الغير. لا تحتفظ المنصة بكلمات المرور بصيغة قابلة للقراءة — تُخزَّن مشفّرة (Hashed) ولا يمكن لأي طرف، بما فيه الإدارة، استرجاعها بصيغتها الأصلية، ويقتصر الحل عند نسيانها على تصفيرها وتعيين كلمة مرور جديدة. يتحمّل صاحب الحساب مسؤولية أي نشاط يجري من خلاله ناتج عن إهماله بحفظ بياناته.<br><br>
+
+      <b>١١. الملكية الفكرية</b><br>
+      يبقى اسم وشعار وتصميم منصة تاجرلي وكودها البرمجي ملكاً حصرياً لمالكيها، ولا يجوز نسخه أو إعادة استخدامه دون إذن خطي مسبق. يحتفظ كل تاجر بحقوقه على محتوى متجره (صوره، أوصافه، شعاره)، ويقرّ بأنه يملك الحق القانوني لاستخدام كل ما يرفعه على متجره وأنه لا يتعدى على حقوق أي طرف ثالث.<br><br>
+
+      <b>١٢. حدود المسؤولية</b><br>
+      تُبذل المنصة أقصى جهد لضمان استمرارية الخدمة ودقّة المعلومات المعروضة، لكنها لا تضمن خلو الخدمة من أي انقطاع أو خطأ تقني عارض. لا تتحمل المنصة أي مسؤولية عن أضرار مباشرة أو غير مباشرة ناتجة عن: تعامل التاجر مع الزبون، جودة أو مطابقة المنتج، تأخر التوصيل بسبب ظروف خارجة عن سيطرتها، أو أي فقدان بيانات ناتج عن انقطاع خدمات طرف ثالث (كموفّر الاستضافة).<br><br>
+
+      <b>١٣. تعليق أو إنهاء الحساب</b><br>
+      يحق للإدارة تعليق أو تعطيل أو حذف أي حساب (تاجر أو موظف) بشكل فوري ودون إشعار مسبق في حال ثبوت مخالفة هذه الشروط، أو الاشتباه بنشاط احتيالي أو مسيء، أو بناءً على تقديرها المنفرد لما يخدم سلامة المنصة ومستخدميها.<br><br>
+
+      <b>١٤. القانون الواجب التطبيق وتسوية النزاعات</b><br>
+      تخضع هذه الشروط وتُفسَّر وفقاً للقوانين النافذة في جمهورية العراق. أي نزاع ينشأ عن استخدام المنصة يُسعى لحله ودياً أولاً، فإن تعذّر، تختص محاكم جمهورية العراق بالنظر فيه.<br><br>
+
+      <b>١٥. التعديلات على الشروط</b><br>
+      يجوز للإدارة تحديث أو تعديل هذه الشروط وسياسة الخصوصية من وقت لآخر دون الحاجة لإشعار فردي مسبق، ويُنشر أي تحديث على هذه الصفحة مباشرة. استمرار استخدامك للمنصة بعد أي تعديل يُعتبر قبولاً ضمنياً به.<br><br>
+
+      <b>١٦. التواصل</b><br>
+      لأي استفسار يخص هذه الشروط أو سياسة الخصوصية أو بياناتك، يرجى التواصل عبر قنوات الدعم المتاحة داخل المنصة.
+    </div>
+    <div class="modal-actions">
+      <button class="btn small" onclick="closeLegalModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- About-the-platform modal: shown from the merchant login/join screens so a prospective
+     merchant understands what they're signing up for before they submit a join request. -->
+<div class="modal-overlay" id="about-modal">
+  <div class="modal-box" style="max-width:560px; max-height:85vh; overflow-y:auto; text-align:right;">
+    <div class="modal-title">نبذة عن تاجرلي</div>
+    <div style="font-size:12.5px; line-height:1.9; color:var(--text);">
+      <b>شنو هي تاجرلي؟</b><br>
+      تاجرلي منصة تجارة إلكترونية عراقية تتيح لأي صاحب محل أو مشروع صغير أن يفتح متجره الإلكتروني الخاص مجاناً وخلال دقائق — بدون اشتراك شهري، وبدون ما يحتاج يعرف برمجة أو يدفع تكاليف تصميم موقع من الصفر.<br><br>
+
+      <b>شنو نقدملك كتاجر؟</b><br>
+      &nbsp;&nbsp;• إنشاء متجرك الإلكتروني مجاناً بالكامل، بدون أي اشتراك شهري أو رسوم تأسيس.<br>
+      &nbsp;&nbsp;• متجر إلكتروني مستقل بشعارك وألوانك ورابطك الخاص، ترسله لزبائنك مباشرة.<br>
+      &nbsp;&nbsp;• لوحة تحكم توّحد إدارة منتجاتك، طلباتك، حساباتك المالية، وموظفينك بمكان واحد.<br>
+      &nbsp;&nbsp;• نظام توصيل جاهز (سريع/بطيء حسب المحافظة)، أو تكدر تستخدم توصيلك الخاص إذا متوفر عندك.<br>
+      &nbsp;&nbsp;• تقارير وحسابات تلقائية توضح مبيعاتك وصافي أرباحك بأي وقت، مع تصدير إكسل.<br>
+      &nbsp;&nbsp;• دفع عند الاستلام — الزبون يدفع نقداً لمندوب التوصيل، وياخذ التاجر حسابه بشفافية كاملة.<br><br>
+
+      <b>شلون تشتغل المنصة؟</b><br>
+      تقدّم طلب انضمام كتاجر، الإدارة تراجعه وتفعّل حسابك، تعبّي متجرك بمنتجاتك مجاناً وبدون اشتراك شهري، ترسل رابط متجرك لزبائنك أو يوصلولك عن طريق تصفح المنصة. كل طلب يوصلك تقرر تقبله أو ترفضه، وبعد القبول تجهزه للتوصيل.<br><br>
+
+      <b>لمين تناسب تاجرلي؟</b><br>
+      تناسب أي صاحب محل، معمل، أو مشروع صغير يبيع منتجات (ملابس، مستحضرات، أدوات منزلية، أكل، إلكترونيات، وغيرها) ويريد يوصل لزبائن أكثر برابط متجر احترافي، بدل ما يعتمد بس على منشورات متفرقة بمواقع التواصل. تناسبك سواء عندك محل فعلي وتريد توسّع مبيعاتك أونلاين، أو تبيع من البيت وتريد تبدأ بمشروعك الأول بدون أي كلفة بداية.<br><br>
+
+      <b>شنو يميزنا؟</b><br>
+      &nbsp;&nbsp;• ما راح تدفع ولا دينار لإنشاء متجرك — مجاني بالكامل وبدون اشتراك شهري.<br>
+      &nbsp;&nbsp;• متجرك جاهز خلال دقائق من لحظة قبول طلبك، بدون تعقيد تقني.<br>
+      &nbsp;&nbsp;• كل شي بمكان واحد: منتجاتك، طلباتك، حساباتك، وموظفينك — ما تحتاج أدوات متفرقة.<br>
+      &nbsp;&nbsp;• دعم للعمل بفريق: تكدر تضيف موظفين لمتجرك وتوزع عليهم صلاحيات محددة (استلام طلبات فقط، إدارة منتجات، إلخ).<br>
+      &nbsp;&nbsp;• كوبونات خصم تسويها لزبائنك وقت ما تريد، لزيادة مبيعاتك بمناسباتك الخاصة.<br>
+      &nbsp;&nbsp;• متجرك يشتغل ٢٤ ساعة، الزبون يقدر يطلب أي وقت حتى وإنت مو متواجد.<br><br>
+
+      <b>شلون تشتغل المنصة؟</b><br>
+      تقدّم طلب انضمام كتاجر، الإدارة تراجعه وتفعّل حسابك، تعبّي متجرك بمنتجاتك مجاناً وبدون اشتراك شهري، ترسل رابط متجرك لزبائنك أو يوصلولك عن طريق تصفح المنصة. كل طلب يوصلك تقرر تقبله أو ترفضه، وبعد القبول تجهزه للتوصيل.<br><br>
+
+      <b>الأمان والموثوقية</b><br>
+      بيانات متجرك وزبائنك محفوظة بشكل آمن، وكلمات المرور مشفّرة ولا يقدر أي طرف يطّلع عليها بصيغتها الأصلية. كل عملية بيع تنعرض تفاصيلها بوضوح للتاجر بحسابه الخاص، وما تظهر بياناتك لأي تاجر ثاني ولا لأي جهة غير مخوّلة.<br><br>
+
+      <b>هدفنا</b><br>
+      نسهّل على أصحاب المحلات والمشاريع الصغيرة بالعراق دخول عالم التجارة الإلكترونية بأقل جهد وتكلفة، ونوفر للزبون تجربة شراء موثوقة وسهلة من متاجر متنوعة بمكان واحد.
+    </div>
+    <div class="modal-actions">
+      <button class="btn small" onclick="closeAboutModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- Per-merchant custom terms — merchant writes their own store-specific terms (return/exchange
+     policy, etc.) and toggles whether it's shown to customers. Content set in the merchant's
+     Appearance tab (see setMerchantCustomTerms / toggleMerchantCustomTermsVisible); this modal
+     is what a customer sees when they tap the "شروط وأحكام المتجر" link on the storefront. -->
+<div class="modal-overlay" id="merchant-terms-modal">
+  <div class="modal-box" style="max-width:560px; max-height:80vh; overflow-y:auto; text-align:right;">
+    <div class="modal-title" id="merchant-terms-title">شروط وأحكام المتجر</div>
+    <div style="font-size:12.5px; line-height:1.9; color:var(--text); white-space:pre-wrap;" id="merchant-terms-body"></div>
+    <div class="modal-actions">
+      <button class="btn small" onclick="closeMerchantTermsModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset password modal: used for merchants. We only ever store a
+     hashed password, so there's nothing to "reveal" — the admin can only set a new one. -->
+<div class="modal-overlay" id="reset-password-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="reset-password-title">تصفير كلمة المرور</div>
+    <label>كلمة المرور الجديدة</label><input type="password" id="reset-password-input" placeholder="اكتب كلمة مرور جديدة">
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeResetPasswordModal()">إلغاء</button>
+      <button class="btn small" onclick="confirmResetPassword()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: mark a merchant as handling delivery themselves + set their special delivery price -->
+<div class="modal-overlay" id="own-delivery-modal">
+  <div class="modal-box" style="max-height:85vh; overflow-y:auto;">
+    <div class="modal-title" id="own-delivery-title">توصيل خاص بالمحل</div>
+    <div class="toggle-group" id="own-delivery-toggle-group"></div>
+    <label style="margin-top:8px;">سعر التوصيل الافتراضي (د)</label>
+    <input type="number" id="own-delivery-price-input" placeholder="مثلاً: 3000">
+    <div class="subtitle" style="margin-top:6px;">هذا السعر يظهر للزبون بدل مناطق/أسعار توصيل المنصة، وياخذه التاجر مو المنصة. أسعار التوصيل والمناطق من صلاحية الأدمن حصراً — التاجر ما يقدر يعدلها.</div>
+    <label style="margin-top:12px;">المحافظات المسموح للتاجر يوصل الها</label>
+    <div class="subtitle" style="margin-bottom:6px;">اترك الكل فارغ (بدون تحديد) عشان يوصل لكل العراق، أو حدد محافظات معينة بس</div>
+    <div id="own-delivery-governorates-list" class="toggle-group"></div>
+    <div id="own-delivery-area-pricing"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeOwnDeliveryModal()">إلغاء</button>
+      <button class="btn small" onclick="confirmOwnDelivery()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: assign/change/remove a merchant's official custom domain (gift from the admin) -->
+<div class="modal-overlay" id="custom-domain-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="custom-domain-title">دومين مخصص للمتجر</div>
+    <div class="subtitle" style="margin-bottom:8px;">اكتب الدومين اللي اشتريته وتريد تعطيه هدية لهذا التاجر — بعد ما توجّه سجلات الـ DNS تاعه لنفس مكان استضافة هذا الموقع، متجر التاجر يفتح مباشرة من هذا الدومين بدل الرابط الفرعي. منتجات وطلبات وحساب التاجر ما تتأثر إطلاقاً، ورابطه القديم يستمر شغال كنسخة احتياطية.</div>
+    <label>الدومين (مثلاً: mystore.com)</label>
+    <input id="custom-domain-input" placeholder="mystore.com">
+    <div class="auth-error" id="custom-domain-error"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeCustomDomainModal()">إلغاء</button>
+      <button class="btn danger small" id="custom-domain-remove-btn" onclick="removeCustomDomain()" style="display:none;">إزالة الدومين</button>
+      <button class="btn small" onclick="confirmCustomDomain()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merchant: add/edit an employee (name+phone only on creation; permissions always editable) -->
+<div class="modal-overlay" id="employee-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="emp-modal-title">إضافة موظف جديد</div>
+    <div id="emp-name-fields">
+      <label>اسم الموظف</label><input id="emp-name" placeholder="مثلاً: أحمد علي">
+      <label>رقم هاتف الموظف</label><input id="emp-phone" placeholder="07xxxxxxxxx">
+    </div>
+    <label style="margin-top:8px;">الصلاحيات — شنو يكدر الموظف يشتغل بيه من لوحتك</label>
+    <div id="emp-permissions-box" style="margin-top:4px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeEmployeeModal()">إلغاء</button>
+      <button class="btn small" onclick="submitEmployeeModal()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: approve a merchant's employee request by setting username/password -->
+<div class="modal-overlay" id="employee-approve-modal">
+  <div class="modal-box">
+    <div class="modal-title">قبول الموظف — بيانات الدخول</div>
+    <label>اسم المستخدم</label><input id="approve-emp-username">
+    <label>كلمة المرور</label><input type="password" id="approve-emp-password">
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeApproveEmployeeModal()">إلغاء</button>
+      <button class="btn small" onclick="confirmApproveEmployee()">تأكيد</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: add/edit a member of the admin's own team (credentials set only on creation) -->
+<div class="modal-overlay" id="admin-employee-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="admin-emp-modal-title">إضافة موظف للإدارة</div>
+    <label>اسم الموظف</label><input id="admin-emp-name" placeholder="مثلاً: سارة محمد">
+    <label>رقم هاتف الموظف</label><input id="admin-emp-phone" placeholder="07xxxxxxxxx">
+    <div id="admin-emp-credentials-fields">
+      <label>اسم المستخدم</label><input id="admin-emp-username">
+      <label>كلمة المرور</label><input type="password" id="admin-emp-password">
+    </div>
+    <label style="margin-top:8px;">الصلاحيات — شنو يكدر الموظف يوصله من لوحة الأدمن</label>
+    <div id="admin-emp-permissions-box" style="margin-top:4px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeAdminEmployeeModal()">إلغاء</button>
+      <button class="btn small" onclick="submitAdminEmployeeModal()">إضافة</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel-order reason modal — used by admin and merchant screens alike -->
+<div class="modal-overlay" id="cancel-reason-modal">
+  <div class="modal-box">
+    <div class="modal-title">إلغاء الطلب</div>
+    <label>اكتب سبب الإلغاء (يظهر بتقرير الحسابات)</label>
+    <textarea id="cancel-reason-input" rows="3" style="width:100%; padding:8px; font-family:inherit;" placeholder="مثلاً: الزبون ما يرد، أو تعذر الوصول للعنوان..."></textarea>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeCancelReasonModal()">تراجع</button>
+      <button class="btn danger small" onclick="confirmCancelOrderGroup()">تأكيد الإلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merchant's confirmation-note modal for approving a customer's cancellation request —
+     separate from cancel-reason-modal above because approving here does NOT cancel the
+     order yet; it only forwards the request to the admin's queue for final sign-off. -->
+<div class="modal-overlay" id="merchant-approve-cancel-modal">
+  <div class="modal-box">
+    <div class="modal-title">تأكيد إلغاء الطلب</div>
+    <div class="subtitle" style="margin-bottom:8px;">تأكد أنك اتصلت بالزبون وأكد رغبته بالإلغاء، واكتب ملاحظتك — راح ترسل للإدارة مع سبب الزبون للموافقة النهائية</div>
+    <label>ملاحظتك</label>
+    <textarea id="merchant-approve-cancel-note" rows="3" style="width:100%; padding:8px; font-family:inherit;" placeholder="مثلاً: اتصلت بالزبون وأكد رغبته بالإلغاء..."></textarea>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeMerchantApproveCancelModal()">تراجع</button>
+      <button class="btn danger small" onclick="confirmMerchantApproveCancel()">إرسال للإدارة</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merchant store preview modal ("العدسة") — lets a merchant see exactly what customers will
+     see (banner, logo, colors, products) before their store is officially launched/approved.
+     Reuses renderStorefrontInto, which only blocks disabled stores — pending stores render fine. -->
+<div class="modal-overlay" id="merchant-preview-modal">
+  <div class="modal-box" style="max-width:480px; max-height:85vh; overflow-y:auto;">
+    <div class="modal-title">معاينة متجرك — هيك بالضبط راح يشوفه الزبون</div>
+    <div id="merchant-preview-content"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeMerchantPreview()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- Checkout modal: customer fills their info + picks governorate + fast/slow shipping -->
+<div class="modal-overlay" id="checkout-modal">
+  <div class="modal-box">
+    <div class="modal-title">إتمام الطلب</div>
+    <label>الاسم الكامل</label><input id="co-name" placeholder="اسمك الكامل">
+    <label>رقم الهاتف</label><input id="co-phone" placeholder="07xx xxx xxxx" type="tel" inputmode="numeric">
+    <!-- Honeypot: invisible to a real person (off-screen, no label, excluded from tab
+         order), but a form-filling bot that blindly fills every input on the page will
+         still find and fill it. If it comes back non-empty on submit, we know this wasn't
+         a real customer — see the anti-spam check in the checkout-confirm-btn handler. -->
+    <input id="co-website" tabindex="-1" aria-hidden="true"
+      style="position:absolute; left:-9999px; width:1px; height:1px; opacity:0;">
+    <label>المحافظة</label>
+    <select id="co-governorate" onchange="populateAreaSelect('co-area', this.value); updateCheckoutDelivery()"></select>
+    <label>المنطقة</label>
+    <select id="co-area" onchange="updateCheckoutDelivery()"></select>
+    <label>العنوان التفصيلي</label><input id="co-address" placeholder="الشارع، أقرب نقطة دالة">
+    <label id="co-speed-label">نوع الشحن</label>
+    <div class="toggle-group" id="co-speed-toggles"></div>
+    <div id="checkout-summary"></div>
+    <div id="checkout-error" style="color:#DC2626; font-size:12px; margin-top:4px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeCheckoutModal()">إلغاء</button>
+      <button class="btn small" id="checkout-confirm-btn">تأكيد الطلب</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cart modal: customer's shopping cart — holds multiple products/quantities before checkout -->
+<div class="modal-overlay" id="cart-modal">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title">سلة المشتريات</div>
+    <div id="cart-items"></div>
+    <div class="empty" id="cart-empty" style="display:none;">السلة فارغة — أضف قطعة عشان تكدر تكمل الشراء</div>
+    <div id="cart-coupon-box"></div>
+    <div id="cart-total-line"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeCartModal()">متابعة التسوق</button>
+      <button class="btn small" id="cart-checkout-btn" onclick="openCheckoutFromCart()">إتمام الشراء</button>
+    </div>
+  </div>
+</div>
+
+<!-- Product detail modal: opened when a customer taps a product card — full image gallery,
+     description, size/color pickers, and the actual "أضف للسلة" action all live here, so the
+     grid itself can stay a clean, fast-scanning list of thumbnails/name/price (like a normal
+     e-commerce catalog) instead of every card carrying its full picker UI inline. -->
+<div class="modal-overlay" id="product-detail-modal">
+  <div class="modal-box" style="max-width:380px; position:relative; max-height:88vh; overflow-y:auto;">
+    <button class="product-detail-close" onclick="closeProductDetail()">✕</button>
+    <div id="product-detail-content"></div>
+  </div>
+</div>
+
+<!-- Order tracking modal: lets a customer on THIS merchant's public store link check their own
+     orders by phone number. Scoped hard to trackOrderMerchantId (the store they're currently
+     browsing) — never a cross-store lookup across the whole platform. -->
+<div class="modal-overlay" id="order-track-modal">
+  <div class="modal-box" style="max-width:380px; max-height:88vh; overflow-y:auto;">
+    <div class="modal-title">تتبع طلبي</div>
+    <div class="subtitle" style="margin-bottom:8px;">اكتب رقم الهاتف اللي طلبت فيه من هذا المتجر، وراح نعرضلك حالة كل طلباتك هنا</div>
+    <label>رقم الهاتف</label>
+    <div class="row2">
+      <div><input type="tel" id="order-track-phone" placeholder="07xxxxxxxxx" onkeydown="if(event.key==='Enter'){event.preventDefault();searchMyOrders();}"></div>
+      <div style="flex:0 0 auto;"><button class="btn small" style="margin-top:0;" onclick="searchMyOrders()">بحث</button></div>
+    </div>
+    <div id="order-track-results" style="margin-top:12px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeOrderTrackModal()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- Customer-initiated cancellation reason modal — opened from the order-tracking results
+     above. This only files a REQUEST; the order isn't actually cancelled until the merchant
+     confirms with the customer and the admin gives final approval (see the cancellation
+     pipeline functions in the script below). -->
+<div class="modal-overlay" id="customer-cancel-modal">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title">إلغاء الطلب</div>
+    <div class="subtitle" style="margin-bottom:8px;">راح يتواصل معك المحل لتأكيد الإلغاء قبل ما ينهائي — اكتب سبب رغبتك بالإلغاء</div>
+    <label>سبب الإلغاء</label>
+    <textarea id="customer-cancel-reason-input" rows="3" style="width:100%; padding:8px; font-family:inherit;" placeholder="مثلاً: غيّرت رأيي، طلبت بالغلط، لقيت سعر أحسن..."></textarea>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeCustomerCancelModal()">تراجع</button>
+      <button class="btn danger small" id="customer-cancel-submit-btn" onclick="submitCustomerCancelRequest()">تأكيد الإلغاء</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/01-security-utils.js"></script>
+<script src="js/02-i18n.js"></script>
+<script src="js/03-storage-firebase.js"></script>
+<script src="js/04-session-routing.js"></script>
+<script src="js/05-alerts-inbox.js"></script>
+<script src="js/06-media-audit-support.js"></script>
+<script src="js/07-nav-auth.js"></script>
+<script src="js/08-admin-requests-employees-creds.js"></script>
+<script src="js/09-merchant-store-products.js"></script>
+<script src="js/10-accounting-ledger.js"></script>
+<script src="js/11-order-management.js"></script>
+<script src="js/12-storefront.js"></script>
+<script src="js/13-cart-checkout.js"></script>
+<script src="js/14-shipping-pricing.js"></script>
+<script src="js/15-admin-tools.js"></script>
+<script src="js/16-charts-dashboard.js"></script>
+<script src="js/18-admin-alerts.js"></script>
+<script src="js/17-live-refresh-boot.js"></script>
+</body>
+</html>
