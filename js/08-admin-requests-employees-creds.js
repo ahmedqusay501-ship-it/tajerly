@@ -537,7 +537,6 @@ async function confirmApproveEmployee() {
       else { console.error('Employee account creation failed:', err); showToast('تعذر إنشاء حساب الدخول — تأكد من الاتصال وحاول مرة ثانية'); }
       return;
     }
-    if (btn) { btn.disabled = false; btn.textContent = 'تأكيد'; }
   }
 
   e.username = username;
@@ -545,13 +544,32 @@ async function confirmApproveEmployee() {
   e.status = 'active';
 
   if (window.authApi) {
-    if (e.authUid) await window.authApi.saveDoc('employees', e.authUid, e).catch(() => {});
+    const btn = document.querySelector('#employee-approve-modal .btn:not(.secondary)');
+    // IMPORTANT: only delete the pending request — and only tell the admin it worked —
+    // once the 'employees' document has actually been written. The old code swallowed any
+    // failure here with .catch(() => {}) and deleted employee_requests unconditionally, so
+    // a single failed/denied write meant the employee ended up saved NOWHERE: not in
+    // 'employees' (write failed) and not in 'employee_requests' (deleted anyway) — exactly
+    // the "admin approves but the employee never actually gets added" bug.
+    try {
+      await window.authApi.saveDoc('employees', e.authUid, e);
+    } catch (err) {
+      console.error('Employee approval could not be saved:', err);
+      if (btn) { btn.disabled = false; btn.textContent = 'تأكيد'; }
+      showToast('تم إنشاء حساب الدخول بس صار خطأ بحفظ بيانات الموظف — جرب اضغط تأكيد مرة ثانية');
+      return; // keep the pending request intact so the admin can retry instead of losing it
+    }
     await window.authApi.deleteDoc('employee_requests', String(e.id)).catch(() => {});
   }
-  saveData();
+
+  const ok = await saveData();
   closeApproveEmployeeModal();
-  logAudit('قبول طلب انضمام موظف', e.name);
-  showToast('تم قبول الموظف — لا تنسى ترسل بيانات الدخول له يدوياً');
+  if (!ok) {
+    showToast('الموافقة صارت بالشاشة بس ما انحفظت بالكامل بقاعدة البيانات — تحقق بعد لحظات وحاول مرة ثانية لو ما ظهر الموظف');
+  } else {
+    logAudit('قبول طلب انضمام موظف', e.name);
+    showToast('تم قبول الموظف — لا تنسى ترسل بيانات الدخول له يدوياً');
+  }
   renderAll();
 }
 
