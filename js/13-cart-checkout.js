@@ -187,6 +187,21 @@ let checkoutSpeed = 'fast';
 let checkoutModalOpenedAt = null;
 const CHECKOUT_MIN_FILL_MS = 2500; // a real person can't read + fill this form faster than this
 const CHECKOUT_COOLDOWN_MS = 20000; // minimum gap between two orders from the same browser
+// هل هذا التاجر يوفر نوع التوصيل هذا أصلاً (سريع/بطيء)؟ — مستقل تماماً عن zoneOffersSpeed
+// اللي تتحكم بيها المحافظة/المنطقة؛ هذا قرار خاص بالتاجر نفسه يحدده الأدمن وقت القبول.
+// تاجر قديم ما انحدد له شي (deliverySpeeds غير موجودة) يبقى متاح للسرعتين تلقائياً — توافق للخلف.
+function merchantOffersSpeed(m, speed) {
+  if (!m || !Array.isArray(m.deliverySpeeds) || m.deliverySpeeds.length === 0) return true;
+  return m.deliverySpeeds.includes(speed);
+}
+function deliverySpeedLabel(m) {
+  const fast = merchantOffersSpeed(m, 'fast');
+  const slow = merchantOffersSpeed(m, 'slow');
+  if (fast && slow) return 'سريع وبطيء';
+  if (fast) return 'سريع فقط';
+  if (slow) return 'بطيء فقط';
+  return 'غير محدد';
+}
 function isValidIraqiPhone(phone) {
   const digits = normalizePhoneDigits(phone);
   // Iraqi mobile numbers: 07XXXXXXXXX (11 digits) or with the country code, 9647XXXXXXXXX
@@ -255,10 +270,14 @@ function updateCheckoutDelivery() {
   // zero delivery fee instead of looking any of that up.
   const zone = (!m.ownDelivery && data.settings.shippingEnabled) ? findShippingZone(governorate) : null;
 
-  // If the currently-selected speed isn't offered for this governorate, switch to whichever speed is available
-  if (zone && !zoneOffersSpeed(zone, checkoutSpeed)) {
-    checkoutSpeed = zoneOffersSpeed(zone, 'fast') ? 'fast' : 'slow';
-  }
+  // السرعة الفعلية المتاحة = تتوفر بالمنطقة (zoneOffersSpeed) وتتوفر عند هذا التاجر تحديداً
+  // (merchantOffersSpeed، اللي يحددها الأدمن وقت القبول). لو ما فيه تقاطع أصلاً (سوء إعداد
+  // نادر)، نرجع لسلوك المنطقة القديم حتى ما ينكسر الشراء.
+  const canFast = !m.ownDelivery && zoneOffersSpeed(zone, 'fast') && merchantOffersSpeed(m, 'fast');
+  const canSlow = !m.ownDelivery && zoneOffersSpeed(zone, 'slow') && merchantOffersSpeed(m, 'slow');
+  if (checkoutSpeed === 'fast' && !canFast && canSlow) checkoutSpeed = 'slow';
+  else if (checkoutSpeed === 'slow' && !canSlow && canFast) checkoutSpeed = 'fast';
+  else if (!canFast && !canSlow) checkoutSpeed = zoneOffersSpeed(zone, 'fast') ? 'fast' : 'slow';
 
   let deliveryFee;
   if (m.ownDelivery) {
@@ -291,21 +310,22 @@ function updateCheckoutDelivery() {
 
   let speedToggles = '';
   if (!m.ownDelivery) {
-    if (zoneOffersSpeed(zone, 'fast')) {
-      speedToggles += `<span class="toggle ${checkoutSpeed==='fast'?'selected':''}" onclick="setCheckoutSpeed('fast')">سريع${zone ? ' — ' + zone.fastPrice.toLocaleString() + ' د' : ''}</span>`;
+    if (canFast) {
+      speedToggles += `<span class="toggle ${checkoutSpeed==='fast'?'selected':''}" onclick="setCheckoutSpeed('fast')">سريع${zone ? ' — ' + zone.fastPrice.toLocaleString() + ' د' : ''}${zone && zone.fastDays ? ' (' + esc(zone.fastDays) + ')' : ''}</span>`;
     }
-    if (zoneOffersSpeed(zone, 'slow')) {
-      speedToggles += `<span class="toggle ${checkoutSpeed==='slow'?'selected':''}" onclick="setCheckoutSpeed('slow')">بطيء${zone ? ' — ' + zone.slowPrice.toLocaleString() + ' د' : ''}</span>`;
+    if (canSlow) {
+      speedToggles += `<span class="toggle ${checkoutSpeed==='slow'?'selected':''}" onclick="setCheckoutSpeed('slow')">بطيء${zone ? ' — ' + zone.slowPrice.toLocaleString() + ' د' : ''}${zone && zone.slowDays ? ' (' + esc(zone.slowDays) + ')' : ''}</span>`;
     }
   }
   document.getElementById('co-speed-toggles').innerHTML = speedToggles;
   document.getElementById('co-speed-label').style.display = m.ownDelivery ? 'none' : '';
+  const speedDaysText = (!m.ownDelivery && zone) ? (checkoutSpeed === 'fast' ? zone.fastDays : zone.slowDays) : '';
 
   document.getElementById('checkout-summary').innerHTML = `
     ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${i.productName}${i.size ? ' (مقاس ' + i.size + ')' : ''}${i.color ? ' — ' + i.color : ''} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()} د</span></div>`).join('')}
     ${couponDiscount > 0 ? `<div class="checkout-line"><span>خصم الكوبون ${esc(currentCheckout.couponCode || '')}</span><span>-${couponDiscount.toLocaleString()} د</span></div>` : ''}
     ${serviceFee > 0 ? `<div class="checkout-line"><span>رسوم خدمة</span><span>${serviceFee.toLocaleString()} د</span></div>` : ''}
-    <div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>
+    <div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>
     <div class="checkout-line total"><span>الإجمالي</span><span>${total.toLocaleString()} د</span></div>
     <div style="font-size:12px; color:var(--accent-dark); background:#F1F5F9; padding:8px 10px; border-radius:8px; margin-top:8px;">
       <b>الدفع عند الاستلام</b> — تدفع المبلغ نقداً لمندوب التوصيل عند وصول طلبك، ما فيه دفع إلكتروني حالياً
