@@ -33,7 +33,8 @@ async function submitRequest() {
     feeCustomer: s.feeCustomer,
     feeMerchant: s.feeMerchant,
     itemDeduction: s.itemDeduction || 0,
-    shippingAmount: s.shippingAmount
+    shippingAmount: s.shippingAmount,
+    deliverySpeeds: ['fast', 'slow'] // default حتى يحددها الأدمن وقت القبول — يتحكم بيها فقط من نافذة القبول
   });
 
   // IMPORTANT: the join-request document itself is written directly here (not through the
@@ -96,7 +97,8 @@ function approveMerchant(id) {
     feeCustomer: (m && m.feeCustomer != null) ? m.feeCustomer : (data.settings.feeCustomer || 0),
     feeMerchant: (m && m.feeMerchant != null) ? m.feeMerchant : (data.settings.feeMerchant || 0),
     itemDeduction: (m && m.itemDeduction != null) ? m.itemDeduction : (data.settings.itemDeduction || 0),
-    feeExemptMaxPrice: (m && m.feeExemptMaxPrice) || 0
+    feeExemptMaxPrice: (m && m.feeExemptMaxPrice) || 0,
+    deliverySpeeds: (m && Array.isArray(m.deliverySpeeds) && m.deliverySpeeds.length) ? m.deliverySpeeds.slice() : ['fast', 'slow']
   };
   renderApproveFeeFields();
   document.getElementById('approve-modal').classList.add('show');
@@ -118,7 +120,8 @@ function editMerchantFees(id) {
     feeCustomer: m.feeCustomer || 0,
     feeMerchant: m.feeMerchant || 0,
     itemDeduction: m.itemDeduction || 0,
-    feeExemptMaxPrice: m.feeExemptMaxPrice || 0
+    feeExemptMaxPrice: m.feeExemptMaxPrice || 0,
+    deliverySpeeds: (Array.isArray(m.deliverySpeeds) && m.deliverySpeeds.length) ? m.deliverySpeeds.slice() : ['fast', 'slow']
   };
   renderApproveFeeFields();
   document.getElementById('approve-modal').classList.add('show');
@@ -142,6 +145,11 @@ function setApproveItemDeduction(value) {
 }
 function setApproveFeeExemptMax(value) {
   approveFeeState.feeExemptMaxPrice = Math.max(0, parseFloat(value) || 0);
+}
+// mode: 'fast' فقط، 'slow' فقط، أو 'both' (الاثنين)
+function setApproveDeliverySpeed(mode) {
+  approveFeeState.deliverySpeeds = mode === 'both' ? ['fast', 'slow'] : [mode];
+  renderApproveFeeFields();
 }
 
 function renderApproveFeeFields() {
@@ -169,6 +177,17 @@ function renderApproveFeeFields() {
   if (itemDeductionEl) itemDeductionEl.value = approveFeeState.itemDeduction;
   const feeExemptMaxEl = document.getElementById('approve-fee-exempt-max');
   if (feeExemptMaxEl) feeExemptMaxEl.value = approveFeeState.feeExemptMaxPrice;
+
+  const speeds = approveFeeState.deliverySpeeds || ['fast', 'slow'];
+  const speedMode = (speeds.includes('fast') && speeds.includes('slow')) ? 'both' : (speeds.includes('fast') ? 'fast' : 'slow');
+  const speedToggleEl = document.getElementById('approve-delivery-speed-toggles');
+  if (speedToggleEl) {
+    speedToggleEl.innerHTML = `
+      <span class="toggle ${speedMode==='fast'?'selected':''}" onclick="setApproveDeliverySpeed('fast')">سريع فقط</span>
+      <span class="toggle ${speedMode==='slow'?'selected':''}" onclick="setApproveDeliverySpeed('slow')">بطيء فقط</span>
+      <span class="toggle ${speedMode==='both'?'selected':''}" onclick="setApproveDeliverySpeed('both')">الاثنين</span>
+    `;
+  }
 }
 
 async function confirmApprove() {
@@ -211,6 +230,7 @@ async function confirmApprove() {
   m.feeMerchant = approveFeeState.feeMerchant;
   m.itemDeduction = approveFeeState.itemDeduction;
   m.feeExemptMaxPrice = approveFeeState.feeExemptMaxPrice;
+  m.deliverySpeeds = approveFeeState.deliverySpeeds;
 
   // Mirror the sensitive/public split into the new per-merchant Firestore documents too,
   // so Firestore Security Rules (once published) can protect this merchant's data
