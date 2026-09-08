@@ -205,23 +205,39 @@ function renderOwnDeliveryAreaPricing() {
 }
 function renderOwnDeliveryAreaRows(governorate) {
   const areas = allAreasForGovernorate(governorate);
-  if (!areas.length) return '<div class="empty">ما فيه مناطق مسجلة لهذي المحافظة بعد</div>';
+  if (!areas.length) return '<div class="empty">ما فيه مناطق مسجلة لهذي المحافظة بعد — ضيفها من "إدارة المناطق" بالإعدادات</div>';
   return areas.map(area => {
-    const price = (ownDeliveryState.areaPrices[governorate] && typeof ownDeliveryState.areaPrices[governorate][area] === 'number')
-      ? ownDeliveryState.areaPrices[governorate][area] : '';
+    const entry = ownDeliveryAreaEntry(ownDeliveryState.areaPrices, governorate, area);
+    const price = entry ? entry.price : '';
+    const days = entry ? entry.days : '';
+    const defaultPrice = document.getElementById('own-delivery-price-input').value || 0;
+    const defaultDays = document.getElementById('own-delivery-days-input').value || 'وقت المحل الافتراضي';
     return `
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
-        <span style="flex:1; font-size:12.5px;">${esc(area)}</span>
-        <input type="number" style="width:100px;" placeholder="${document.getElementById('own-delivery-price-input').value || 0}" value="${price}"
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+        <span style="flex:1; min-width:90px; font-size:12.5px;">${esc(area)}</span>
+        <input type="number" style="width:100px;" placeholder="${defaultPrice}" value="${price}"
           onchange="setOwnDeliveryAreaPrice('${esc(governorate)}', '${esc(area)}', this.value)">
+        <input style="width:110px;" placeholder="${esc(defaultDays)}" value="${esc(days)}"
+          onchange="setOwnDeliveryAreaDays('${esc(governorate)}', '${esc(area)}', this.value)">
       </div>`;
   }).join('');
 }
 function setOwnDeliveryAreaPrice(governorate, area, value) {
   if (!ownDeliveryState.areaPrices[governorate]) ownDeliveryState.areaPrices[governorate] = {};
+  const existing = ownDeliveryAreaEntry(ownDeliveryState.areaPrices, governorate, area);
   const price = value === '' ? null : Math.max(0, parseFloat(value) || 0);
-  if (price === null) delete ownDeliveryState.areaPrices[governorate][area];
-  else ownDeliveryState.areaPrices[governorate][area] = price;
+  const days = existing ? existing.days : '';
+  if (price === null && !days) delete ownDeliveryState.areaPrices[governorate][area];
+  else ownDeliveryState.areaPrices[governorate][area] = { price: price === null ? 0 : price, days };
+}
+function setOwnDeliveryAreaDays(governorate, area, value) {
+  if (!ownDeliveryState.areaPrices[governorate]) ownDeliveryState.areaPrices[governorate] = {};
+  const existing = ownDeliveryAreaEntry(ownDeliveryState.areaPrices, governorate, area);
+  const days = value.trim();
+  const price = existing ? existing.price : 0;
+  const hadPrice = existing && existing.price;
+  if (!days && !hadPrice) delete ownDeliveryState.areaPrices[governorate][area];
+  else ownDeliveryState.areaPrices[governorate][area] = { price, days };
 }
 
 // Ready-for-delivery orders are grouped into invoices (same orderGroupId = one customer

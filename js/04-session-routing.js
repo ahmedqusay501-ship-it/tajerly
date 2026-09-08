@@ -123,10 +123,15 @@ function ensureMerchantTheme(m) {
   if (!m.theme) m.theme = { primaryColor: '#C77B4A', logo: null, banner: null };
   if (typeof m.shippingAmount !== 'number') m.shippingAmount = data.settings.shippingAmount;
   // Merchants the admin has flagged as handling their own delivery (their own driver/service)
-  // instead of the platform's. Default false so every existing merchant keeps behaving exactly
-  // like before — only an explicit admin toggle (see openOwnDeliveryModal) turns it on.
+  // instead of the platform's. Existing merchants without this field yet default to false so
+  // they keep behaving exactly like before — an explicit admin toggle (see openOwnDeliveryModal)
+  // turns it on for them. New merchants get ownDelivery: true set directly at creation time
+  // (see submitRequest in 08-admin-requests-employees-creds.js), so this line never touches them.
   if (typeof m.ownDelivery !== 'boolean') m.ownDelivery = false;
   if (typeof m.ownDeliveryPrice !== 'number') m.ownDeliveryPrice = 0;
+  // Suggested delivery time text shown to the customer at checkout (e.g. "يومين")، الافتراضي
+  // لأي منطقة ما إلها وقت خاص محدد لها. اختياري — يترك فاضي لو ما يبي التاجر يحدد وقت.
+  if (typeof m.ownDeliveryDays !== 'string') m.ownDeliveryDays = '';
   // Which governorates this merchant is allowed to ship their own-delivery orders to — set by
   // the admin (see openOwnDeliveryModal). Empty array = no restriction (all governorates).
   if (!Array.isArray(m.ownDeliveryGovernorates)) m.ownDeliveryGovernorates = [];

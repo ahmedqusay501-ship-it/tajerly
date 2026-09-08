@@ -280,11 +280,12 @@ function updateCheckoutDelivery() {
   else if (!canFast && !canSlow) checkoutSpeed = zoneOffersSpeed(zone, 'fast') ? 'fast' : 'slow';
 
   let deliveryFee;
+  let ownDeliveryDaysText = '';
   if (m.ownDelivery) {
     const area = document.getElementById('co-area').value;
-    const areaPrice = (m.ownDeliveryAreaPrices && m.ownDeliveryAreaPrices[governorate] && typeof m.ownDeliveryAreaPrices[governorate][area] === 'number')
-      ? m.ownDeliveryAreaPrices[governorate][area] : null;
-    deliveryFee = areaPrice !== null ? areaPrice : (m.ownDeliveryPrice || 0);
+    const areaEntry = ownDeliveryAreaEntry(m.ownDeliveryAreaPrices, governorate, area);
+    deliveryFee = areaEntry ? areaEntry.price : (m.ownDeliveryPrice || 0);
+    ownDeliveryDaysText = (areaEntry && areaEntry.days) ? areaEntry.days : (m.ownDeliveryDays || '');
   } else if (zone) {
     deliveryFee = checkoutSpeed === 'fast' ? zone.fastPrice : zone.slowPrice;
   } else {
@@ -325,7 +326,7 @@ function updateCheckoutDelivery() {
     ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${i.productName}${i.size ? ' (مقاس ' + i.size + ')' : ''}${i.color ? ' — ' + i.color : ''} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()} د</span></div>`).join('')}
     ${couponDiscount > 0 ? `<div class="checkout-line"><span>خصم الكوبون ${esc(currentCheckout.couponCode || '')}</span><span>-${couponDiscount.toLocaleString()} د</span></div>` : ''}
     ${serviceFee > 0 ? `<div class="checkout-line"><span>رسوم خدمة</span><span>${serviceFee.toLocaleString()} د</span></div>` : ''}
-    <div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>
+    <div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' + (ownDeliveryDaysText ? ' — ' + esc(ownDeliveryDaysText) : '') : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>
     <div class="checkout-line total"><span>الإجمالي</span><span>${total.toLocaleString()} د</span></div>
     <div style="font-size:12px; color:var(--accent-dark); background:#F1F5F9; padding:8px 10px; border-radius:8px; margin-top:8px;">
       <b>الدفع عند الاستلام</b> — تدفع المبلغ نقداً لمندوب التوصيل عند وصول طلبك، ما فيه دفع إلكتروني حالياً

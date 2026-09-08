@@ -34,7 +34,14 @@ async function submitRequest() {
     feeMerchant: s.feeMerchant,
     itemDeduction: s.itemDeduction || 0,
     shippingAmount: s.shippingAmount,
-    deliverySpeeds: ['fast', 'slow'] // default حتى يحددها الأدمن وقت القبول — يتحكم بيها فقط من نافذة القبول
+    deliverySpeeds: ['fast', 'slow'], // default حتى يحددها الأدمن وقت القبول — يتحكم بيها فقط من نافذة القبول
+    // كل تاجر جديد ينضم من الآن يشحن بنفسه افتراضياً (توصيل خاص بالمحل) بدل توصيل المنصة العام —
+    // الأدمن يقدر يرجّعه لتوصيل المنصة لاحقاً من "توصيل خاص بالمحل" بصفحة إدارة التجار لو احتاج.
+    ownDelivery: true,
+    ownDeliveryPrice: 0,
+    ownDeliveryDays: '',
+    ownDeliveryGovernorates: [],
+    ownDeliveryAreaPrices: {}
   });
 
   // IMPORTANT: the join-request document itself is written directly here (not through the

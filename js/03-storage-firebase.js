@@ -294,6 +294,16 @@ function allAreasForGovernorate(governorate) {
 // Adds a brand-new area name to the shared, platform-wide list for a governorate (idempotent).
 // Used both by the admin's general shipping-zone settings and by a merchant with own-delivery
 // enabled who wants to price a neighborhood that isn't in the built-in list yet.
+// Normalizes one merchant's own-delivery area price entry into { price, days }.
+// Old saved data stored a bare number (just the price); newer data stores an object with an
+// optional suggested-arrival-time string too. Reading through this everywhere (checkout +
+// the admin editor) means both shapes keep working without a data migration.
+function ownDeliveryAreaEntry(areaPrices, governorate, area) {
+  const raw = areaPrices && areaPrices[governorate] && areaPrices[governorate][area];
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === 'number') return { price: raw, days: '' };
+  return { price: typeof raw.price === 'number' ? raw.price : 0, days: raw.days || '' };
+}
 function registerCustomArea(governorate, areaName) {
   const name = (areaName || '').trim();
   if (!governorate || !name) return false;

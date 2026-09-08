@@ -90,6 +90,7 @@ function openOwnDeliveryModal(id) {
   };
   document.getElementById('own-delivery-title').textContent = `توصيل خاص — ${m.shop}`;
   document.getElementById('own-delivery-price-input').value = m.ownDeliveryPrice || 0;
+  document.getElementById('own-delivery-days-input').value = m.ownDeliveryDays || '';
   renderOwnDeliveryToggle();
   renderOwnDeliveryGovernorates();
   renderOwnDeliveryAreaPricing();
@@ -121,8 +122,10 @@ function confirmOwnDelivery() {
   const m = data.merchants.find(x => x.id === pendingOwnDeliveryId);
   if (!m) return;
   const price = Math.max(0, parseFloat(document.getElementById('own-delivery-price-input').value) || 0);
+  const days = document.getElementById('own-delivery-days-input').value.trim();
   m.ownDelivery = ownDeliveryState.enabled;
   m.ownDeliveryPrice = price;
+  m.ownDeliveryDays = days;
   m.ownDeliveryGovernorates = [...ownDeliveryState.governorates];
   m.ownDeliveryAreaPrices = JSON.parse(JSON.stringify(ownDeliveryState.areaPrices));
   saveData();
