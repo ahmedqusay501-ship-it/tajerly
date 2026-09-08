@@ -5,6 +5,7 @@ async function submitRequest() {
   const phone = document.getElementById('req-phone').value.trim();
   const governorate = document.getElementById('req-governorate').value;
   const area = document.getElementById('req-area').value.trim();
+  const category = document.getElementById('req-category').value;
   const description = document.getElementById('req-description').value.trim();
   const expectedDailyOrdersRaw = document.getElementById('req-daily-orders').value.trim();
   if (!name || !shop || !phone) { showToast('عبي كل الحقول'); return; }
@@ -18,6 +19,7 @@ async function submitRequest() {
   data.merchants.push({
     id: newId,
     name, shop, phone, governorate, area,
+    category, // تصنيف المتجر — يُستخدم لفلترة صفحة "السوق العام" (كل المنتجات مع بعض)
     description,
     expectedDailyOrders: Number(expectedDailyOrdersRaw),
     status: 'pending',

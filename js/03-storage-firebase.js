@@ -226,6 +226,14 @@ async function initStorage() {
 }
 
 const STORAGE_KEY = 'platform-data-v1';
+// Fixed set of store-level categories — same list offered on the "طلب انضمام" form. Used to
+// tag each merchant's whole store (not individual products) so the general market page
+// (السوق العام) can filter products by category across every merchant at once. See
+// STORE_CATEGORIES usages in js/08 (join form) and js/12/js/19 (general market page).
+const STORE_CATEGORIES = [
+  'ملابس وأزياء','إكسسوارات','إلكترونيات وموبايلات','مواد منزلية',
+  'مستحضرات تجميل','ألعاب أطفال','أحذية','أخرى'
+];
 const IRAQ_GOVERNORATES = [
   'بغداد','البصرة','نينوى','أربيل','النجف','كربلاء','الأنبار','ديالى','كركوك',
   'واسط','ذي قار','بابل','ميسان','المثنى','القادسية','صلاح الدين','دهوك','السليمانية'

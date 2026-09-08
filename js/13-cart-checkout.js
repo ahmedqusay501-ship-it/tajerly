@@ -855,7 +855,9 @@ async function submitCustomerCancelRequest() {
 // Refreshes whichever storefront view is currently on screen — the public
 // customer-facing link, or the admin's internal preview tool.
 function refreshStorefrontView() {
-  if (publicStoreMerchantId) {
+  if (generalMarketActive) {
+    renderGeneralMarket();
+  } else if (publicStoreMerchantId) {
     renderStorefrontInto(publicStoreMerchantId, document.getElementById('public-storefront-content'));
   } else {
     renderStorefront();

@@ -569,6 +569,17 @@ async function confirmRestoreBackup(snapshot) {
   renderAll();
 }
 
+// Updates which of the fixed STORE_CATEGORIES this merchant's whole store is tagged under —
+// purely a filtering aid for the general market page (السوق العام); doesn't touch products,
+// orders, or anything else about the merchant.
+function setMerchantCategory(id, category) {
+  const m = data.merchants.find(x => x.id === id);
+  if (!m || !STORE_CATEGORIES.includes(category)) return;
+  m.category = category;
+  saveData();
+  showToast(`تم تعديل تصنيف "${m.shop}" إلى ${category}`);
+}
+
 function renderMerchantActions() {
   const list = document.getElementById('merchant-actions-list');
   const active = activeMerchants();
@@ -586,6 +597,9 @@ function renderMerchantActions() {
         — باسورد: مخفية
       </span></span>
       <span>
+        <select class="small" style="width:auto; display:inline-block; padding:4px 6px; font-size:11px;" onchange="setMerchantCategory(${m.id}, this.value)" title="تصنيف المتجر — يظهر فيه بصفحة السوق العام">
+          ${STORE_CATEGORIES.map(c => `<option value="${esc(c)}" ${m.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+        </select>
         <button class="btn secondary small" onclick="editMerchantFees(${m.id})">تعديل الرسوم والتوصيل</button>
         <button class="btn secondary small" onclick="exportMerchantAccountingExcel(${m.id})">تصدير حسابات</button>
         <button class="btn secondary small" onclick="openResetPasswordModal('merchant', ${m.id})">تصفير الباسورد</button>

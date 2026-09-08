@@ -152,6 +152,13 @@
           <span class="home-action-sub" data-i18n="home_join_sub">تاجر جديد؟ افتح متجرك مجاناً</span>
         </span>
       </button>
+      <button class="btn secondary home-action-btn" onclick="openGeneralMarket()" id="home-market-btn">
+        <span class="home-action-icon"></span>
+        <span>
+          <span class="home-action-title" data-i18n="home_market_title">تصفح كل المنتجات</span>
+          <span class="home-action-sub" data-i18n="home_market_sub">زبون؟ تسوق من كل المتاجر بمكان وحد</span>
+        </span>
+      </button>
     </div>
 
     <div class="auth-switch" style="margin-top:18px;">
@@ -318,6 +325,40 @@
     <div id="public-storefront-content"></div>
     <div class="public-footer">
       <svg class="brand-mark" width="18" height="18" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:6px;"><defs><linearGradient id="bmNavyF" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyF)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenF)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenF)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg><br>
+      <span data-i18n="public_footer_made_by">تم إنشاء هذا المتجر مجاناً بواسطة موقع تاجرلي —</span> <a href="?join=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_get_store">للحصول على متجر اضغط هنا</a>
+      <br><a onclick="openLegalModal()" style="text-decoration:underline; cursor:pointer;" data-i18n="public_footer_legal">الشروط وسياسة الخصوصية</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ GENERAL MARKET (public, no login — aggregates every active merchant's
+     products into one browsable page, alongside each merchant's own individual store link) ============ -->
+<div id="general-market-screen" style="display:none;">
+  <div class="public-topbar">
+    <span class="public-topbar-left">
+      <svg class="brand-mark" width="20" height="20" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyM" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenM" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyM)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenM)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenM)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>
+      <span style="font-weight:700; font-size:13.5px;" data-i18n="market_page_title">السوق العام</span>
+    </span>
+    <select id="market-lang-switcher-select" class="public-lang-switcher" onchange="setLang(this.value)" data-i18n-aria-label="lang_switcher_label">
+      <option value="ar">AR</option>
+      <option value="en">EN</option>
+      <option value="ku">KU</option>
+    </select>
+    <a onclick="showHomeScreen()" style="font-size:12px; text-decoration:underline; cursor:pointer; white-space:nowrap;" data-i18n="back_to_home_link">→ رجوع للصفحة الرئيسية</a>
+  </div>
+  <div class="view active public-store-view" style="padding:16px; margin:0 auto;">
+    <div class="card">
+      <div class="card-title" data-i18n="market_page_title">السوق العام</div>
+      <div class="subtitle" data-i18n="market_page_sub">كل منتجات كل المتاجر بمكان وحد</div>
+      <div id="market-cart-bar-area"></div>
+      <div class="store-search-bar">
+        <input id="market-search" type="text" data-i18n-placeholder="market_search_placeholder" placeholder="دور عن منتج بالاسم..." oninput="onMarketSearchInput()">
+      </div>
+      <div id="market-filter-chips"></div>
+      <div id="market-products-area"></div>
+    </div>
+    <div class="public-footer">
+      <svg class="brand-mark" width="18" height="18" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:6px;"><defs><linearGradient id="bmNavyMF" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenMF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyMF)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenMF)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenMF)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg><br>
       <span data-i18n="public_footer_made_by">تم إنشاء هذا المتجر مجاناً بواسطة موقع تاجرلي —</span> <a href="?join=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_get_store">للحصول على متجر اضغط هنا</a>
       <br><a onclick="openLegalModal()" style="text-decoration:underline; cursor:pointer;" data-i18n="public_footer_legal">الشروط وسياسة الخصوصية</a>
     </div>
@@ -1309,6 +1350,7 @@
 <script src="js/15-admin-tools.js"></script>
 <script src="js/16-charts-dashboard.js"></script>
 <script src="js/18-admin-alerts.js"></script>
+<script src="js/19-general-market.js"></script>
 <script src="js/17-live-refresh-boot.js"></script>
 </body>
 </html>

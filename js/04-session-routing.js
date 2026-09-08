@@ -33,6 +33,10 @@ function routeOnLoad() {
     showJoinScreen();
     return;
   }
+  if (params.get('market') === '1') {
+    openGeneralMarket();
+    return;
+  }
   // Try to silently restore a previous login (admin or merchant) instead of always
   // showing the login form after every page reload/update. See restoreSession().
   if (restoreSession()) return;
@@ -101,6 +105,8 @@ function openPublicStore(slug) {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('join-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('general-market-screen').style.display = 'none';
+  generalMarketActive = false;
   document.getElementById('public-store-screen').style.display = 'block';
   const m = data.merchants.find(x => x.linkSlug === slug && x.status === 'active');
   const brandEl = document.getElementById('public-store-brand');
@@ -149,6 +155,10 @@ function ensureMerchantTheme(m) {
   // working too (see storeLinkUrl), so removing/changing this can never orphan their store,
   // products, or orders; it only changes which URL is treated as "the" official one.
   if (typeof m.customDomain !== 'string') m.customDomain = '';
+  // Store-level category (ملابس، إلكترونيات...) — merchants created before this feature
+  // existed, or whose join request predates it being saved, default to "أخرى" so they still
+  // show up under a filter on the general market page instead of vanishing from it entirely.
+  if (typeof m.category !== 'string' || !STORE_CATEGORIES.includes(m.category)) m.category = 'أخرى';
   // Per-product commission exemption requests — a merchant asks to stop paying platform
   // commission on one specific product, the admin approves/rejects it. { id, productId,
   // productName, status: 'pending'|'approved'|'rejected', createdAt, respondedAt }. See
