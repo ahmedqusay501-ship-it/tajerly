@@ -20,6 +20,10 @@ function openRestaurantsMarket() {
   document.getElementById('restaurants-screen').style.display = 'block';
   restaurantsMarketActive = true;
   publicStoreMerchantId = null; // not scoped to any single merchant here
+  // نفس فكرة marketVisits بصفحة السوق العام — تُحسب حتى وهي معطّلة، شوف
+  // renderRestaurantsMarket تحت وrenderMarketVisitsCard بـ 15-admin-tools.js.
+  data.settings.restaurantsVisits = (data.settings.restaurantsVisits || 0) + 1;
+  saveData();
   renderRestaurantsMarket();
 }
 
@@ -122,5 +126,13 @@ function renderRestaurantsMarket() {
   const chipsEl = document.getElementById('restaurant-filter-chips');
   if (chipsEl) chipsEl.innerHTML = renderRestaurantFilterChips();
   const area = document.getElementById('restaurant-products-area');
-  if (area) area.innerHTML = renderRestaurantProducts();
+  if (!area) return;
+  if (data.settings.restaurantsPageEnabled === false) {
+    if (searchInput) searchInput.closest('.store-search-bar')?.style.setProperty('display', 'none');
+    if (chipsEl) chipsEl.innerHTML = '';
+    area.innerHTML = '<div class="empty">🍽️ صفحة المطاعم غير متوفرة حالياً — نعمل على تحسينها، رجعلها بعد شوي</div>';
+    return;
+  }
+  if (searchInput) searchInput.closest('.store-search-bar')?.style.setProperty('display', 'block');
+  area.innerHTML = renderRestaurantProducts();
 }

@@ -35,9 +35,15 @@ function openGeneralMarket() {
   document.getElementById('join-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('public-store-screen').style.display = 'none';
+  document.getElementById('restaurants-screen').style.display = 'none';
+  restaurantsMarketActive = false;
   document.getElementById('general-market-screen').style.display = 'block';
   generalMarketActive = true;
   publicStoreMerchantId = null; // not scoped to any single merchant here
+  // يُحسب حتى وهي معطّلة (marketPageEnabled=false) — الأدمن يحتاج يعرف كم زيارة توصل
+  // للصفحة أصلاً، بما فيها المحاولات وقت التعطيل. شوف "إدارة صفحات السوق" بلوحة الأدمن.
+  data.settings.marketVisits = (data.settings.marketVisits || 0) + 1;
+  saveData();
   renderGeneralMarket();
 }
 
@@ -192,5 +198,17 @@ function renderGeneralMarket() {
   const chipsEl = document.getElementById('market-filter-chips');
   if (chipsEl) chipsEl.innerHTML = renderMarketFilterChips();
   const area = document.getElementById('market-products-area');
-  if (area) area.innerHTML = renderMarketProducts();
+  if (!area) return;
+  // إيقاف كامل للصفحة من الأدمن (نوع مختلف عن hiddenFromMarket تبع تاجر وحد — شوف
+  // toggleMarketPageEnabled بـ 15-admin-tools.js). لما تكون معطّلة، ما نعرض شريط بحث ولا
+  // فلاتر ولا شريط عروض حتى — رسالة واحدة بس.
+  if (data.settings.marketPageEnabled === false) {
+    if (searchInput) searchInput.closest('.store-search-bar').style.display = 'none';
+    if (chipsEl) chipsEl.innerHTML = '';
+    if (offersArea) offersArea.innerHTML = '';
+    area.innerHTML = '<div class="empty">🛒 صفحة السوق العام غير متوفرة حالياً — نعمل على تحسينها، رجعلها بعد شوي</div>';
+    return;
+  }
+  if (searchInput) searchInput.closest('.store-search-bar').style.display = 'block';
+  area.innerHTML = renderMarketProducts();
 }

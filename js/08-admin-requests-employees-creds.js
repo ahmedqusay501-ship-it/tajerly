@@ -6,6 +6,8 @@ async function submitRequest() {
   const governorate = document.getElementById('req-governorate').value;
   const area = document.getElementById('req-area').value.trim();
   const category = document.getElementById('req-category').value;
+  const typeSelect = document.getElementById('req-type');
+  const type = (typeSelect && typeSelect.value === 'restaurant') ? 'restaurant' : 'market';
   const description = document.getElementById('req-description').value.trim();
   const expectedDailyOrdersRaw = document.getElementById('req-daily-orders').value.trim();
   if (!name || !shop || !phone) { showToast('عبي كل الحقول'); return; }
@@ -20,6 +22,9 @@ async function submitRequest() {
     id: newId,
     name, shop, phone, governorate, area,
     category, // تصنيف المتجر — يُستخدم لفلترة صفحة "السوق العام" (كل المنتجات مع بعض)
+    // اختيار مقدّم الطلب نفسه (ماركت/مطعم) — الإدارة تراجعه وتقدر تغيّره وقت الموافقة
+    // (شوف approve-type بنافذة القبول)؛ يقرر لاحقاً أي صفحة سوق عام يظهر بها هذا التاجر.
+    type,
     description,
     expectedDailyOrders: Number(expectedDailyOrdersRaw),
     status: 'pending',
@@ -97,6 +102,7 @@ function approveMerchant(id) {
   const m = data.merchants.find(x => x.id === id);
   document.getElementById('approve-username').value = '';
   document.getElementById('approve-password').value = '';
+  document.getElementById('approve-type').value = (m && m.type === 'restaurant') ? 'restaurant' : 'market';
   document.getElementById('approve-credentials-fields').style.display = 'block';
   document.getElementById('approve-modal-title').textContent = 'قبول التاجر — بيانات الدخول ورسوم المنصة';
   approveFeeState = {
@@ -231,6 +237,10 @@ async function confirmApprove() {
     }
 
     m.username = username; m.password = await hashPassword(password); m.status = 'active';
+    // الإدارة تقدر تراجع/تغيّر اختيار التاجر (ماركت/مطعم) هنا قبل الموافقة النهائية —
+    // نفس الحقل المقفول لاحقاً بـ firestore.rules (التاجر ما يقدر يبدّله بنفسه بعد هذا).
+    const approveTypeSelect = document.getElementById('approve-type');
+    m.type = (approveTypeSelect && approveTypeSelect.value === 'restaurant') ? 'restaurant' : 'market';
   }
   m.feeSource = approveFeeState.feeSource;
   m.feeType = approveFeeState.feeType;

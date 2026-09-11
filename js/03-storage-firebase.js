@@ -403,7 +403,17 @@ let data = {
     // "الأكثر مبيعاً" بالسوق العام — [{merchantId, productId}, ...] معاد ترتيبها حسب الأكثر
     // طلباً، محسوبة من الأدمن بس (شوف recomputeMarketBestSellers بـ 15-admin-tools.js) لأن
     // زائر عادي ما عنده صلاحية قراءة orders أصلاً ليحسبها بنفسه بمتصفحه.
-    marketBestSellers: []
+    marketBestSellers: [],
+    // تفعيل/تعطيل كامل لصفحة "السوق العام" أو "صفحة المطاعم" ككل (مو تاجر وحد — كل
+    // الصفحة). لما تكون false، الصفحة تعرض رسالة "غير متوفرة حالياً" بدل قائمة المنتجات —
+    // شوف renderGeneralMarket/renderRestaurantsMarket. الزيارات (marketVisits/
+    // restaurantsVisits) تُزاد لحظة فتح الصفحة (openGeneralMarket/openRestaurantsMarket
+    // بالكود)، بغض النظر إذا كانت مفعّلة أو لا — عشان الأدمن يعرف كم شخص حاول يزورها حتى
+    // وهي معطّلة.
+    marketPageEnabled: true,
+    restaurantsPageEnabled: true,
+    marketVisits: 0,
+    restaurantsVisits: 0
   },
   nextId: 1
 };

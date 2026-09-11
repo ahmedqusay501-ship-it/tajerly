@@ -216,6 +216,7 @@ function renderAll() {
   renderStoreSelect();
   renderSettings();
   renderMerchantActions();
+  renderMarketPagesCard();
   renderOffersList();
   renderAdminShippingControl();
   renderAuditLog();

@@ -679,6 +679,59 @@ function recomputeMarketBestSellers() {
   }
 }
 
+// ---------- MARKET PAGES (تفعيل/تعطيل كامل + عدد الزيارات لكل من السوق العام وصفحة المطاعم) ----------
+// Different axis from hiddenFromMarket (which hides one merchant from whichever page it
+// belongs to) — this turns the WHOLE page off for every visitor at once, regardless of how
+// many merchants are in it. See renderGeneralMarket/renderRestaurantsMarket for the
+// "غير متوفرة حالياً" message this produces, and openGeneralMarket/openRestaurantsMarket
+// (same files) for where marketVisits/restaurantsVisits actually get counted.
+function toggleMarketPageEnabled() {
+  data.settings.marketPageEnabled = !data.settings.marketPageEnabled;
+  saveData();
+  logAudit(data.settings.marketPageEnabled ? 'تفعيل صفحة السوق العام' : 'تعطيل صفحة السوق العام كاملة', '');
+  showToast(data.settings.marketPageEnabled ? 'صفحة السوق العام فعّالة الآن' : 'تم تعطيل صفحة السوق العام كاملة');
+  renderAll();
+}
+function toggleRestaurantsPageEnabled() {
+  data.settings.restaurantsPageEnabled = !data.settings.restaurantsPageEnabled;
+  saveData();
+  logAudit(data.settings.restaurantsPageEnabled ? 'تفعيل صفحة المطاعم' : 'تعطيل صفحة المطاعم كاملة', '');
+  showToast(data.settings.restaurantsPageEnabled ? 'صفحة المطاعم فعّالة الآن' : 'تم تعطيل صفحة المطاعم كاملة');
+  renderAll();
+}
+function resetMarketVisits() {
+  data.settings.marketVisits = 0;
+  saveData();
+  showToast('تم تصفير عداد زيارات السوق العام');
+  renderAll();
+}
+function resetRestaurantsVisits() {
+  data.settings.restaurantsVisits = 0;
+  saveData();
+  showToast('تم تصفير عداد زيارات صفحة المطاعم');
+  renderAll();
+}
+function renderMarketPagesCard() {
+  const box = document.getElementById('market-pages-card');
+  if (!box) return;
+  const marketMerchants = data.merchants.filter(m => m.status === 'active' && m.type !== 'restaurant').length;
+  const restaurantMerchants = data.merchants.filter(m => m.status === 'active' && m.type === 'restaurant').length;
+  const block = (title, emoji, enabled, visits, merchantCount, toggleFn, resetFn, openUrl) => `
+    <div class="card" style="flex:1; min-width:220px;">
+      <div class="card-title">${emoji} ${title}</div>
+      <div class="stat"><div class="stat-num">${visits || 0}</div><div class="stat-label">إجمالي الزيارات</div></div>
+      <div class="subtitle" style="margin:6px 0;">${merchantCount} محل نشط بهذي الصفحة حالياً</div>
+      <div class="badge ${enabled ? 'active' : 'disabled'}" style="margin-bottom:8px;">${enabled ? 'الصفحة مفعّلة' : 'الصفحة معطّلة كاملة'}</div><br>
+      <button class="btn ${enabled ? 'warn' : ''} small" onclick="${toggleFn}()">${enabled ? 'تعطيل الصفحة كاملة' : 'إعادة تفعيل الصفحة'}</button>
+      <button class="btn secondary small" onclick="${resetFn}()">تصفير عداد الزيارات</button>
+      <a href="${openUrl}" target="_blank" class="btn secondary small" style="display:inline-block; text-decoration:none;">فتح الصفحة</a>
+    </div>`;
+  box.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
+    ${block('السوق العام', '🛒', data.settings.marketPageEnabled !== false, data.settings.marketVisits, marketMerchants, 'toggleMarketPageEnabled', 'resetMarketVisits', '?market=1')}
+    ${block('صفحة المطاعم', '🍽️', data.settings.restaurantsPageEnabled !== false, data.settings.restaurantsVisits, restaurantMerchants, 'toggleRestaurantsPageEnabled', 'resetRestaurantsVisits', '?restaurants=1')}
+  </div>`;
+}
+
 // ---------- OFFERS (عروض السوق العام) ----------
 // Admin-managed promotional sections shown at the top of the general market page (see
 // renderMarketOffers in 19-general-market.js). Lives in its own `offers` collection, synced

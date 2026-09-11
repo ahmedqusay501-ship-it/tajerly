@@ -301,6 +301,12 @@
       <option>مواد منزلية</option><option>مستحضرات تجميل</option><option>ألعاب أطفال</option>
       <option>أحذية</option><option>أخرى</option>
     </select>
+    <label>نوع نشاطك</label>
+    <select id="req-type">
+      <option value="market" selected>🛒 ماركت — محل بيع منتجات عادي</option>
+      <option value="restaurant">🍽️ مطعم — أكل وطلبات مطعم</option>
+    </select>
+    <div class="subtitle" style="margin-top:-4px; margin-bottom:8px;">هذا يحدد فيه صفحة تظهر منتجاتك بالسوق العام (السوق العام أو صفحة المطاعم) — الإدارة تقدر تراجعه وتغيّره وقت الموافقة على طلبك</div>
     <label data-i18n="join_description_label">وصف مختصر عن محلك وشنو نوع البضاعة اللي تبيعها</label>
     <textarea id="req-description" rows="3" data-i18n-placeholder="join_description_placeholder" placeholder="مثلاً: نبيع ملابس رجالية تركية الصنع، أسعار متوسطة، توصيل لكل العراق"></textarea>
     <label data-i18n="join_daily_orders_label">كم طلب متوقع يجيك باليوم تقريباً؟</label>
@@ -830,7 +836,12 @@
   </div>
 
   <div class="card">
-    <div class="card-title">٦. عروض السوق العام</div>
+    <div class="card-title">٦. صفحتا السوق العام والمطاعم</div>
+    <div class="subtitle" style="margin-bottom:8px;">تفعيل/تعطيل كل صفحة كاملة (مستقل عن إخفاء تاجر وحد)، وعدد الزيارات الكلي لكل صفحة</div>
+    <div id="market-pages-card"><div class="empty">جاري التحميل...</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">٧. عروض السوق العام</div>
     <div class="subtitle" style="margin-bottom:8px;">قسم إعلاني بأعلى صفحة السوق العام يجمع تحته محلات تختارها — بعنوان وصورة، ودائم أو لفترة محددة</div>
     <div id="offers-list"><div class="empty">جاري التحميل...</div></div>
     <button class="btn small" style="margin-top:8px;" onclick="openOfferEditor(null)">+ عرض جديد</button>
@@ -1004,6 +1015,12 @@
     <div id="approve-credentials-fields">
       <label>اسم المستخدم</label><input id="approve-username">
       <label>كلمة المرور</label><input type="password" id="approve-password">
+      <label>نوع نشاط هذا التاجر</label>
+      <select id="approve-type">
+        <option value="market">🛒 ماركت — محل بيع منتجات عادي</option>
+        <option value="restaurant">🍽️ مطعم</option>
+      </select>
+      <div class="subtitle" style="margin-top:-4px; margin-bottom:8px;">هذا الاختيار الابتدائي هو اللي كتبه التاجر بطلبه — راجعه وغيّره لو احتاج قبل الموافقة، ويقدر يعدّله لاحقاً من صفحة "المحلات" بأي وقت</div>
     </div>
     <div class="card-title" style="margin-top:14px;">مصدر رسم المنصة لهذا التاجر</div>
     <div class="subtitle" style="margin-bottom:4px;">هذا القرار بيد الأدمن فقط — التاجر ما يقدر يغيّره من لوحته</div>
