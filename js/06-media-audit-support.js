@@ -127,6 +127,29 @@ async function saveData() {
       // syncOrderTrackingUpdates — nothing to patch until the group exists, and the very
       // next status change will catch them up automatically.
       syncOrderTrackingUpdates(changedOrders);
+
+      // Offers: admin-only, low-frequency writes — diffed the exact same way as merchants
+      // above, PLUS delete detection (an offer really can be removed entirely, unlike a
+      // merchant/order which only ever changes status). isAdmin()/isAdminEmployee('settings')
+      // enforce the actual permission server-side (see firestore.rules); this diff is purely
+      // to avoid redundant writes, not a security boundary itself.
+      const currentOfferIds = new Set(data.offers.map(o => String(o.id)));
+      data.offers.forEach(o => {
+        const key = String(o.id);
+        const json = JSON.stringify(o);
+        if (lastSyncedOfferSnapshots.get(key) !== json) {
+          window.authApi.saveDoc('offers', key, o)
+            .then(() => lastSyncedOfferSnapshots.set(key, json))
+            .catch(e => console.error('offer sync failed for', key, e));
+        }
+      });
+      Array.from(lastSyncedOfferSnapshots.keys()).forEach(key => {
+        if (!currentOfferIds.has(key)) {
+          window.authApi.deleteDoc('offers', key)
+            .then(() => lastSyncedOfferSnapshots.delete(key))
+            .catch(e => console.error('offer delete failed for', key, e));
+        }
+      });
     }
 
     return true;

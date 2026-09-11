@@ -499,6 +499,18 @@ function denyOrderRemoval(orderId) {
 // elsewhere doesn't reset which page they were on.
 let merchantOrdersPage = {};
 const MERCHANT_ORDERS_PAGE_SIZE = 15;
+// Free-text filter for the merchant's own "سجل الطلبات (الكل)" list — matches on order
+// number (groupId), product name, or customer phone/name. Purely client-side: myOrders is
+// already this merchant's own data (scoped by firestore.rules), so no extra read is needed.
+let merchantOrdersSearch = {};
+function onMerchantOrdersSearchInput(merchantId) {
+  const input = document.getElementById(`merchant-orders-search-${merchantId}`);
+  merchantOrdersSearch[merchantId] = input ? input.value : '';
+  merchantOrdersPage[merchantId] = 1; // a new search always starts back on page 1
+  const el = document.getElementById(`merchant-orders-${merchantId}`);
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (el && m) el.innerHTML = renderMerchantOrders(m);
+}
 function changeMerchantOrdersPage(merchantId, page) {
   merchantOrdersPage[merchantId] = page;
   const el = document.getElementById(`merchant-orders-${merchantId}`);
@@ -506,8 +518,21 @@ function changeMerchantOrdersPage(merchantId, page) {
   if (el && m) el.innerHTML = renderMerchantOrders(m);
 }
 function renderMerchantOrders(m) {
-  const myOrders = data.orders.filter(o => o.merchantId === m.id).slice().reverse();
+  let myOrders = data.orders.filter(o => o.merchantId === m.id).slice().reverse();
   if (myOrders.length === 0) return '<div class="empty">ما فيه طلبات بعد</div>';
+
+  const q = (merchantOrdersSearch[m.id] || '').trim();
+  if (q) {
+    const qDigits = q.replace(/[^0-9]/g, '');
+    const qLower = q.toLowerCase();
+    myOrders = myOrders.filter(o =>
+      (qDigits && String(o.orderGroupId || o.id).includes(qDigits)) ||
+      (o.productName || '').toLowerCase().includes(qLower) ||
+      (o.customerName || '').toLowerCase().includes(qLower) ||
+      (o.customerPhone || '').includes(qDigits || qLower)
+    );
+    if (myOrders.length === 0) return '<div class="empty">ما فيه طلبات مطابقة لبحثك</div>';
+  }
 
   const totalPages = Math.max(1, Math.ceil(myOrders.length / MERCHANT_ORDERS_PAGE_SIZE));
   let page = merchantOrdersPage[m.id] || 1;
@@ -522,7 +547,7 @@ function renderMerchantOrders(m) {
     const dateLabel = orderDateTimeLabel(o.date);
     return `<div class="list-item" style="align-items:flex-start;">
       <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د${orderCustomerLine(o)}${orderFinanceLine(o)}${cancelReasonLine(o)}<br>
-      <span style="color:var(--text-mute); font-size:11px;">${dateLabel}</span></span>
+      <span style="color:var(--text-mute); font-size:11px;">${dateLabel} — رقم الطلب #${o.orderGroupId || o.id}</span></span>
       <span>${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span> ${o.deliveryStatus && o.deliveryStatus !== 'none' ? `<span class="badge ${deliveryStatusBadgeClass(o.deliveryStatus)}">${deliveryStatusLabel(o.deliveryStatus)}</span>` : ''}`}</span>
     </div>`;
   }).join('');

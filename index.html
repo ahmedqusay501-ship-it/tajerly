@@ -159,6 +159,13 @@
           <span class="home-action-sub" data-i18n="home_market_sub">زبون؟ تسوق من كل المتاجر بمكان وحد</span>
         </span>
       </button>
+      <button class="btn secondary home-action-btn" onclick="openRestaurantsMarket()" id="home-restaurants-btn">
+        <span class="home-action-icon"></span>
+        <span>
+          <span class="home-action-title">🍽️ تصفح المطاعم</span>
+          <span class="home-action-sub">جوعان؟ اطلب من كل مطاعم تاجرلي بمكان وحد</span>
+        </span>
+      </button>
     </div>
 
     <div class="auth-switch" style="margin-top:18px;">
@@ -327,6 +334,7 @@
       <svg class="brand-mark" width="18" height="18" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:6px;"><defs><linearGradient id="bmNavyF" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyF)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenF)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenF)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg><br>
       <span data-i18n="public_footer_made_by">تم إنشاء هذا المتجر مجاناً بواسطة موقع تاجرلي —</span> <a href="?join=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_get_store">للحصول على متجر اضغط هنا</a>
       <br><a href="?market=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_visit_market">🛒 سوق تاجرلي — تصفح كل المتاجر</a>
+      <br><a href="?restaurants=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;">🍽️ صفحة المطاعم — تصفح كل المطاعم</a>
       <br><a onclick="openLegalModal()" style="text-decoration:underline; cursor:pointer;" data-i18n="public_footer_legal">الشروط وسياسة الخصوصية</a>
     </div>
   </div>
@@ -345,6 +353,7 @@
       <option value="en">EN</option>
       <option value="ku">KU</option>
     </select>
+    <button class="track-order-btn" onclick="openOrderTrackModalMarket()" data-i18n="track_order_btn">تتبع طلبي</button>
     <a onclick="showHomeScreen()" style="font-size:12px; text-decoration:underline; cursor:pointer; white-space:nowrap;" data-i18n="back_to_home_link">→ رجوع للصفحة الرئيسية</a>
   </div>
   <div class="view active public-store-view" style="padding:16px; margin:0 auto;">
@@ -352,14 +361,50 @@
       <div class="card-title" data-i18n="market_page_title">السوق العام</div>
       <div class="subtitle" data-i18n="market_page_sub">كل منتجات كل المتاجر بمكان وحد</div>
       <div id="market-cart-bar-area"></div>
+      <div id="market-offers-area"></div>
       <div class="store-search-bar">
-        <input id="market-search" type="text" data-i18n-placeholder="market_search_placeholder" placeholder="دور عن منتج بالاسم..." oninput="onMarketSearchInput()">
+        <input id="market-search" type="text" data-i18n-placeholder="market_search_placeholder" placeholder="دور عن منتج أو اسم محل..." oninput="onMarketSearchInput()">
       </div>
       <div id="market-filter-chips"></div>
       <div id="market-products-area"></div>
     </div>
     <div class="public-footer">
       <svg class="brand-mark" width="18" height="18" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:6px;"><defs><linearGradient id="bmNavyMF" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenMF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyMF)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenMF)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenMF)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg><br>
+      <span data-i18n="public_footer_made_by">تم إنشاء هذا المتجر مجاناً بواسطة موقع تاجرلي —</span> <a href="?join=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_get_store">للحصول على متجر اضغط هنا</a>
+      <br><a onclick="openLegalModal()" style="text-decoration:underline; cursor:pointer;" data-i18n="public_footer_legal">الشروط وسياسة الخصوصية</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ RESTAURANTS MARKET (public, no login — separate combined page for
+     merchants tagged type==='restaurant' only, kept apart from the general market above) ============ -->
+<div id="restaurants-screen" style="display:none;">
+  <div class="public-topbar">
+    <span class="public-topbar-left">
+      <svg class="brand-mark" width="20" height="20" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="bmNavyR" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyR)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenR)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenR)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg>
+      <span style="font-weight:700; font-size:13.5px;">🍽️ صفحة المطاعم</span>
+    </span>
+    <select id="restaurants-lang-switcher-select" class="public-lang-switcher" onchange="setLang(this.value)" data-i18n-aria-label="lang_switcher_label">
+      <option value="ar">AR</option>
+      <option value="en">EN</option>
+      <option value="ku">KU</option>
+    </select>
+    <button class="track-order-btn" onclick="openOrderTrackModalMarket()" data-i18n="track_order_btn">تتبع طلبي</button>
+    <a onclick="showHomeScreen()" style="font-size:12px; text-decoration:underline; cursor:pointer; white-space:nowrap;" data-i18n="back_to_home_link">→ رجوع للصفحة الرئيسية</a>
+  </div>
+  <div class="view active public-store-view" style="padding:16px; margin:0 auto;">
+    <div class="card">
+      <div class="card-title">🍽️ صفحة المطاعم</div>
+      <div class="subtitle">كل أطباق كل المطاعم بمكان وحد</div>
+      <div id="restaurant-cart-bar-area"></div>
+      <div class="store-search-bar">
+        <input id="restaurant-search" type="text" placeholder="دور عن طبق أو اسم مطعم..." oninput="onRestaurantSearchInput()">
+      </div>
+      <div id="restaurant-filter-chips"></div>
+      <div id="restaurant-products-area"></div>
+    </div>
+    <div class="public-footer">
+      <svg class="brand-mark" width="18" height="18" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:6px;"><defs><linearGradient id="bmNavyRF" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0F172A"/><stop offset="1" stop-color="#1E293B"/></linearGradient><linearGradient id="bmGreenRF" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#34D399"/><stop offset="1" stop-color="#10B981"/></linearGradient></defs><rect width="512" height="512" rx="112" fill="url(#bmNavyRF)"/><g transform="translate(256,178)"><rect x="-182" y="-78" width="364" height="65" rx="10" fill="url(#bmGreenRF)"/><path d="M -91 234 L -91 104 A 91 91 0 0 1 91 104 L 91 234 Z" fill="url(#bmGreenRF)"/><circle cx="50" cy="160" r="9" fill="#0F172A"/></g></svg><br>
       <span data-i18n="public_footer_made_by">تم إنشاء هذا المتجر مجاناً بواسطة موقع تاجرلي —</span> <a href="?join=1" style="text-decoration:underline; cursor:pointer; color:var(--accent-dark); font-weight:700;" data-i18n="public_footer_get_store">للحصول على متجر اضغط هنا</a>
       <br><a onclick="openLegalModal()" style="text-decoration:underline; cursor:pointer;" data-i18n="public_footer_legal">الشروط وسياسة الخصوصية</a>
     </div>
@@ -783,6 +828,13 @@
     <div class="subtitle" id="preview-note" style="margin-bottom:8px;"></div>
     <div class="grid3" id="preview-grid"></div>
   </div>
+
+  <div class="card">
+    <div class="card-title">٦. عروض السوق العام</div>
+    <div class="subtitle" style="margin-bottom:8px;">قسم إعلاني بأعلى صفحة السوق العام يجمع تحته محلات تختارها — بعنوان وصورة، ودائم أو لفترة محددة</div>
+    <div id="offers-list"><div class="empty">جاري التحميل...</div></div>
+    <button class="btn small" style="margin-top:8px;" onclick="openOfferEditor(null)">+ عرض جديد</button>
+  </div>
 </div>
 
 <!-- ============ ADMIN DELIVERY CONTROL (delegable to a 'shipping' employee) ============ -->
@@ -973,6 +1025,37 @@
     <div class="modal-actions">
       <button class="btn secondary small" onclick="closeApproveModal()">إلغاء</button>
       <button class="btn small" onclick="confirmApprove()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="offer-editor-modal">
+  <div class="modal-box" style="max-height:88vh; overflow-y:auto;">
+    <div class="modal-title" id="offer-editor-title">عرض جديد</div>
+    <input type="hidden" id="offer-editor-id">
+    <label>اسم العرض</label>
+    <input id="offer-editor-name" placeholder="مثلاً: عروض الجمعة">
+    <label>صورة العرض</label>
+    <div id="offer-editor-image-preview" style="margin-bottom:6px;"></div>
+    <input type="file" accept="image/*" id="offer-editor-image-file" onchange="setOfferEditorImage(this)">
+    <label style="margin-top:8px; display:flex; align-items:center; gap:6px;">
+      <input type="checkbox" id="offer-editor-permanent" style="width:auto;" checked onchange="toggleOfferEditorDates()"> عرض دائم (بلا تاريخ انتهاء)
+    </label>
+    <div id="offer-editor-dates-row" style="display:none;">
+      <div class="row2">
+        <div><label>يبدأ من</label><input type="date" id="offer-editor-start"></div>
+        <div><label>ينتهي بـ</label><input type="date" id="offer-editor-end"></div>
+      </div>
+    </div>
+    <label style="margin-top:8px; display:flex; align-items:center; gap:6px;">
+      <input type="checkbox" id="offer-editor-active" style="width:auto;" checked> العرض مفعّل (ظاهر بالسوق العام)
+    </label>
+    <label style="margin-top:8px;">المحلات المشمولة بالعرض</label>
+    <input type="text" id="offer-editor-merchant-search" placeholder="دور عن اسم محل..." oninput="renderOfferEditorMerchantList()">
+    <div id="offer-editor-merchant-list" style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px; margin-top:6px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeOfferEditor()">إلغاء</button>
+      <button class="btn small" onclick="saveOfferFromEditor()">حفظ العرض</button>
     </div>
   </div>
 </div>
@@ -1298,17 +1381,34 @@
   </div>
 </div>
 
-<!-- Order tracking modal: lets a customer on THIS merchant's public store link check their own
-     orders by phone number. Scoped hard to trackOrderMerchantId (the store they're currently
-     browsing) — never a cross-store lookup across the whole platform. -->
+<!-- Order tracking modal: lets a customer check their own orders by phone number. Opened
+     either from a single merchant's public store link (scoped to just that store, via
+     openOrderTrackModal) or from the general market page (searches every store, via
+     openOrderTrackModalMarket) — see 13-cart-checkout.js. -->
 <div class="modal-overlay" id="order-track-modal">
   <div class="modal-box" style="max-width:380px; max-height:88vh; overflow-y:auto;">
     <div class="modal-title">تتبع طلبي</div>
-    <div class="subtitle" style="margin-bottom:8px;">اكتب رقم الهاتف اللي طلبت فيه من هذا المتجر، وراح نعرضلك حالة كل طلباتك هنا</div>
-    <label>رقم الهاتف</label>
-    <div class="row2">
-      <div><input type="tel" id="order-track-phone" placeholder="07xxxxxxxxx" onkeydown="if(event.key==='Enter'){event.preventDefault();searchMyOrders();}"></div>
-      <div style="flex:0 0 auto;"><button class="btn small" style="margin-top:0;" onclick="searchMyOrders()">بحث</button></div>
+    <div class="subtitle" id="order-track-subtitle" style="margin-bottom:8px;">اكتب رقم الهاتف اللي طلبت فيه من هذا المتجر، وراح نعرضلك حالة كل طلباتك هنا</div>
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <button type="button" class="btn secondary small order-track-mode-tab selected" data-mode="phone" onclick="setOrderTrackMode('phone')" style="flex:1;">رقم الهاتف</button>
+      <button type="button" class="btn secondary small order-track-mode-tab" data-mode="number" onclick="setOrderTrackMode('number')" style="flex:1;">رقم الطلب</button>
+    </div>
+    <div id="order-track-phone-row">
+      <label>رقم الهاتف</label>
+      <div class="row2">
+        <div><input type="tel" id="order-track-phone" placeholder="07xxxxxxxxx" onkeydown="if(event.key==='Enter'){event.preventDefault();searchMyOrders();}"></div>
+        <div style="flex:0 0 auto;"><button class="btn small" style="margin-top:0;" onclick="searchMyOrders()">بحث</button></div>
+      </div>
+    </div>
+    <div id="order-track-number-row" style="display:none;">
+      <label>رقم الطلب</label>
+      <input type="text" id="order-track-number" placeholder="مثال: 17123456789012" onkeydown="if(event.key==='Enter'){event.preventDefault();searchOrderByNumber();}">
+      <label style="margin-top:6px;">الاسم اللي طلبت بيه</label>
+      <div class="row2">
+        <div><input type="text" id="order-track-name" placeholder="نفس الاسم اللي كتبته وقت الطلب" onkeydown="if(event.key==='Enter'){event.preventDefault();searchOrderByNumber();}"></div>
+        <div style="flex:0 0 auto;"><button class="btn small" style="margin-top:0;" onclick="searchOrderByNumber()">بحث</button></div>
+      </div>
+      <div class="subtitle" style="margin-top:4px; font-size:11px;">لازم الاسم يطابق الاسم اللي طلبت بيه بالضبط — هذا لحماية طلبك من أي شخص ثاني يخمّن رقمه</div>
     </div>
     <div id="order-track-results" style="margin-top:12px;"></div>
     <div class="modal-actions">
@@ -1352,6 +1452,7 @@
 <script src="js/16-charts-dashboard.js"></script>
 <script src="js/18-admin-alerts.js"></script>
 <script src="js/19-general-market.js"></script>
+<script src="js/20-restaurants-market.js"></script>
 <script src="js/17-live-refresh-boot.js"></script>
 </body>
 </html>

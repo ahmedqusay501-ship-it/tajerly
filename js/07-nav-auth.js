@@ -157,6 +157,8 @@ function showHomeScreen() {
   document.getElementById('public-store-screen').style.display = 'none';
   document.getElementById('general-market-screen').style.display = 'none';
   generalMarketActive = false;
+  document.getElementById('restaurants-screen').style.display = 'none';
+  restaurantsMarketActive = false;
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('join-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'none';
@@ -168,6 +170,8 @@ function showLoginScreen() {
   document.getElementById('public-store-screen').style.display = 'none';
   document.getElementById('general-market-screen').style.display = 'none';
   generalMarketActive = false;
+  document.getElementById('restaurants-screen').style.display = 'none';
+  restaurantsMarketActive = false;
   document.getElementById('join-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
@@ -182,6 +186,8 @@ function showJoinScreen() {
   document.getElementById('public-store-screen').style.display = 'none';
   document.getElementById('general-market-screen').style.display = 'none';
   generalMarketActive = false;
+  document.getElementById('restaurants-screen').style.display = 'none';
+  restaurantsMarketActive = false;
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('join-screen').style.display = 'flex';
   populateAreaSelect('req-area', document.getElementById('req-governorate').value);
@@ -336,6 +342,8 @@ function enterApp(role) {
   document.getElementById('public-store-screen').style.display = 'none';
   document.getElementById('general-market-screen').style.display = 'none';
   generalMarketActive = false;
+  document.getElementById('restaurants-screen').style.display = 'none';
+  restaurantsMarketActive = false;
   document.getElementById('app-shell').style.display = 'block';
 
   const roleLabels = { admin: 'أدمن', merchant: 'تاجر', employee: 'موظف' };

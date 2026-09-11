@@ -9,7 +9,25 @@
 // 13-cart-checkout.js, which already clears the cart automatically when the customer adds a
 // product from a different store than what's already in it.
 let generalMarketActive = false;
-let marketFilter = { query: '', category: 'all' };
+let marketFilter = { query: '', category: 'all', offerId: null };
+
+// Offers whose admin-set active flag is on AND (if it has dates at all) today falls inside
+// [startDate, endDate] — see offerStatusLabel() in 15-admin-tools.js for the same date logic
+// used on the admin's own list. A permanent offer (no dates at all) is always included here
+// as long as it's active.
+function activeOffers() {
+  const now = new Date();
+  return data.offers.filter(o => {
+    if (!o.active) return false;
+    if (o.startDate && now < new Date(o.startDate)) return false;
+    if (o.endDate) {
+      const end = new Date(o.endDate);
+      end.setHours(23, 59, 59, 999);
+      if (now > end) return false;
+    }
+    return true;
+  });
+}
 
 function openGeneralMarket() {
   document.getElementById('home-screen').style.display = 'none';
@@ -29,7 +47,13 @@ function openGeneralMarket() {
 // category, products array, etc.) never break this page.
 function allMarketProducts() {
   const items = [];
-  data.merchants.filter(m => m.status === 'active').forEach(m => {
+  // hiddenFromMarket is an admin-only switch (see toggleMerchantMarketVisibility in
+  // 15-admin-tools.js and its matching firestore.rules lock): a merchant can be fully
+  // active and sell fine on their own store link while still being left out of this
+  // combined page specifically. m.type === 'restaurant' is excluded here on purpose —
+  // restaurants get their own separate combined page (see 20-restaurants-market.js),
+  // kept apart from this general (non-restaurant) market entirely.
+  data.merchants.filter(m => m.status === 'active' && !m.hiddenFromMarket && m.type !== 'restaurant').forEach(m => {
     ensureMerchantTheme(m);
     m.products.forEach(p => items.push({ p, m }));
   });
@@ -39,6 +63,30 @@ function allMarketProducts() {
 function renderMarketFilterChips() {
   const chip = (id, label) => `<span class="store-filter-chip${marketFilter.category === id ? ' selected' : ''}" onclick="setMarketFilterCategory('${id}')">${esc(label)}</span>`;
   return `<div class="store-filter-chips-row">${chip('all', t('market_filter_all') || 'الكل')}${STORE_CATEGORIES.map(c => chip(c, c)).join('')}</div>`;
+}
+
+// A horizontal row of offer "banners" above the search bar — each one a clickable card
+// (image + name + how many stores) that narrows the whole page down to just that offer's
+// merchants when tapped. Renders nothing at all if there are no currently-active offers, so
+// a market with none set up looks exactly like it did before this feature existed.
+function renderMarketOffers() {
+  const offers = activeOffers();
+  if (!offers.length) return '';
+  return `<div class="market-offers-row" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; margin-bottom:10px;">
+    ${offers.map(o => `
+      <div class="market-offer-card" onclick="setMarketOfferFilter('${o.id}')" style="flex:0 0 auto; width:150px; cursor:pointer; border-radius:10px; overflow:hidden; border:2px solid ${marketFilter.offerId === o.id ? 'var(--accent)' : 'var(--border)'}; background:var(--card-bg);">
+        ${o.image ? `<img src="${o.image}" style="width:100%; height:70px; object-fit:cover; display:block;">` : `<div style="width:100%; height:70px; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; font-size:24px;">🎉</div>`}
+        <div style="padding:6px 8px; font-size:12px; font-weight:700;">${esc(o.name)}</div>
+        <div style="padding:0 8px 6px; font-size:10.5px; color:var(--text-mute);">${o.merchantIds.length} محل</div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+function setMarketOfferFilter(offerId) {
+  // Tapping the same offer again clears the filter — an easy toggle instead of needing a
+  // separate "×" button just to go back to browsing everything.
+  marketFilter.offerId = marketFilter.offerId === offerId ? null : offerId;
+  renderGeneralMarket();
 }
 
 function onMarketSearchInput() {
@@ -102,8 +150,12 @@ function renderMarketProductCard(p, m) {
 function renderMarketProducts() {
   let items = allMarketProducts();
 
+  if (marketFilter.offerId) {
+    const offer = data.offers.find(o => String(o.id) === String(marketFilter.offerId));
+    if (offer) items = items.filter(({ m }) => offer.merchantIds.includes(m.id));
+  }
   const q = (marketFilter.query || '').trim().toLowerCase();
-  if (q) items = items.filter(({ p }) => (p.name || '').toLowerCase().includes(q));
+  if (q) items = items.filter(({ p, m }) => (p.name || '').toLowerCase().includes(q) || (m.shop || '').toLowerCase().includes(q));
   if (marketFilter.category && marketFilter.category !== 'all') {
     items = items.filter(({ m }) => m.category === marketFilter.category);
   }
@@ -111,12 +163,30 @@ function renderMarketProducts() {
   if (items.length === 0) {
     return `<div class="empty">${t('market_empty') || 'ما فيه منتجات مطابقة حالياً'}</div>`;
   }
-  return `<div class="store-products-grid">${items.map(({ p, m }) => renderMarketProductCard(p, m)).join('')}</div>`;
+
+  const grid = (list) => `<div class="store-products-grid">${list.map(({ p, m }) => renderMarketProductCard(p, m)).join('')}</div>`;
+
+  // "الأكثر مبيعاً بالسوق" — cached market-wide, across every merchant, in
+  // data.settings.marketBestSellers (see recomputeMarketBestSellers() in
+  // 15-admin-tools.js). Only shown in the plain default view — the moment the customer
+  // searches, filters by category, or taps an offer, this shelf steps aside for the flat
+  // filtered grid below, same as the merchant-storefront version of this idea.
+  if (!q && marketFilter.category === 'all' && !marketFilter.offerId && data.settings.marketBestSellers && data.settings.marketBestSellers.length) {
+    const rankIndex = new Map(data.settings.marketBestSellers.map((e, i) => [`${e.merchantId}:${e.productId}`, i]));
+    const bestSellers = items.filter(({ p, m }) => rankIndex.has(`${m.id}:${p.id}`))
+      .sort((a, b) => rankIndex.get(`${a.m.id}:${a.p.id}`) - rankIndex.get(`${b.m.id}:${b.p.id}`));
+    if (bestSellers.length) {
+      return `<div class="store-section-title">🔥 الأكثر مبيعاً بالسوق</div>${grid(bestSellers)}<div class="store-section-title">كل المنتجات</div>${grid(items)}`;
+    }
+  }
+  return grid(items);
 }
 
 function renderGeneralMarket() {
   const cartArea = document.getElementById('market-cart-bar-area');
   if (cartArea) cartArea.innerHTML = renderMarketCartBar();
+  const offersArea = document.getElementById('market-offers-area');
+  if (offersArea) offersArea.innerHTML = renderMarketOffers();
   const searchInput = document.getElementById('market-search');
   if (searchInput) searchInput.value = marketFilter.query;
   const chipsEl = document.getElementById('market-filter-chips');

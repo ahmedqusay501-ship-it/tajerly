@@ -124,8 +124,8 @@ function updateStoreProductsArea(merchantId) {
 function renderStoreFilterChips(m) {
   if (!m.categories || m.categories.length === 0) return '';
   const f = getStoreFilter(m.id);
-  const chip = (id, label) => `<span class="store-filter-chip${String(f.categoryId) === String(id) ? ' selected' : ''}" onclick="setStoreFilterCategory(${m.id}, ${typeof id === 'number' ? id : `'${id}'`})">${esc(label)}</span>`;
-  return `<div class="store-filter-chips-row">${chip('all', 'الكل')}${m.categories.map(c => chip(c.id, c.name)).join('')}</div>`;
+  const chip = (id, label, img) => `<span class="store-filter-chip${String(f.categoryId) === String(id) ? ' selected' : ''}" onclick="setStoreFilterCategory(${m.id}, ${typeof id === 'number' ? id : `'${id}'`})">${img ? `<img src="${img}" style="width:16px; height:16px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-left:4px;">` : ''}${esc(label)}</span>`;
+  return `<div class="store-filter-chips-row">${chip('all', 'الكل')}${m.categories.map(c => chip(c.id, c.name, c.image)).join('')}</div>`;
 }
 function renderStoreSearchBar(m) {
   const f = getStoreFilter(m.id);
@@ -152,16 +152,35 @@ function renderStoreProducts(m, color) {
     return `<div class="empty">${q || catActive ? 'ما فيه منتجات مطابقة لبحثك' : 'ما فيه منتجات معروضة'}</div>`;
   }
 
-  // Once a search or category filter is active, show one flat grid (sections stop being
-  // useful when you're already narrowing down); otherwise keep the normal grouped-by-section browsing view.
-  if (q || catActive || !m.categories || m.categories.length === 0) {
+  // Once a search or category filter is active, show one flat grid (sections/best-sellers
+  // stop being useful when you're already narrowing down).
+  if (q || catActive) {
     return grid(items);
   }
   let html = '';
+  // "الأكثر مبيعاً" — cached on the merchant doc (bestSellerProductIds), see
+  // recomputeMerchantBestSellers() in 09-merchant-store-products.js. Shown first, above the
+  // regular sections (independent of whether the merchant set up any sections at all); the
+  // same products can also still appear again under their own section below — this is just a
+  // shortcut shelf, not a real reclassification.
+  if (m.bestSellerProductIds && m.bestSellerProductIds.length) {
+    const idIndex = new Map(m.bestSellerProductIds.map((id, i) => [id, i]));
+    const bestSellers = items.filter(p => idIndex.has(p.id)).sort((a, b) => idIndex.get(a.id) - idIndex.get(b.id));
+    if (bestSellers.length) {
+      html += `<div class="store-section-title">🔥 الأكثر مبيعاً</div>`;
+      html += grid(bestSellers);
+    }
+  }
+  if (!m.categories || m.categories.length === 0) {
+    if (!html) return grid(items);
+    html += `<div class="store-section-title">كل المنتجات</div>`;
+    html += grid(items);
+    return html;
+  }
   m.categories.forEach(c => {
     const catItems = items.filter(p => p.categoryId === c.id);
     if (catItems.length === 0) return;
-    html += `<div class="store-section-title">${c.name}</div>`;
+    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${c.image}" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}${esc(c.name)}</div>`;
     html += grid(catItems);
   });
   const catIds = new Set(m.categories.map(c => c.id));

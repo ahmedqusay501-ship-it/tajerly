@@ -692,6 +692,31 @@ async function deleteProduct(merchantId, productId) {
 }
 
 // ---------- STORE SECTIONS (categories) ----------
+// ---------- BEST SELLERS (الأكثر مبيعاً) ----------
+// Ranks this merchant's own products by total quantity sold across data.orders (excluding
+// cancelled lines), and caches the top ones directly on the merchant doc as
+// bestSellerProductIds. Cached (not computed live on the storefront) because a public/guest
+// storefront visitor has no read access to the orders collection at all — see firestore.rules
+// — so this can only ever be computed by someone who DOES (the merchant themselves, or an
+// admin/employee viewing on their behalf), same reasoning as order_lookup earlier.
+// Called every time the merchant panel renders; only actually writes (saveData()) when the
+// ranking changed, so normal re-renders don't spam writes.
+function recomputeMerchantBestSellers(m) {
+  const counts = {};
+  data.orders.forEach(o => {
+    if (o.merchantId !== m.id || o.cancelled) return;
+    counts[o.productId] = (counts[o.productId] || 0) + (o.qty || 1);
+  });
+  const ranked = Object.keys(counts)
+    .map(Number)
+    .sort((a, b) => counts[b] - counts[a])
+    .slice(0, 8);
+  if (JSON.stringify(ranked) !== JSON.stringify(m.bestSellerProductIds || [])) {
+    m.bestSellerProductIds = ranked;
+    saveData();
+  }
+}
+
 function addCategory(id) {
   const m = data.merchants.find(x => x.id === id);
   if (!m) return;
@@ -700,7 +725,10 @@ function addCategory(id) {
   if (!name) { showToast('اكتب اسم القسم'); return; }
   ensureMerchantTheme(m);
   if (m.categories.some(c => c.name === name)) { showToast('هذا القسم موجود مسبقاً'); return; }
-  m.categories.push({ id: genId(), name });
+  // image starts empty — an optional per-section picture the merchant can add any time via
+  // setCategoryImage() below; totally fine to leave it out, the storefront section header
+  // just shows the name alone then (see renderStoreProducts in 12-storefront.js).
+  m.categories.push({ id: genId(), name, image: null });
   saveData();
   input.value = '';
   renderMerchantPanel();
@@ -717,6 +745,43 @@ function deleteCategory(id, catId) {
   saveData();
   renderMerchantPanel();
   showToast('تم حذف القسم');
+}
+
+// Chip list for the "أقسام متجرك" card — each chip shows the section's image (if it has
+// one) as a small round thumbnail, its name, a تصوير/تغيير الصورة button, and the ✕ delete
+// that already existed. Split into its own function (instead of being inlined where it's
+// used) so setCategoryImage() below can refresh just this list after an upload, without a
+// full renderMerchantPanel() re-render resetting anything else on the page mid-upload.
+function renderCategoryList(m) {
+  if (!m.categories.length) return '<div class="subtitle" style="margin:0 0 8px;">ما ضفت أقسام بعد</div>';
+  return `<div style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:8px;">
+    ${m.categories.map(c => `
+      <span class="category-chip" style="display:inline-flex; align-items:center; gap:6px;">
+        ${c.image ? `<img src="${c.image}" style="width:22px; height:22px; border-radius:50%; object-fit:cover;">` : ''}
+        ${esc(c.name)}
+        <label style="cursor:pointer; font-size:11px; color:var(--accent-dark);" title="${c.image ? 'تغيير الصورة' : 'إضافة صورة'}">
+          📷<input type="file" accept="image/*" style="display:none;" onchange="setCategoryImage(${m.id}, ${c.id}, this)">
+        </label>
+        <span class="x" onclick="deleteCategory(${m.id}, ${c.id})">✕</span>
+      </span>
+    `).join('')}
+  </div>`;
+}
+async function setCategoryImage(merchantId, catId, inputEl) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  const c = m && m.categories.find(x => x.id === catId);
+  if (!m || !c) return;
+  const file = inputEl.files[0];
+  if (!file) return;
+  try {
+    c.image = await resizeImageFile(file, 500, 0.75);
+    saveData();
+    const box = document.getElementById(`merchant-categories-${merchantId}`);
+    if (box) box.innerHTML = renderCategoryList(m);
+    showToast('تم تحديث صورة القسم');
+  } catch (e) {
+    showToast('صار خطأ بمعالجة الصورة');
+  }
 }
 
 // ---------- COUPONS (merchant-created discount codes) ----------

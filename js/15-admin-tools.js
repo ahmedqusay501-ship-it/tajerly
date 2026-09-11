@@ -388,12 +388,12 @@ function adminGlobalSearch(query) {
       </div>`).join('');
   }
   if (orderHits.length) {
-    html += `<div class="search-result-group-title">طلبات</div>`;
+    html += `<div class="search-result-group-title">طلبات (بحث برقم الطلب أو الهاتف)</div>`;
     html += orderHits.map(o => {
       const m = data.merchants.find(x => x.id === o.merchantId);
       return `
       <div class="search-result-row" onclick="jumpToMerchantAccounting(${o.merchantId})">
-        <span>${esc(o.customerName || 'زبون')} — ${esc(o.customerPhone || '')}</span>
+        <span>${esc(o.customerName || 'زبون')} — ${esc(o.customerPhone || '')} <span style="color:var(--text-mute); font-size:11px;">— رقم الطلب #${o.orderGroupId || o.id}</span></span>
         <span style="color:var(--text-mute);">${m ? esc(m.shop) : 'محل محذوف'}</span>
       </div>`;
     }).join('');
@@ -580,6 +580,39 @@ function setMerchantCategory(id, category) {
   showToast(`تم تعديل تصنيف "${m.shop}" إلى ${category}`);
 }
 
+// Admin-only switch for whether this merchant's products show up on the combined
+// السوق العام (general market) page — independent of toggleMerchantStatus above. A merchant
+// stays fully active and sellable on their own store link either way; this only controls
+// whether they're pulled into the multi-merchant market page they belong to (general market
+// or restaurants page — whichever matches m.type — see allMarketProducts in
+// 19-general-market.js / allRestaurantProducts in 20-restaurants-market.js). Locked to
+// admin-only via firestore.rules the same way status/fees are — a merchant/employee saving
+// their own store cannot flip this on themselves.
+function toggleMerchantMarketVisibility(id) {
+  const m = data.merchants.find(x => x.id === id);
+  if (!m) return;
+  const pageLabel = m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام';
+  m.hiddenFromMarket = !m.hiddenFromMarket;
+  saveData();
+  logAudit(m.hiddenFromMarket ? `إخفاء من ${pageLabel}` : `إظهار بـ ${pageLabel}`, m.shop);
+  showToast(m.hiddenFromMarket ? `تم إخفاء "${m.shop}" من ${pageLabel}` : `تم إظهار "${m.shop}" بـ ${pageLabel}`);
+  renderAll();
+}
+
+// Admin-only: تصنيف التاجر كـ "ماركت" عادي أو "مطعم" — يقرر أي صفحة سوق عام (السوق
+// العام أو صفحة المطاعم) يظهر منتجاته بها لاحقاً. مقفولة بـ firestore.rules بنفس منطق
+// hiddenFromMarket فوق — التاجر ما يقدر يبدّل نفسه بنفسه.
+function setMerchantType(id, type) {
+  const m = data.merchants.find(x => x.id === id);
+  if (!m || (type !== 'market' && type !== 'restaurant')) return;
+  if (m.type === type) return;
+  m.type = type;
+  saveData();
+  logAudit('تعديل نوع المتجر', `${m.shop} → ${type === 'restaurant' ? 'مطعم' : 'ماركت'}`);
+  showToast(`تم تعديل نوع "${m.shop}" إلى ${type === 'restaurant' ? 'مطعم' : 'ماركت'}`);
+  renderAll();
+}
+
 function renderMerchantActions() {
   const list = document.getElementById('merchant-actions-list');
   const active = activeMerchants();
@@ -590,13 +623,17 @@ function renderMerchantActions() {
     const usernameDisplay = m.username ? (revealed ? m.username : '•'.repeat(Math.max(6, m.username.length))) : '—';
     return `
     <div class="list-item" style="align-items:flex-start;">
-      <span>${m.shop} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span>${!m.ownDelivery ? ` <span class="badge" style="background:#E0F2FE; color:#0369A1;">توصيل: ${deliverySpeedLabel(m)}</span>` : ''}${m.ownDelivery ? ` <span class="badge" style="background:#FEF3C7; color:#92400E;">توصيل خاص — ${(m.ownDeliveryPrice||0).toLocaleString()} د</span>` : ''}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
+      <span>${m.shop} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> <span class="badge" style="background:${m.type==='restaurant' ? '#FFF7ED' : '#EEF2FF'}; color:${m.type==='restaurant' ? '#9A3412' : '#3730A3'};">${m.type==='restaurant' ? '🍽️ مطعم' : '🛒 ماركت'}</span>${m.hiddenFromMarket ? ` <span class="badge disabled">مخفي من ${m.type==='restaurant' ? 'صفحة المطاعم' : 'السوق العام'}</span>` : ''}${!m.ownDelivery ? ` <span class="badge" style="background:#E0F2FE; color:#0369A1;">توصيل: ${deliverySpeedLabel(m)}</span>` : ''}${m.ownDelivery ? ` <span class="badge" style="background:#FEF3C7; color:#92400E;">توصيل خاص — ${(m.ownDeliveryPrice||0).toLocaleString()} د</span>` : ''}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
       <span style="color:var(--text-mute); font-size:11px;">
         يوزر: ${usernameDisplay}
         ${m.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${key}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
         — باسورد: مخفية
       </span></span>
       <span>
+        <select class="small" style="width:auto; display:inline-block; padding:4px 6px; font-size:11px;" onchange="setMerchantType(${m.id}, this.value)" title="نوع المتجر — يحدد فيه هذا التاجر يظهر بالسوق العام العادي أو بصفحة المطاعم المنفصلة">
+          <option value="market" ${m.type !== 'restaurant' ? 'selected' : ''}>🛒 ماركت</option>
+          <option value="restaurant" ${m.type === 'restaurant' ? 'selected' : ''}>🍽️ مطعم</option>
+        </select>
         <select class="small" style="width:auto; display:inline-block; padding:4px 6px; font-size:11px;" onchange="setMerchantCategory(${m.id}, this.value)" title="تصنيف المتجر — يظهر فيه بصفحة السوق العام">
           ${STORE_CATEGORIES.map(c => `<option value="${esc(c)}" ${m.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
         </select>
@@ -605,6 +642,7 @@ function renderMerchantActions() {
         <button class="btn secondary small" onclick="openResetPasswordModal('merchant', ${m.id})">تصفير الباسورد</button>
         <button class="btn ${m.ownDelivery ? 'secondary' : 'warn'} small" onclick="openOwnDeliveryModal(${m.id})">${m.ownDelivery ? 'تعديل التوصيل الخاص' : 'توصيل خاص بالمحل'}</button>
         <button class="btn ${m.customDomain ? 'secondary' : 'warn'} small" onclick="openCustomDomainModal(${m.id})">${m.customDomain ? 'تعديل الدومين' : 'إضافة دومين مخصص'}</button>
+        <button class="btn ${m.hiddenFromMarket ? 'warn' : 'secondary'} small" onclick="toggleMerchantMarketVisibility(${m.id})" title="يتحكم بظهور منتجات هذا التاجر بالصفحة العامة (السوق العام أو صفحة المطاعم حسب نوعه) فقط — لا يأثر على متجره الخاص">${m.hiddenFromMarket ? `إظهار بـ ${m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام'}` : `إخفاء من ${m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام'}`}</button>
         <button class="btn warn small" onclick="toggleMerchantStatus(${m.id})">${m.status==='active'?'تعطيل':'تفعيل'}</button>
         <button class="btn danger small" onclick="resetMerchantMoney(${m.id})">تصفير الأموال</button>
         <button class="btn danger small" onclick="resetMerchantOrders(${m.id})">تصفير الطلبات</button>
@@ -614,5 +652,161 @@ function renderMerchantActions() {
       </span>
     </div>`;
   }).join('');
+}
+
+// Market-wide "الأكثر مبيعاً" — same idea as recomputeMerchantBestSellers() in
+// 09-merchant-store-products.js, just aggregated ACROSS every (non-restaurant, active,
+// not-hidden-from-market) merchant instead of one. Only ever called for currentRole ===
+// 'admin' (see renderAll() in 16-charts-dashboard.js) — a merchant's own session only ever
+// has ITS OWN orders loaded (firestore.rules), so computing this under a merchant session
+// would silently produce a near-empty, wrong ranking and overwrite the real one.
+function recomputeMarketBestSellers() {
+  const counts = {};
+  data.orders.forEach(o => {
+    if (o.cancelled) return;
+    const m = data.merchants.find(x => x.id === o.merchantId);
+    if (!m || m.status !== 'active' || m.hiddenFromMarket || m.type === 'restaurant') return;
+    const key = `${o.merchantId}:${o.productId}`;
+    counts[key] = (counts[key] || 0) + (o.qty || 1);
+  });
+  const ranked = Object.keys(counts)
+    .sort((a, b) => counts[b] - counts[a])
+    .slice(0, 12)
+    .map(key => { const [merchantId, productId] = key.split(':').map(Number); return { merchantId, productId }; });
+  if (JSON.stringify(ranked) !== JSON.stringify(data.settings.marketBestSellers || [])) {
+    data.settings.marketBestSellers = ranked;
+    saveData();
+  }
+}
+
+// ---------- OFFERS (عروض السوق العام) ----------
+// Admin-managed promotional sections shown at the top of the general market page (see
+// renderMarketOffers in 19-general-market.js). Lives in its own `offers` collection, synced
+// through the exact same data.offers array + saveData()/renderAll() pattern everything else
+// in this app uses — no direct Firestore calls needed here at all (see the offers diff block
+// inside saveData(), 06-media-audit-support.js).
+let offerEditorMerchantSelection = new Set();
+
+function offerStatusLabel(o) {
+  if (!o.active) return { text: 'معطل', cls: 'disabled' };
+  const now = new Date();
+  if (o.startDate && now < new Date(o.startDate)) return { text: 'لسا ما بدأ', cls: 'pending' };
+  if (o.endDate) {
+    const end = new Date(o.endDate);
+    end.setHours(23, 59, 59, 999); // endDate is a day, not a timestamp — the whole day still counts
+    if (now > end) return { text: 'منتهي', cls: 'disabled' };
+  }
+  return { text: 'فعّال الآن', cls: 'active' };
+}
+
+function renderOffersList() {
+  const box = document.getElementById('offers-list');
+  if (!box) return;
+  if (!data.offers.length) { box.innerHTML = '<div class="empty">ما فيه عروض بعد</div>'; return; }
+  box.innerHTML = data.offers.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map(o => {
+    const status = offerStatusLabel(o);
+    const period = o.startDate || o.endDate ? `${o.startDate || '؟'} → ${o.endDate || '؟'}` : 'دائم';
+    return `
+    <div class="list-item">
+      <span style="display:flex; align-items:center; gap:8px;">
+        ${o.image ? `<img src="${o.image}" style="width:44px; height:44px; border-radius:8px; object-fit:cover;">` : ''}
+        <span><b>${esc(o.name)}</b> <span class="badge ${status.cls}">${status.text}</span><br>
+        <span style="color:var(--text-mute); font-size:11px;">${esc(period)} — ${o.merchantIds.length} محل</span></span>
+      </span>
+      <span>
+        <button class="btn secondary small" onclick="openOfferEditor('${o.id}')">تعديل</button>
+        <button class="btn danger small" onclick="deleteOffer('${o.id}')">حذف</button>
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function openOfferEditor(id) {
+  const o = id ? data.offers.find(x => String(x.id) === String(id)) : null;
+  document.getElementById('offer-editor-title').textContent = o ? 'تعديل العرض' : 'عرض جديد';
+  document.getElementById('offer-editor-id').value = o ? o.id : '';
+  document.getElementById('offer-editor-name').value = o ? o.name : '';
+  document.getElementById('offer-editor-image-preview').innerHTML = o && o.image ? `<img src="${o.image}" style="max-width:120px; max-height:80px; border-radius:8px;">` : '';
+  document.getElementById('offer-editor-image-file').value = '';
+  document.getElementById('offer-editor-image-file').dataset.currentImage = o ? (o.image || '') : '';
+  const permanent = !o || (!o.startDate && !o.endDate);
+  document.getElementById('offer-editor-permanent').checked = permanent;
+  document.getElementById('offer-editor-start').value = o ? (o.startDate || '') : '';
+  document.getElementById('offer-editor-end').value = o ? (o.endDate || '') : '';
+  document.getElementById('offer-editor-active').checked = o ? !!o.active : true;
+  document.getElementById('offer-editor-merchant-search').value = '';
+  offerEditorMerchantSelection = new Set(o ? o.merchantIds : []);
+  toggleOfferEditorDates();
+  renderOfferEditorMerchantList();
+  document.getElementById('offer-editor-modal').classList.add('show');
+}
+function closeOfferEditor() {
+  document.getElementById('offer-editor-modal').classList.remove('show');
+}
+function toggleOfferEditorDates() {
+  const permanent = document.getElementById('offer-editor-permanent').checked;
+  document.getElementById('offer-editor-dates-row').style.display = permanent ? 'none' : 'block';
+}
+async function setOfferEditorImage(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  try {
+    const dataUrl = await resizeImageFile(file, 900, 0.75);
+    inputEl.dataset.currentImage = dataUrl;
+    document.getElementById('offer-editor-image-preview').innerHTML = `<img src="${dataUrl}" style="max-width:120px; max-height:80px; border-radius:8px;">`;
+  } catch (e) {
+    showToast('صار خطأ بمعالجة الصورة');
+  }
+}
+function toggleOfferEditorMerchant(id) {
+  if (offerEditorMerchantSelection.has(id)) offerEditorMerchantSelection.delete(id); else offerEditorMerchantSelection.add(id);
+  renderOfferEditorMerchantList();
+}
+function renderOfferEditorMerchantList() {
+  const box = document.getElementById('offer-editor-merchant-list');
+  if (!box) return;
+  const q = (document.getElementById('offer-editor-merchant-search').value || '').trim().toLowerCase();
+  let list = data.merchants.filter(m => m.status === 'active');
+  if (q) list = list.filter(m => (m.shop || '').toLowerCase().includes(q));
+  if (!list.length) { box.innerHTML = '<div class="empty">ما فيه محلات مطابقة</div>'; return; }
+  box.innerHTML = list.map(m => `
+    <label style="display:flex; align-items:center; gap:6px; padding:4px 0; cursor:pointer;">
+      <input type="checkbox" style="width:auto;" ${offerEditorMerchantSelection.has(m.id) ? 'checked' : ''} onchange="toggleOfferEditorMerchant(${m.id})">
+      ${m.type === 'restaurant' ? '🍽️' : '🛒'} ${esc(m.shop)}
+    </label>`).join('');
+}
+function saveOfferFromEditor() {
+  const idVal = document.getElementById('offer-editor-id').value;
+  const name = document.getElementById('offer-editor-name').value.trim();
+  if (!name) { showToast('اكتب اسم العرض'); return; }
+  if (!offerEditorMerchantSelection.size) { showToast('اختر محل واحد على الأقل'); return; }
+  const permanent = document.getElementById('offer-editor-permanent').checked;
+  const startDate = permanent ? null : (document.getElementById('offer-editor-start').value || null);
+  const endDate = permanent ? null : (document.getElementById('offer-editor-end').value || null);
+  const image = document.getElementById('offer-editor-image-file').dataset.currentImage || '';
+  const active = document.getElementById('offer-editor-active').checked;
+
+  if (idVal) {
+    const o = data.offers.find(x => String(x.id) === String(idVal));
+    if (!o) return;
+    o.name = name; o.image = image; o.startDate = startDate; o.endDate = endDate;
+    o.active = active; o.merchantIds = Array.from(offerEditorMerchantSelection);
+  } else {
+    data.offers.push({
+      id: genId(), name, image, startDate, endDate, active,
+      merchantIds: Array.from(offerEditorMerchantSelection), createdAt: new Date().toISOString()
+    });
+  }
+  saveData();
+  closeOfferEditor();
+  showToast('تم حفظ العرض');
+  renderAll();
+}
+function deleteOffer(id) {
+  if (!confirm('حذف هذا العرض نهائياً؟')) return;
+  data.offers = data.offers.filter(o => String(o.id) !== String(id));
+  saveData();
+  showToast('تم حذف العرض');
+  renderAll();
 }
 

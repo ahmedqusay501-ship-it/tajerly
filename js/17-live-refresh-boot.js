@@ -56,7 +56,8 @@ async function pollForUpdates() {
     // lookup they already did. Placed BEFORE the fingerprint short-circuit below: a guest
     // has no read access to the real orders collection at all, so their fingerprint never
     // moves and that check would otherwise always skip this.
-    if (trackOrderMerchantId && lastTrackedGroups.length) searchMyOrders(true);
+    if ((trackOrderMerchantId || orderTrackMarketMode) && orderTrackMode === 'phone' && lastTrackedGroups.length) searchMyOrders(true);
+    if (orderTrackMode === 'number' && lastTrackedGroups.length) searchOrderByNumber(true);
     if (dataFingerprint() === before) return; // nothing else actually changed, skip the rest of the re-render
 
     // Refresh whichever screen is actually on-screen right now

@@ -378,6 +378,12 @@ let data = {
   //   unreadForAdmin, unreadForMerchant, updatedAt }. Ending the session (admin action) deletes
   // the doc entirely, wiping the conversation for both sides — see endSupportSession().
   supportChats: [],
+  // إدارة "عروض" السوق العام — كل عرض قسم إعلاني يجمع تحته مجموعة محلات تختارها الإدارة،
+  // بعنوان وصورة وفترة زمنية اختيارية. مجموعة Firestore مستقلة (offers/{id}) عام بالقراءة،
+  // أدمن/موظف settings بس بالكتابة (شوف firestore.rules وقسم "OFFERS" بـ 15-admin-tools.js).
+  // { id, name, image, merchantIds:[عدد صحيح,...], startDate: ISO|null, endDate: ISO|null,
+  //   active: bool, createdAt }
+  offers: [],
   settings: {
     feeSource: 'customer',
     feeType: 'fixed',
@@ -393,7 +399,11 @@ let data = {
     ],
     adminUsername: 'admin',
     adminPassword: 'admin123',
-    customAreas: {}
+    customAreas: {},
+    // "الأكثر مبيعاً" بالسوق العام — [{merchantId, productId}, ...] معاد ترتيبها حسب الأكثر
+    // طلباً، محسوبة من الأدمن بس (شوف recomputeMarketBestSellers بـ 15-admin-tools.js) لأن
+    // زائر عادي ما عنده صلاحية قراءة orders أصلاً ليحسبها بنفسه بمتصفحه.
+    marketBestSellers: []
   },
   nextId: 1
 };
@@ -486,6 +496,11 @@ let pendingOrderWrites = 0;
 // locally since it was last synced, the same way lastSyncedOrderSnapshots already does for
 // orders — so only the merchant that was genuinely just edited gets written.
 let lastSyncedMerchantSnapshots = new Map();
+// Same idea again, for offers (see OFFERS section in 15-admin-tools.js). Also doubles as the
+// "did this offer exist last sync" set — an id present here but no longer in data.offers means
+// the admin deleted it locally, which is how saveData() below knows to call deleteDoc for it
+// (unlike merchants/orders, an offer really can disappear entirely, not just change status).
+let lastSyncedOfferSnapshots = new Map();
 // Set inside fetchRemoteData() when 'orders' comes back permission-denied while someone is
 // actually signed into the app (see the comment there) — checked right after login and on
 // every live-refresh tick so the person gets told plainly instead of just seeing an
@@ -649,13 +664,17 @@ async function fetchRemoteData() {
     // Before this change, one denied collection silently emptied the entire app (storefront,
     // dashboards, everything) for that visitor, because a single failed promise inside
     // Promise.all rejects the whole batch.
-    const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes] = await Promise.allSettled([
+    const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes, offersRes] = await Promise.allSettled([
       window.authApi.listCollection('merchants'),
       ordersPromise,
       window.authApi.listCollection('join_requests'),
       employeesPromise,
       window.authApi.listCollection('employee_requests'),
-      window.authApi.listCollection('support_chats')
+      window.authApi.listCollection('support_chats'),
+      // offers is publicly readable (allow read: if true — see firestore.rules), so this
+      // never hits the "all-or-nothing list" restriction the orders/employees fixes above
+      // work around; every visitor, logged in or not, can list it the same way.
+      window.authApi.listCollection('offers')
     ]);
 
     if (merchantsRes.status === 'fulfilled') {
@@ -740,6 +759,13 @@ async function fetchRemoteData() {
       data.supportChats = supportChatsRes.value.map(c => { const { _uid, ...rest } = c; return { ...rest, authUid: c.authUid || _uid }; });
     } else if (!isPermissionDeniedError(supportChatsRes.reason)) {
       console.error('Storage error while loading support chats:', supportChatsRes.reason);
+    }
+
+    if (offersRes.status === 'fulfilled') {
+      data.offers = offersRes.value.map(o => { const { _uid, ...rest } = o; return { ...rest, id: rest.id != null ? rest.id : _uid }; });
+      data.offers.forEach(o => lastSyncedOfferSnapshots.set(String(o.id), JSON.stringify(o)));
+    } else if (!isPermissionDeniedError(offersRes.reason)) {
+      console.error('Storage error while loading offers:', offersRes.reason);
     } else if (currentRole === 'merchant' && loggedInMerchantId != null) {
       const m = data.merchants.find(x => x.id === loggedInMerchantId);
       if (m && m.authUid) {

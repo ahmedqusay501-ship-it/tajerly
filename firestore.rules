@@ -191,7 +191,14 @@ service cloud.firestore {
         request.resource.data.feeAmount   == resource.data.feeAmount &&
         request.resource.data.feeCustomer == resource.data.feeCustomer &&
         request.resource.data.feeMerchant == resource.data.feeMerchant &&
-        request.resource.data.itemDeduction == resource.data.itemDeduction;
+        request.resource.data.itemDeduction == resource.data.itemDeduction &&
+        // ظهور/إخفاء منتجات التاجر بصفحة السوق العام قرار أدمن بس — التاجر أو موظفه ما
+        // يقدر يفعّله لنفسه حتى لو كان معه صلاحية تعديل المتجر/المنتجات.
+        request.resource.data.hiddenFromMarket == resource.data.hiddenFromMarket &&
+        // تصنيف "ماركت / مطعم" (type) يقرر أي صفحة سوق عام يظهر بها التاجر — نفس مستوى
+        // حساسية hiddenFromMarket فوق، فقفلها أدمن بس بنفس المنطق (تاجر ما يقدر يحوّل
+        // نفسه من ماركت لمطعم أو العكس بنفسه).
+        request.resource.data.type == resource.data.type;
 
       allow delete: if isAdmin() || isAdminEmployee('requests');
     }
@@ -425,6 +432,67 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------------------
+    // order_lookup/{groupId} — نسخة عرض إضافية عن "فاتورة" واحدة (طلب واحد بكل قطعه)،
+    // مفتاح الوثيقة = groupId نفسه (رقم الطلب اللي يشوفه الزبون). الهدف: يقدر الزبون
+    // يبحث عن طلبه برقم الطلب لحاله، بدون لا رقم هاتف ولا رابط متجر — عكس
+    // order_tracking فوق اللي مفتاحها {merchantAuthUid}_{phone}.
+    //
+    // الأمان هنا نفس منطق order_tracking بالضبط (get على معرّف محدد مسموح، list ممنوع)،
+    // وgroupId نفسه (Date.now()*1000 + رقم عشوائي 0-999، شوف genId()) عنده مساحة قيم
+    // أكبر وأصعب تخمين من رقم هاتف عراقي عادي أصلاً — فمستوى الثقة نفسه أو أعلى.
+    // اسم الزبون نفسه ما يُخزّن هنا نص صريح أبداً — فقط customerNameHash (SHA-256)، حتى لو
+    // أحد قرأ الوثيقة الخام مباشرة بتخمين groupId ما يشوف اسم الزبون الحقيقي (شوف
+    // customerNameMatchHash بـ 13-cart-checkout.js).
+    // ---------------------------------------------------------------------------------
+    match /order_lookup/{groupId} {
+      allow get: if true;
+      allow list: if false;
+
+      // إنشاء أول مرة لحظة التشيك أوت — نفس مستوى الثقة الممنوح لإنشاء orders نفسها من
+      // متصفح زبون غير مسجل، مع تأكيد إن مفتاح الوثيقة يطابق فعلاً رقم الطلب المذكور
+      // بداخلها والمتجر موجود فعلاً.
+      allow create: if
+        groupId == request.resource.data.groupId + '' &&
+        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid));
+
+      // تحديث لاحق: أدمن/موظفه، التاجر ونفس صلاحياته، أو موظف الشحن — وقت تغيير حالة
+      // أي قطعة بهذا الطلب (نفس الجهات المسموح لها تحدّث orders الحقيقية).
+      //
+      // ⚠️ متعمّد: بعكس order_tracking فوق، هنا ما فيه أي فرع "زبون غير مسجل دخول" يسمح
+      // بالتحديث. الكتابة التفاؤلية اللي كودها بـ submitCustomerCancelRequest
+      // (13-cart-checkout.js) على هذي الوثيقة محاطة بـ .catch(()=>{}) بالضبط لهذا السبب —
+      // لو فتحنا فرع "items بس" هنا بدون أي شرط توثيق حقيقي، أي شخص يعرف/يخمّن رقم الطلب
+      // (مو حتى الاسم) يقدر يزوّر حالة الطلب أو سعره داخل items مباشرة، وهذا يلغي كل فائدة
+      // تحقق الاسم بـ customerNameMatchHash (ذلك تحقق واجهة بس، مو قاعدة أمان). التحديث
+      // الحقيقي لطلب الإلغاء يصير على orders/{id} نفسها (محمية بشروط دقيقة أعلى)، وهذي
+      // النسخة تتزامن تلقائياً أول ما يلمس الطلب أدمن أو تاجر (قبول/رفض/شحن) — تأخير
+      // بسيط مقبول، أفضل من ثغرة حقيقية.
+      allow update: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting') || isAdminEmployee('shipping') ||
+        isMerchantOrItsEmployee(resource.data.merchantAuthUid, 'orders');
+
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------------------
+    // offers/{offerId} — "عروض" تديرها الإدارة: قسم إعلاني بصفحة السوق العام يجمع تحته
+    // مجموعة محلات تختارها الإدارة، بعنوان وصورة وفترة زمنية اختيارية (أو دائم لو تركت
+    // بلا تاريخ). عام بالكامل بالقراءة (يظهر لأي زائر بصفحة السوق العام)، وكتابة/تعديل/
+    // حذف أدمن أو موظف عنده صلاحية settings بس — نفس صلاحية إدارة إعدادات المنصة العامة.
+    //
+    // الشكل المتوقع للوثيقة:
+    //   { name: string, image: string (base64/url), merchantIds: [عدد صحيح,...],
+    //     startDate: string ISO أو null, endDate: string ISO أو null,
+    //     active: bool, createdAt: string ISO }
+    // انتهاء/بداية العرض فعلياً حساب بواجهة العميل (تقارن التاريخ الحالي بـ start/end) —
+    // ما فيه Cloud Function تعطّل العرض تلقائياً بدقيقتها، فبعض التأخير المؤقت بعد
+    // الانتهاء مقبول بنفس فلسفة باقي المشروع (بدون خادم دائم التشغيل).
+    // ---------------------------------------------------------------------------------
+    match /offers/{offerId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() || isAdminEmployee('settings');
     }
   }
 }

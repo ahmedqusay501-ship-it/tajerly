@@ -204,6 +204,7 @@ function renderDashboard() {
 }
 
 function renderAll() {
+  if (currentRole === 'admin') recomputeMarketBestSellers();
   renderDashboard();
   renderRequests();
   renderCommissionRequests();
@@ -215,6 +216,7 @@ function renderAll() {
   renderStoreSelect();
   renderSettings();
   renderMerchantActions();
+  renderOffersList();
   renderAdminShippingControl();
   renderAuditLog();
   renderAdminSupportList();

@@ -37,6 +37,10 @@ function routeOnLoad() {
     openGeneralMarket();
     return;
   }
+  if (params.get('restaurants') === '1') {
+    openRestaurantsMarket();
+    return;
+  }
   // Try to silently restore a previous login (admin or merchant) instead of always
   // showing the login form after every page reload/update. See restoreSession().
   if (restoreSession()) return;
@@ -107,6 +111,8 @@ function openPublicStore(slug) {
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('general-market-screen').style.display = 'none';
   generalMarketActive = false;
+  document.getElementById('restaurants-screen').style.display = 'none';
+  restaurantsMarketActive = false;
   document.getElementById('public-store-screen').style.display = 'block';
   const m = data.merchants.find(x => x.linkSlug === slug && x.status === 'active');
   const brandEl = document.getElementById('public-store-brand');
@@ -159,6 +165,11 @@ function ensureMerchantTheme(m) {
   // existed, or whose join request predates it being saved, default to "أخرى" so they still
   // show up under a filter on the general market page instead of vanishing from it entirely.
   if (typeof m.category !== 'string' || !STORE_CATEGORIES.includes(m.category)) m.category = 'أخرى';
+  // نوع المتجر: 'market' (ماركت عادي) أو 'restaurant' (مطعم) — يقرر أي صفحة سوق عام
+  // يظهر التاجر بها (السوق العام أو صفحة المطاعم، شوف 19-general-market.js و
+  // 20-restaurants-market.js). قفلها أدمن بس (نفس قفل hiddenFromMarket بـ firestore.rules).
+  // كل التجار القدامى يرجعون 'market' تلقائياً فما يتغيّر شي على وضعهم الحالي.
+  if (m.type !== 'restaurant' && m.type !== 'market') m.type = 'market';
   // Per-product commission exemption requests — a merchant asks to stop paying platform
   // commission on one specific product, the admin approves/rejects it. { id, productId,
   // productName, status: 'pending'|'approved'|'rejected', createdAt, respondedAt }. See
@@ -192,6 +203,9 @@ function ensureMerchantTheme(m) {
   // no longer exists) just render together at the end, so nothing breaks for merchants who
   // never set any up.
   if (!Array.isArray(m.categories)) m.categories = [];
+  m.categories.forEach(c => { if (!('image' in c)) c.image = null; });
+  // "الأكثر مبيعاً" cache — see recomputeMerchantBestSellers() in 09-merchant-store-products.js.
+  if (!Array.isArray(m.bestSellerProductIds)) m.bestSellerProductIds = [];
   // Coupons: { id, code, type: 'percent'|'fixed', value, minOrder (0 = no minimum), active,
   // expiryDate ('YYYY-MM-DD' or null = never), maxUses (number or null = unlimited),
   // usedCount (how many times it's actually been used so far), maxDiscount (optional cap in

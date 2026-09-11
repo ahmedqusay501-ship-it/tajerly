@@ -1010,6 +1010,7 @@ function renderMerchantPanel() {
   const panel = document.getElementById('merchant-panel');
   if (!m) { panel.innerHTML = ''; return; }
   ensureMerchantTheme(m);
+  recomputeMerchantBestSellers(m);
   // أول مرة نعرض لوحة هذا التاجر بهذي الجلسة (تسجيل دخول جديد أو تبديل حساب) — نأخذ
   // "صورة" من الطلبات الحالية بدون أي تنبيه، حتى ما يرن الإنذار على طلبات قديمة أصلاً.
   if (newOrderTrackedMerchantId !== m.id) seedNewOrderTracking(m);
@@ -1074,6 +1075,7 @@ function renderMerchantPanel() {
       </div>
       <div class="card">
         <div class="card-title">سجل الطلبات (الكل)</div>
+        <input type="text" id="merchant-orders-search-${m.id}" placeholder="بحث برقم الطلب، اسم المنتج، أو الزبون..." style="margin-bottom:8px;" oninput="onMerchantOrdersSearchInput(${m.id})">
         <div id="merchant-orders-${m.id}">${renderMerchantOrders(m)}</div>
       </div>
     </div>
@@ -1090,11 +1092,8 @@ function renderMerchantPanel() {
       </div>
       <div class="card">
         <div class="card-title">أقسام متجرك (اختياري)</div>
-        <div class="subtitle" style="margin-bottom:8px;">مثل: تيشيرتات، أحذية، اكسسوارات... تكدر تربط أي منتج بقسم لما تضيفه، وتظهر بمتجرك مقسّمة لزبونك</div>
-        <div style="margin-bottom:8px;">
-          ${m.categories.length === 0 ? '<span class="subtitle" style="margin:0;">ما ضفت أقسام بعد</span>' :
-            m.categories.map(c => `<span class="category-chip">${esc(c.name)} <span class="x" onclick="deleteCategory(${m.id}, ${c.id})">✕</span></span>`).join('')}
-        </div>
+        <div class="subtitle" style="margin-bottom:8px;">مثل: تيشيرتات، أحذية، اكسسوارات... تكدر تربط أي منتج بقسم لما تضيفه، وتظهر بمتجرك مقسّمة لزبونك مع صورة كل قسم لو ضفتها</div>
+        <div id="merchant-categories-${m.id}">${renderCategoryList(m)}</div>
         <div class="row2">
           <div><input id="new-category-${m.id}" placeholder="اسم القسم — مثلاً: أحذية"></div>
           <div style="flex:0 0 auto;"><button class="btn secondary" style="margin-top:0;" onclick="addCategory(${m.id})">إضافة قسم</button></div>
