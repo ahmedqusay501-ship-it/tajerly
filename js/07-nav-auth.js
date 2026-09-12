@@ -162,6 +162,7 @@ function showHomeScreen() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('join-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'none';
+  applyMarketPagesVisibility();
   document.getElementById('home-screen').style.display = 'flex';
 }
 

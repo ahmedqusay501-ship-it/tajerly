@@ -11,6 +11,24 @@
 let generalMarketActive = false;
 let marketFilter = { query: '', category: 'all', offerId: null };
 
+// Hides the home-screen button AND footer link for a page the admin has fully disabled
+// (toggleMarketPageEnabled/toggleRestaurantsPageEnabled, 15-admin-tools.js) — so a visitor
+// never even sees the option, not just a disabled message after clicking. Someone who
+// already bookmarked ?market=1/?restaurants=1 still gets the "غير متوفرة حالياً" message
+// from renderGeneralMarket/renderRestaurantsMarket below as a second layer.
+function applyMarketPagesVisibility() {
+  const marketOn = data.settings.marketPageEnabled !== false;
+  const restaurantsOn = data.settings.restaurantsPageEnabled !== false;
+  const marketBtn = document.getElementById('home-market-btn');
+  const restaurantsBtn = document.getElementById('home-restaurants-btn');
+  const marketFooter = document.getElementById('market-footer-link-wrap');
+  const restaurantsFooter = document.getElementById('restaurants-footer-link-wrap');
+  if (marketBtn) marketBtn.style.display = marketOn ? '' : 'none';
+  if (restaurantsBtn) restaurantsBtn.style.display = restaurantsOn ? '' : 'none';
+  if (marketFooter) marketFooter.style.display = marketOn ? '' : 'none';
+  if (restaurantsFooter) restaurantsFooter.style.display = restaurantsOn ? '' : 'none';
+}
+
 // Offers whose admin-set active flag is on AND (if it has dates at all) today falls inside
 // [startDate, endDate] — see offerStatusLabel() in 15-admin-tools.js for the same date logic
 // used on the admin's own list. A permanent offer (no dates at all) is always included here
