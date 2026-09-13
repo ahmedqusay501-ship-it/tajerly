@@ -868,6 +868,8 @@ function markInvoiceReceivedByShipping(groupId) {
   if (items.length === 0) return;
   items.forEach(o => { o.deliveryStatus = 'received_by_shipping'; });
   saveData();
+  const m = data.merchants.find(x => x.id === items[0].merchantId);
+  logAudit('استلام فاتورة من شركة الشحن', `${m ? m.shop : ''} — ${items.length} قطعة`);
   showToast('تم تسجيل الفاتورة كمستلمة من قبل شركة الشحن');
   renderAll();
 }
@@ -877,6 +879,8 @@ function markInvoiceDelivered(groupId) {
   if (items.length === 0) return;
   items.forEach(o => { o.deliveryStatus = 'delivered'; });
   saveData();
+  const m = data.merchants.find(x => x.id === items[0].merchantId);
+  logAudit('تسليم فاتورة (واصل)', `${m ? m.shop : ''} — ${items.length} قطعة`);
   showToast('تم تسجيل الفاتورة كاملة كواصلة');
   renderAll();
 }
@@ -905,6 +909,8 @@ function confirmReturnOrderGroup() {
   if (items.length === 0) { closeReturnReasonModal(); return; }
   items.forEach(o => { o.deliveryStatus = 'returned'; o.returnReason = reason; });
   saveData();
+  const m = data.merchants.find(x => x.id === items[0].merchantId);
+  logAudit('إرجاع فاتورة (غير واصل)', `${m ? m.shop : ''} — ${items.length} قطعة — السبب: ${reason}`);
   closeReturnReasonModal();
   showToast('تم تسجيل الفاتورة كاملة كغير واصلة وسبب الإرجاع');
   renderAll();
