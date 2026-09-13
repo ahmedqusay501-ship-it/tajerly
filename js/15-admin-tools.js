@@ -499,6 +499,10 @@ function exportPlatformBackupJSON() {
     employees: data.employees,
     announcements: data.announcements,
     ledgerClosures: data.ledgerClosures,
+    agentLedgerClosures: data.agentLedgerClosures,
+    agentSettlements: data.agentSettlements,
+    agentCashLogs: data.agentCashLogs,
+    agentAdjustments: data.agentAdjustments,
     auditLog: data.auditLog,
     supportChats: data.supportChats,
     settings: data.settings,
@@ -547,6 +551,10 @@ async function confirmRestoreBackup(snapshot) {
   data.employees = snapshot.employees || [];
   data.announcements = snapshot.announcements || [];
   data.ledgerClosures = snapshot.ledgerClosures || [];
+  data.agentLedgerClosures = snapshot.agentLedgerClosures || [];
+  data.agentSettlements = snapshot.agentSettlements || [];
+  data.agentCashLogs = snapshot.agentCashLogs || [];
+  data.agentAdjustments = snapshot.agentAdjustments || [];
   data.auditLog = snapshot.auditLog || [];
   data.supportChats = snapshot.supportChats || [];
   if (snapshot.settings) {

@@ -60,7 +60,7 @@ async function saveData() {
         // 'admin-credentials' doc (see saveAdminCredentials) which only the real admin can
         // write. This doc stays writable by 'settings'-permission employees for pricing only.
         const { adminUsername: _au, adminPassword: _ap, ...publicSettings } = data.settings;
-        await window.storage.set('platform-settings', JSON.stringify({ settings: publicSettings, nextId: data.nextId, version: data.version, announcements: data.announcements, ledgerClosures: data.ledgerClosures }), true);
+        await window.storage.set('platform-settings', JSON.stringify({ settings: publicSettings, nextId: data.nextId, version: data.version, announcements: data.announcements, ledgerClosures: data.ledgerClosures, agentLedgerClosures: data.agentLedgerClosures, agentSettlements: data.agentSettlements, agentCashLogs: data.agentCashLogs, agentAdjustments: data.agentAdjustments }), true);
         loadedVersion = data.version;
         settingsSaved = true;
       }

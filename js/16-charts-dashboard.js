@@ -219,6 +219,9 @@ function renderAll() {
   renderMarketPagesCard();
   renderOffersList();
   renderAdminShippingControl();
+  renderDeliveryAgentsList();
+  renderAgentAccounts();
+  if (currentEmployee() && currentEmployee().ownerType === 'delivery_agent') renderAgentOrders();
   renderAuditLog();
   renderAdminSupportList();
   updateSupportNavBadge();

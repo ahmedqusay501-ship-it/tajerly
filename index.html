@@ -846,6 +846,12 @@
     <div id="offers-list"><div class="empty">جاري التحميل...</div></div>
     <button class="btn small" style="margin-top:8px;" onclick="openOfferEditor(null)">+ عرض جديد</button>
   </div>
+  <div class="card">
+    <div class="card-title">٨. تنبيه مستحقات مندوبي التوصيل</div>
+    <div class="subtitle" style="margin-bottom:8px;">إذا وصلت مستحقات المنصة غير المسدَّدة من أي مندوب توصيل لهذا المبلغ، تطلعلك رسالة تنبيه بمركز التنبيهات. خله 0 لتعطيل هذا التنبيه.</div>
+    <label>الحد الأقصى (دينار) — 0 = معطّل</label>
+    <input type="number" id="agent-due-alert-threshold" onchange="saveSettings()">
+  </div>
 </div>
 
 <!-- ============ ADMIN DELIVERY CONTROL (delegable to a 'shipping' employee) ============ -->
@@ -864,6 +870,50 @@
   </div>
   </div><!-- /shipping-content -->
 </div><!-- /view-shipping -->
+
+<!-- ============ DELIVERY AGENTS — manage agents (admin-only, never delegable) ============ -->
+<div class="view" id="view-delivery_agents">
+  <h2>مندوبين التوصيل</h2>
+  <div class="card">
+    <div class="card-title">إدارة مندوبي التوصيل</div>
+    <div class="subtitle" style="margin-bottom:8px;">كل مندوب مسؤول عن مجموعة محلات محددة — أي طلب جاهز للتوصيل من أحد محلاته يتوجه له تلقائياً. أجرة التوصيل وعمولة المنصة تختلف من مندوب لآخر.</div>
+    <button class="btn small" onclick="openAgentModal(null)" style="margin-bottom:10px;">+ إضافة مندوب توصيل</button>
+    <div id="delivery-agents-list"><div class="empty">جاري التحميل...</div></div>
+  </div>
+</div><!-- /view-delivery_agents -->
+
+<!-- ============ AGENT ACCOUNTS — daily ledger per agent (admin-only, never delegable) ============ -->
+<div class="view" id="view-agent_accounts">
+  <h2>حسابات المندوبين</h2>
+  <div class="card">
+    <div class="card-title">اختر مندوب</div>
+    <select id="agent-accounts-select" onchange="onAgentAccountsSelectChange()" style="width:100%; padding:8px; margin-bottom:10px;"></select>
+    <div id="agent-accounts-summary" class="grid3"></div>
+    <div id="agent-accounts-actions" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;"></div>
+  </div>
+  <div class="card" style="margin-top:12px;">
+    <div class="card-title">سجل الاستلام النقدي اليدوي</div>
+    <div class="subtitle" style="margin-bottom:8px;">سجل حر يدوي — يخليك تقارن الفلوس اللي فعلاً استلمتها من المندوب مع الأرقام اللي يحسبها النظام تلقائياً.</div>
+    <div id="agent-cash-log-list"><div class="empty">جاري التحميل...</div></div>
+  </div>
+  <div id="agent-accounts-days"></div>
+</div><!-- /view-agent_accounts -->
+
+<!-- ============ DELIVERY AGENT'S OWN DASHBOARD (role: employee, ownerType: delivery_agent) ============ -->
+<div class="view" id="view-delivery_agent">
+  <h2>طلباتي للتوصيل</h2>
+  <div class="card">
+    <div id="agent-personal-summary"><div class="empty">جاري التحميل...</div></div>
+  </div>
+  <div class="card">
+    <div class="toggle-group" id="agent-dashboard-tabs" style="margin-bottom:12px;">
+      <div class="toggle selected" data-agenttab="active" onclick="showAgentDashboardTab('active')">بعهدتي حالياً</div>
+      <div class="toggle" data-agenttab="history" onclick="showAgentDashboardTab('history')">السجل (آخر 30 يوم)</div>
+    </div>
+    <div class="subtitle" style="margin-bottom:8px;">هذي الطلبات الموكلة لك حصراً. سجّل كل فاتورة بمجرد ما تستلمها، وبعدين واصل أو غير واصل (مع كتابة السبب).</div>
+    <div id="agent-orders-list"><div class="empty">جاري التحميل...</div></div>
+  </div>
+</div><!-- /view-delivery_agent -->
 
 <!-- ============ SENSITIVE ADMIN-ONLY ACTIONS (never delegable to any employee) ============ -->
 <div class="view" id="view-admin_tools">
@@ -1311,6 +1361,103 @@
     <div class="modal-actions">
       <button class="btn secondary small" onclick="closeAdminEmployeeModal()">إلغاء</button>
       <button class="btn small" onclick="submitAdminEmployeeModal()">إضافة</button>
+    </div>
+  </div>
+</div>
+
+<!-- Return-order reason modal — shared by admin's shipping screen and a delivery agent's own dashboard -->
+<div class="modal-overlay" id="return-reason-modal">
+  <div class="modal-box">
+    <div class="modal-title">تسجيل الطلب كـ"غير واصل"</div>
+    <label>اكتب سبب الإرجاع (يظهر عند التاجر والأدمن)</label>
+    <textarea id="return-reason-input" rows="3" style="width:100%; padding:8px; font-family:inherit;" placeholder="مثلاً: الزبون ما يرد، أو رفض الاستلام..."></textarea>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeReturnReasonModal()">تراجع</button>
+      <button class="btn danger small" onclick="confirmReturnOrderGroup()">تأكيد الإرجاع</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: add/edit a delivery agent (credentials + assigned shops set only on creation; the rest stays editable) -->
+<div class="modal-overlay" id="agent-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="agent-modal-title">إضافة مندوب توصيل</div>
+    <label>اسم المندوب</label><input id="agent-name" placeholder="مثلاً: حيدر جاسم">
+    <label>اسم شركة/فريق التوصيل</label><input id="agent-company" placeholder="مثلاً: توصيل بغداد السريع">
+    <div id="agent-credentials-fields">
+      <label>اسم المستخدم</label><input id="agent-username">
+      <label>كلمة المرور</label><input type="password" id="agent-password">
+    </div>
+    <div class="row2">
+      <div><label>أجرة التوصيل لهذا المندوب (د)</label><input type="number" id="agent-delivery-fee" placeholder="مثلاً: 4000"></div>
+      <div>
+        <label>نوع عمولة المنصة من كل طلب</label>
+        <select id="agent-commission-type">
+          <option value="fixed">مبلغ ثابت</option>
+          <option value="percentage">نسبة مئوية %</option>
+        </select>
+      </div>
+    </div>
+    <label>قيمة العمولة</label><input type="number" id="agent-commission-value" placeholder="مثلاً: 500 أو 5">
+    <label style="margin-top:8px;">المحلات المسؤول عنها هذا المندوب</label>
+    <div id="agent-merchant-picker" style="margin-top:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeAgentModal()">إلغاء</button>
+      <button class="btn small" onclick="submitAgentModal()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: confirm deleting one day's page from an agent's accounts screen (admin-only action) -->
+<div class="modal-overlay" id="close-agent-ledger-modal">
+  <div class="modal-box">
+    <div class="modal-title">حذف صفحة يومية من حسابات المندوب</div>
+    <div class="subtitle" id="close-agent-ledger-text" style="margin-bottom:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeAgentLedgerModalHide()">تراجع</button>
+      <button class="btn danger small" onclick="confirmCloseAgentLedgerDay()">تأكيد الحذف</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: reassign an agent's open orders to another agent before deleting them -->
+<div class="modal-overlay" id="reassign-agent-modal">
+  <div class="modal-box">
+    <div class="modal-title">إعادة توجيه الطلبات المفتوحة</div>
+    <div class="subtitle" id="reassign-text" style="margin-bottom:8px;"></div>
+    <label>المندوب الجديد</label>
+    <select id="reassign-target-agent" style="width:100%; padding:8px;"></select>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeReassignAgentOrdersModal()">إلغاء</button>
+      <button class="btn small" onclick="confirmReassignAgentOrders()">تأكيد النقل</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: manual +/- adjustment on one specific agent day (see openAgentAdjustmentModal) -->
+<div class="modal-overlay" id="agent-adjustment-modal">
+  <div class="modal-box">
+    <div class="modal-title">تعديل يدوي — <span id="agent-adjustment-day-label"></span></div>
+    <label>المبلغ (موجب = زيادة على مستحق المنصة، سالب = خصم)</label>
+    <input type="number" id="agent-adjustment-amount" placeholder="مثلاً: 5000 أو -5000">
+    <label>سبب التعديل (إلزامي)</label>
+    <input id="agent-adjustment-reason" placeholder="مثلاً: اتفاق مع التاجر على خصم">
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeAgentAdjustmentModal()">إلغاء</button>
+      <button class="btn small" onclick="submitAgentAdjustment()">حفظ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: log a manual cash handover from an agent (see openAgentCashLogModal) -->
+<div class="modal-overlay" id="agent-cash-log-modal">
+  <div class="modal-box">
+    <div class="modal-title">تسجيل استلام نقدي من المندوب</div>
+    <label>المبلغ المستلم (د)</label><input type="number" id="agent-cash-amount" placeholder="مثلاً: 150000">
+    <label>ملاحظة (اختياري)</label><input id="agent-cash-note" placeholder="مثلاً: تسديد نقدي بالمكتب">
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeAgentCashLogModal()">إلغاء</button>
+      <button class="btn small" onclick="submitAgentCashLog()">حفظ</button>
     </div>
   </div>
 </div>

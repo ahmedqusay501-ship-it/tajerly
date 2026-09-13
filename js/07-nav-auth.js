@@ -14,6 +14,8 @@ const ADMIN_VIEWS = [
   {id: 'support', labelKey: 'nav_support'},
   {id: 'settings', labelKey: 'nav_settings'},
   {id: 'shipping', labelKey: 'nav_shipping'},
+  {id: 'delivery_agents', labelKey: 'nav_delivery_agents'},
+  {id: 'agent_accounts', labelKey: 'nav_agent_accounts'},
   {id: 'admin_tools', labelKey: 'nav_admin_tools'},
   {id: 'store', labelKey: 'nav_store_preview'}
 ];
@@ -27,6 +29,7 @@ const ADMIN_NAV_GROUPS = [
   { label: 'التجار والموظفين', ids: ['requests', 'employees'] },
   { label: 'الحسابات والمالية', ids: ['accounting', 'dues'] },
   { label: 'التواصل والدعم', ids: ['announcements', 'support'] },
+  { label: 'مندوبين التوصيل', ids: ['delivery_agents', 'agent_accounts'] },
   { label: 'الإعدادات والنظام', ids: ['settings', 'shipping', 'admin_tools'] },
   { label: 'أخرى', ids: ['store'] }
 ];
@@ -47,7 +50,11 @@ const MERCHANT_EMPLOYEE_PERMS = [
   {id: 'earnings', labelKey: 'perm_earnings'},
   {id: 'charts', labelKey: 'perm_charts'}
 ];
-const ADMIN_EMPLOYEE_PERMS = ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools');
+// 'delivery_agents' and 'agent_accounts' are excluded from delegation for the same reason as
+// admin_tools above: managing agents means creating login credentials and setting/resetting
+// money the platform takes from every delivery — an admin-team employee is never handed that,
+// even if given every other permission.
+const ADMIN_EMPLOYEE_PERMS = ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && v.id !== 'delivery_agents' && v.id !== 'agent_accounts');
 
 function currentEmployee() {
   return loggedInEmployeeId != null ? data.employees.find(e => e.id === loggedInEmployeeId) : null;
@@ -65,6 +72,11 @@ function viewsForRole(role) {
       // this view still wouldn't be offered, and the underlying Firestore writes it
       // triggers are separately blocked at the rules level regardless.
       return ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && emp.permissions.includes(v.id));
+    }
+    if (emp.ownerType === 'delivery_agent') {
+      // مندوب توصيل: تبويب وحيد يشوف فيه بس طلباته هو (renderAgentOrders) — ما يوصله أي
+      // تبويب ثاني بلوحة الأدمن أو التاجر، حتى لو تلاعب أحد بصلاحيات موظف عادي.
+      return [{ id: 'delivery_agent', labelKey: 'nav_my_deliveries' }];
     }
     // A merchant's employee always lands on the single merchant tab — which sub-sections
     // they can use inside it is gated separately (see applyEmployeeGating).
@@ -348,13 +360,14 @@ function enterApp(role) {
   document.getElementById('app-shell').style.display = 'block';
 
   const roleLabels = { admin: 'أدمن', merchant: 'تاجر', employee: 'موظف' };
-  document.getElementById('topbar-role').textContent = roleLabels[role] || '';
+  document.getElementById('topbar-role').textContent =
+    (role === 'employee' && currentEmployee() && currentEmployee().ownerType === 'delivery_agent') ? 'مندوب توصيل' : (roleLabels[role] || '');
   let name = '';
   if (role === 'admin') { name = data.settings.adminUsername; applyMerchantDashboardColor(null); }
   if (role === 'merchant') { const m = data.merchants.find(x => x.id === loggedInMerchantId); name = m ? m.shop : ''; applyMerchantDashboardColor(m); }
   if (role === 'employee') {
     const emp = currentEmployee();
-    name = emp ? emp.name : '';
+    name = emp ? (emp.ownerType === 'delivery_agent' && emp.companyName ? `${emp.name} — ${emp.companyName}` : emp.name) : '';
     if (emp && emp.ownerType === 'merchant') {
       loggedInMerchantId = emp.merchantId;
       const m = data.merchants.find(x => x.id === emp.merchantId);

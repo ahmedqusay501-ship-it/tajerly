@@ -28,9 +28,21 @@ function pendingDeliveryRequestGroupIds() {
   return groupOrders(items).map(g => g.groupId);
 }
 function unreadSupportChatUids() { return (data.supportChats || []).filter(c => c.unreadForAdmin).map(c => c.authUid); }
+// Delivery agents whose UNSETTLED platform commission (see agentUnsettledCommissionTotal in
+// 10-accounting-ledger.js) currently exceeds the admin's own threshold setting. 0 = alert
+// disabled entirely. Unlike the other queues above (which fire once per NEW item id), an
+// agent can cross the threshold, get settled, and cross it again later — removing them from
+// adminAlertSeen the moment they drop back under threshold (see the snapshot diff logic
+// already in checkAdminAlertsAndNotify) means a second breach re-alerts correctly instead of
+// staying silently "seen" forever.
+function agentsOverDueThreshold() {
+  const threshold = data.settings.agentDueAlertThreshold;
+  if (!threshold || threshold <= 0) return [];
+  return data.employees.filter(e => e.ownerType === 'delivery_agent').filter(e => agentUnsettledCommissionTotal(e.id) >= threshold).map(e => e.id);
+}
 
 let adminAlertSeeded = false;
-let adminAlertSeen = { join: new Set(), removal: new Set(), cancel: new Set(), delivery: new Set(), support: new Set() };
+let adminAlertSeen = { join: new Set(), removal: new Set(), cancel: new Set(), delivery: new Set(), support: new Set(), agentDue: new Set() };
 let adminAlertSoundEnabled = (localStorage.getItem('adminAlertSoundEnabled') === '1');
 let adminAlertAutoStopHandle = null;
 
@@ -40,7 +52,8 @@ function currentAdminAlertSnapshot() {
     removal: pendingRemovalRequests().map(o => o.id),
     cancel: pendingCancelRequestGroupIds(),
     delivery: pendingDeliveryRequestGroupIds(),
-    support: unreadSupportChatUids()
+    support: unreadSupportChatUids(),
+    agentDue: agentsOverDueThreshold()
   };
 }
 
@@ -48,7 +61,7 @@ function seedAdminAlertTracking() {
   const snap = currentAdminAlertSnapshot();
   adminAlertSeen = {
     join: new Set(snap.join), removal: new Set(snap.removal), cancel: new Set(snap.cancel),
-    delivery: new Set(snap.delivery), support: new Set(snap.support)
+    delivery: new Set(snap.delivery), support: new Set(snap.support), agentDue: new Set(snap.agentDue)
   };
   adminAlertSeeded = true;
 }
@@ -64,11 +77,11 @@ function resetAdminAlertTracking() {
 
 const ADMIN_ALERT_SINGULAR = {
   join: 'طلب انضمام تاجر جديد', removal: 'طلب حذف قطعة من فاتورة', cancel: 'طلب إلغاء من زبون',
-  delivery: 'طلب جاهز للتوصيل', support: 'رسالة دعم جديدة من تاجر'
+  delivery: 'طلب جاهز للتوصيل', support: 'رسالة دعم جديدة من تاجر', agentDue: 'مندوب تجاوز حد المستحقات'
 };
 const ADMIN_ALERT_PLURAL = {
   join: 'طلبات انضمام تجار جدد', removal: 'طلبات حذف قطع', cancel: 'طلبات إلغاء',
-  delivery: 'طلبات جاهزة للتوصيل', support: 'رسائل دعم جديدة'
+  delivery: 'طلبات جاهزة للتوصيل', support: 'رسائل دعم جديدة', agentDue: 'مندوبين تجاوزوا حد المستحقات'
 };
 function adminAlertLabel(key, n) { return n === 1 ? ADMIN_ALERT_SINGULAR[key] : ADMIN_ALERT_PLURAL[key]; }
 
@@ -156,11 +169,13 @@ function renderAdminAlertUI() {
   const cancelCount = pendingCancelRequestGroupIds().length;
   const deliveryCount = pendingDeliveryRequestGroupIds().length;
   const supportCount = unreadSupportChatUids().length;
+  const agentDueCount = agentsOverDueThreshold().length;
   const requestsTotal = joinCount + removalCount + cancelCount;
-  const grandTotal = requestsTotal + deliveryCount + supportCount;
+  const grandTotal = requestsTotal + deliveryCount + supportCount + agentDueCount;
 
   setNavBadgeCount('requests', requestsTotal);
   setNavBadgeCount('shipping', deliveryCount);
+  setNavBadgeCount('agent_accounts', agentDueCount);
   setNavBadgeCount('support', supportCount);
 
   const bellIcon = document.getElementById('admin-alert-bell-icon');
@@ -180,6 +195,7 @@ function renderAdminAlertUI() {
       { count: removalCount, view: 'requests', label: 'طلبات حذف قطع من الفواتير' },
       { count: cancelCount, view: 'requests', label: 'طلبات إلغاء من الزبائن' },
       { count: deliveryCount, view: 'shipping', label: 'طلبات جاهزة للتوصيل' },
+      { count: agentDueCount, view: 'agent_accounts', label: 'مندوبين تجاوزوا حد المستحقات غير المسدَّدة' },
       { count: supportCount, view: 'support', label: 'رسائل دعم جديدة من التجار' }
     ];
     const summaryParent = summaryEl.closest('.card');

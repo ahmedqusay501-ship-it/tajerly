@@ -27,7 +27,11 @@ function dataFingerprint() {
   const announcements = (data.announcements || []).map(a => `${a.id}:${(a.readBy || []).length}`).join(',');
   const supportChats = (data.supportChats || []).map(c => `${c.authUid}:${c.messages.length}:${c.unreadForAdmin ? 1 : 0}:${c.unreadForMerchant ? 1 : 0}`).join(',');
   const ledgerClosures = (data.ledgerClosures || []).map(c => `${c.id}`).join(',');
-  return `${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}`;
+  const agentLedgerClosures = (data.agentLedgerClosures || []).map(c => `${c.id}`).join(',');
+  const agentSettlements = (data.agentSettlements || []).map(c => `${c.id}`).join(',');
+  const agentCashLogs = (data.agentCashLogs || []).map(c => `${c.id}`).join(',');
+  const agentAdjustments = (data.agentAdjustments || []).map(c => `${c.id}`).join(',');
+  return `${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}|${agentLedgerClosures}|${agentSettlements}|${agentCashLogs}|${agentAdjustments}`;
 }
 
 async function pollForUpdates() {

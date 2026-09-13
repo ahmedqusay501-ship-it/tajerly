@@ -366,6 +366,35 @@ let data = {
   // 'platform-settings' doc as settings/nextId/version/announcements — no new collection or
   // rule needed.
   ledgerClosures: [],
+  // Daily ledger closures for DELIVERY AGENTS — exact same idea as ledgerClosures above but
+  // keyed by agentId instead of merchantId. Only the admin can create these (see
+  // closeAgentLedgerDay() in 10-accounting-ledger.js) — an agent never gets a delete control
+  // on their own daily page. { id, dateKey:'YYYY-MM-DD', agentId, closedAt, closedBy }.
+  // Unlike ledgerClosures' scope:'both' (which deletes the underlying orders), closing an
+  // agent's day only ever HIDES that day's page from the admin's agent-accounts screen —
+  // the real order records (and the merchant's own accounting/ledger) are never touched, so
+  // a mistaken "تصفير" here can't silently wipe a merchant's sales history. Lives inside the
+  // same 'platform-settings' doc as settings/nextId/version/ledgerClosures — no new
+  // collection or rule needed.
+  agentLedgerClosures: [],
+  // ---- Settlement tracking: has this agent's (agentId, day) already been physically paid?
+  // Separate from agentLedgerClosures (which just HIDES a day from the report) — a day can be
+  // visible AND settled at the same time, or hidden without ever being settled (e.g. an old
+  // test entry the admin just wants gone). { id, agentId, dateKey, settledAt, settledBy }.
+  agentSettlements: [],
+  // ---- Manual cash-handover log: a free-text record of "استلمت نقداً من المندوب X مبلغ Y
+  // بتاريخ Z" that the admin types in by hand after actually counting the cash. This is
+  // deliberately NOT computed from orders — it exists so the admin can compare what the
+  // system SAYS an agent owes against what physically changed hands, and catch a mismatch.
+  // { id, agentId, amount, note, at, by }.
+  agentCashLogs: [],
+  // ---- Manual per-day adjustment: a +/- correction to what an agent owes the platform for
+  // one specific day, with a mandatory reason — for the rare case where the admin and agent
+  // (or admin and merchant) agree on a manual discount/extra charge that isn't just "another
+  // order". Never touches the underlying orders — shown as its own line in the day's report
+  // and folded into the unsettled/threshold totals. { id, agentId, dateKey, amount, reason,
+  // at, by } — amount can be negative (discount) or positive (extra charge).
+  agentAdjustments: [],
   // Audit trail of sensitive admin-level actions (approve/reject/delete a merchant, reset a
   // password, change admin credentials, ...). See logAudit() below. Lives in its own doc
   // ('audit-log', shared/admin-write) so it never competes with the version-conflict logic
@@ -477,6 +506,16 @@ function ensureEmployeeDefaults(e) {
   if (typeof e.phone !== 'string') e.phone = '';
   if (typeof e.username !== 'string') e.username = '';
   if (typeof e.password !== 'string') e.password = '';
+  // ---- Delivery-agent-only fields (ownerType === 'delivery_agent') ----
+  // A delivery agent is stored in the exact same 'employees' collection/array as merchant
+  // and admin-team employees (same login, same Firestore doc shape, same firestore.rules
+  // protection) — it just carries a few extra fields nobody else needs. See
+  // js/08-admin-requests-employees-creds.js "DELIVERY AGENTS" section for how these are set.
+  if (typeof e.companyName !== 'string') e.companyName = ''; // اسم شركة/فريق التوصيل تاع المندوب
+  if (!Array.isArray(e.merchantIds)) e.merchantIds = []; // المحلات (م.merchants[].id) المسؤول عنها هذا المندوب
+  if (typeof e.deliveryFee !== 'number') e.deliveryFee = 0; // أجرة التوصيل الثابتة لهذا المندوب (تختلف من مندوب لآخر)
+  if (e.commissionType !== 'fixed' && e.commissionType !== 'percentage') e.commissionType = 'fixed'; // نوع عمولة المنصة من كل طلب توصلّه هذا المندوب
+  if (typeof e.commissionValue !== 'number') e.commissionValue = 0; // قيمة العمولة (مبلغ ثابت أو نسبة %)
   return e;
 }
 
@@ -550,6 +589,10 @@ async function fetchRemoteData() {
       data.version = loaded.version || 0;
       data.announcements = Array.isArray(loaded.announcements) ? loaded.announcements : (data.announcements || []);
       data.ledgerClosures = Array.isArray(loaded.ledgerClosures) ? loaded.ledgerClosures : (data.ledgerClosures || []);
+      data.agentLedgerClosures = Array.isArray(loaded.agentLedgerClosures) ? loaded.agentLedgerClosures : (data.agentLedgerClosures || []);
+      data.agentSettlements = Array.isArray(loaded.agentSettlements) ? loaded.agentSettlements : (data.agentSettlements || []);
+      data.agentCashLogs = Array.isArray(loaded.agentCashLogs) ? loaded.agentCashLogs : (data.agentCashLogs || []);
+      data.agentAdjustments = Array.isArray(loaded.agentAdjustments) ? loaded.agentAdjustments : (data.agentAdjustments || []);
     }
   } catch (e) {
     if (e && e.message !== 'key not found') console.error('Storage error while loading settings:', e);
@@ -826,6 +869,15 @@ async function fetchRemoteData() {
     if (!o.cancelRequestedAt) o.cancelRequestedAt = null;
     if (typeof o.merchantCancelNote !== 'string') o.merchantCancelNote = '';
     if (!o.merchantCancelAt) o.merchantCancelAt = null;
+    // ---- Delivery-agent routing (see deliveryAgentForMerchant/handOverInvoiceToShipping
+    // in 11-order-management.js) — defaults so orders from before this feature existed
+    // don't break any code that reads these fields.
+    if (typeof o.deliveryAgentId === 'undefined') o.deliveryAgentId = null;
+    if (!o.deliveryAssignedAt) o.deliveryAssignedAt = null;
+    if (typeof o.agentFeeSnapshot !== 'number') o.agentFeeSnapshot = 0;
+    if (o.agentCommissionTypeSnapshot !== 'fixed' && o.agentCommissionTypeSnapshot !== 'percentage') o.agentCommissionTypeSnapshot = 'fixed';
+    if (typeof o.agentCommissionValueSnapshot !== 'number') o.agentCommissionValueSnapshot = 0;
+    if (typeof o.returnReason !== 'string') o.returnReason = ''; // سبب "غير واصل" — يكتبه المندوب أو الأدمن، يظهر للتاجر وللأدمن
   });
   if (typeof data.settings.itemDeduction !== 'number') data.settings.itemDeduction = 0;
   if (!Array.isArray(data.settings.shippingZones) || data.settings.shippingZones.length === 0) {
@@ -844,6 +896,11 @@ async function fetchRemoteData() {
   if (!Array.isArray(data.announcements)) data.announcements = [];
   data.announcements.forEach(a => { if (!Array.isArray(a.readBy)) a.readBy = []; });
   if (!Array.isArray(data.ledgerClosures)) data.ledgerClosures = [];
+  if (!Array.isArray(data.agentLedgerClosures)) data.agentLedgerClosures = [];
+  if (!Array.isArray(data.agentSettlements)) data.agentSettlements = [];
+  if (!Array.isArray(data.agentCashLogs)) data.agentCashLogs = [];
+  if (!Array.isArray(data.agentAdjustments)) data.agentAdjustments = [];
+  if (typeof data.settings.agentDueAlertThreshold !== 'number') data.settings.agentDueAlertThreshold = 0; // 0 = التنبيه معطّل
 }
 
 async function loadData() {

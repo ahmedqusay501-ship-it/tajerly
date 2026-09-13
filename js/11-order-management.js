@@ -276,6 +276,17 @@ function renderReadyForShipping(m) {
   }).join('');
 }
 
+// Finds which delivery agent (an 'employees' record with ownerType 'delivery_agent') is
+// responsible for a given merchant, if any. A merchant can only ever be assigned to ONE
+// active agent at a time (see submitAgentModal — assigning a merchant to a new agent
+// silently un-assigns it from any other agent first, to avoid a shop's orders splitting
+// between two people). Returns null if the merchant has no agent yet — in that case the
+// order simply falls into the admin's own generic shipping queue, exactly like before this
+// feature existed, so nothing breaks for platforms that don't use agents at all.
+function deliveryAgentForMerchant(merchantId) {
+  return data.employees.find(e => e.ownerType === 'delivery_agent' && e.status === 'active' && e.merchantIds.includes(merchantId)) || null;
+}
+
 async function handOverInvoiceToShipping(groupId, btn) {
   const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && o.status === 'accepted' && !o.cancelled && o.deliveryStatus === 'none');
   if (items.length === 0) {
@@ -289,8 +300,18 @@ async function handOverInvoiceToShipping(groupId, btn) {
   }
   // يمنع دبل-كليك أو ضغطة ثانية أثناء ما الحفظ الأول لسا شغال.
   if (btn) { btn.disabled = true; btn.textContent = 'جاري التسليم...'; }
+  // توجيه تلقائي لمندوب التوصيل المسؤول عن هذا المحل (لو موجود). نأخذ لقطة (snapshot) من
+  // أجرة المندوب ونوع/قيمة عمولة المنصة وقت التسليم بالضبط — عشان لو الأدمن غيّر أجرة
+  // المندوب أو عمولته بعدين، ما ينقلب حساب فواتير قديمة انسلمت أصلاً بسعر مختلف.
+  const agent = items[0] ? deliveryAgentForMerchant(items[0].merchantId) : null;
   items.forEach(o => {
     o.deliveryStatus = 'with_shipping';
+    o.deliveryAgentId = agent ? agent.id : null;
+    o.deliveryAssignedAt = new Date().toISOString(); // متى انسلمت الفاتورة فعلياً — يُستخدم لتنبيه "تأخر بعهدة المندوب"
+    o.agentFeeSnapshot = agent ? agent.deliveryFee : 0;
+    o.agentCommissionTypeSnapshot = agent ? agent.commissionType : 'fixed';
+    o.agentCommissionValueSnapshot = agent ? agent.commissionValue : 0;
+    o.returnReason = o.returnReason || '';
   });
   saveData(); // يتكفل بمزامنة باقي البيانات (best-effort زي دايماً)
   // نتأكد فعلياً من نجاح حفظ هالفاتورة بالذات — saveData() لحالها تكتب الطلبات
@@ -307,13 +328,13 @@ async function handOverInvoiceToShipping(groupId, btn) {
   if (!ok) {
     // نرجّع الحالة المحلية زي ما كانت عشان الشاشة تطابق الحقيقة، ونعطي رسالة واضحة
     // بدل ما نخلي المستخدم يظن إن الزر "توقف" بدون أي سبب.
-    items.forEach(o => { o.deliveryStatus = 'none'; });
+    items.forEach(o => { o.deliveryStatus = 'none'; o.deliveryAgentId = null; });
     showToast('فشل حفظ التسليم — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
     if (btn) { btn.disabled = false; btn.textContent = 'تم التجهيز — تسليم للتوصيل'; }
     renderAll();
     return;
   }
-  showToast(`تم تسليم الفاتورة كاملة (${items.length} قطعة) للتوصيل — بانتظار تأكيد الأدمن`);
+  showToast(agent ? `تم تسليم الفاتورة كاملة (${items.length} قطعة) لمندوب التوصيل: ${agent.name}` : `تم تسليم الفاتورة كاملة (${items.length} قطعة) للتوصيل — بانتظار تأكيد الأدمن`);
   renderAll();
 }
 
@@ -546,7 +567,7 @@ function renderMerchantOrders(m) {
   const rows = pageOrders.map(o => {
     const dateLabel = orderDateTimeLabel(o.date);
     return `<div class="list-item" style="align-items:flex-start;">
-      <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د${orderCustomerLine(o)}${orderFinanceLine(o)}${cancelReasonLine(o)}<br>
+      <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د${orderCustomerLine(o)}${orderFinanceLine(o)}${cancelReasonLine(o)}${returnReasonLine(o)}<br>
       <span style="color:var(--text-mute); font-size:11px;">${dateLabel} — رقم الطلب #${o.orderGroupId || o.id}</span></span>
       <span>${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span> ${o.deliveryStatus && o.deliveryStatus !== 'none' ? `<span class="badge ${deliveryStatusBadgeClass(o.deliveryStatus)}">${deliveryStatusLabel(o.deliveryStatus)}</span>` : ''}`}</span>
     </div>`;
@@ -813,7 +834,8 @@ function renderAdminShippingControl() {
       <div style="width:100%;">
         <b>${m ? esc(m.shop) : '—'}${items.length > 1 ? ' (' + items.length + ' قطع)' : ''}</b>
         <span class="badge ${deliveryStatusBadgeClass(first.deliveryStatus)}" style="margin-right:6px;">${deliveryStatusLabel(first.deliveryStatus)}</span>
-        ${isReturned ? `<div style="font-size:11px; color:#B3261E; margin-top:4px;">الشحنة رجعت — لازم تسويلها "إرجاع للتاجر" يجهزها من جديد، أو "إلغاء" لو ما راح يعاد إرسالها (يرجّع رصيد التاجر والمخزون تلقائياً).</div>` : ''}
+        ${(() => { const ag = first.deliveryAgentId != null ? data.employees.find(e => e.id === first.deliveryAgentId) : null; return ag ? `<span class="badge" style="margin-right:4px; background:#EEF2FF; color:#3730A3;">مندوب: ${esc(ag.name)}</span>` : ''; })()}
+        ${isReturned ? `<div style="font-size:11px; color:#B3261E; margin-top:4px;">الشحنة رجعت — لازم تسويلها "إرجاع للتاجر" يجهزها من جديد، أو "إلغاء" لو ما راح يعاد إرسالها (يرجّع رصيد التاجر والمخزون تلقائياً).</div>${returnReasonLine(first)}` : ''}
         ${merchantLine}
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
@@ -828,7 +850,7 @@ function renderAdminShippingControl() {
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
         ${(!isReturned && first.deliveryStatus === 'with_shipping') ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId})">مستلم من قبل شركة الشحن</button>` : ''}
         ${!isReturned ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId})">واصل</button>` : ''}
-        ${!isReturned ? `<button class="btn secondary small" onclick="markInvoiceReturned(${g.groupId})">غير واصل</button>` : ''}
+        ${!isReturned ? `<button class="btn secondary small" onclick="openReturnReasonModal(${g.groupId})">غير واصل</button>` : ''}
         <button class="btn secondary small" onclick="returnOrderGroupToMerchant(${g.groupId})">إرجاع للتاجر يجهزها من جديد</button>
         <button class="btn danger small" onclick="openCancelReasonModal(${g.groupId}, 'admin', 'الأدمن')">إلغاء</button>
       </div>
@@ -859,12 +881,172 @@ function markInvoiceDelivered(groupId) {
   renderAll();
 }
 
-function markInvoiceReturned(groupId) {
+// ---------- "غير واصل" (return) — always requires a written reason ----------
+// One shared modal used by both the admin's generic shipping screen AND a delivery agent's
+// own dashboard (see renderAgentOrders in the DELIVERY AGENT section below). The reason is
+// stored on every order in the invoice and shown to both the merchant (renderMerchantOrders)
+// and the admin (renderAdminShippingControl / agent accounts screen) via returnReasonLine().
+let currentReturnTarget = null;
+function openReturnReasonModal(groupId) {
+  currentReturnTarget = groupId;
+  document.getElementById('return-reason-input').value = '';
+  document.getElementById('return-reason-modal').classList.add('show');
+}
+function closeReturnReasonModal() {
+  currentReturnTarget = null;
+  document.getElementById('return-reason-modal').classList.remove('show');
+}
+function confirmReturnOrderGroup() {
+  if (currentReturnTarget == null) return;
+  const reason = document.getElementById('return-reason-input').value.trim();
+  if (!reason) { showToast('لازم تكتب سبب الإرجاع'); return; }
+  const groupId = currentReturnTarget;
   const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping'));
-  if (items.length === 0) return;
-  items.forEach(o => { o.deliveryStatus = 'returned'; });
+  if (items.length === 0) { closeReturnReasonModal(); return; }
+  items.forEach(o => { o.deliveryStatus = 'returned'; o.returnReason = reason; });
   saveData();
-  showToast('تم تسجيل الفاتورة كاملة كغير واصلة');
+  closeReturnReasonModal();
+  showToast('تم تسجيل الفاتورة كاملة كغير واصلة وسبب الإرجاع');
   renderAll();
 }
 
+// Small reason line shown wherever a returned ("غير واصل") order appears — mirrors
+// cancelReasonLine's style exactly (see 09-merchant-store-products.js) so it's visible to
+// both the merchant and the admin without them having to open the agent-accounts screen.
+function returnReasonLine(o) {
+  if (o.deliveryStatus !== 'returned' || !o.returnReason) return '';
+  const agent = o.deliveryAgentId != null ? data.employees.find(e => e.id === o.deliveryAgentId) : null;
+  return `<div style="font-size:11px; color:#92400E; margin-top:4px; border-top:1px dashed #FDE68A; padding-top:4px; background:#FFFBEB; padding:5px 6px; border-radius:6px;">
+    الشحنة رجعت${agent ? ' — مندوب التوصيل: ' + esc(agent.name) : ''}
+    <br>سبب الإرجاع: ${esc(o.returnReason)}
+  </div>`;
+}
+
+// ---------- DELIVERY AGENT — own dashboard ----------
+// An agent only ever sees invoices assigned specifically to them (deliveryAgentId ==
+// their own employee id) — see isAssignedAgentForOrder() in firestore.rules for the
+// server-side enforcement of the exact same restriction.
+let agentDashboardTab = 'active'; // 'active' (بعهدته حالياً) | 'history' (آخر 30 يوم)
+function showAgentDashboardTab(tab) {
+  agentDashboardTab = tab;
+  renderAgentOrders();
+}
+
+// "متأخرة" — بعهدة المندوب أكثر من 24 ساعة وما انسجلت واصلة ولا راجعة بعد. تنبيه بصري
+// خفيف داخل بطاقة الفاتورة نفسها، مو نظام إنذار منفصل — يذكّر المندوب بس ما يزعجه.
+function isAgentOrderOverdue(o) {
+  if (!o.deliveryAssignedAt) return false;
+  return (Date.now() - new Date(o.deliveryAssignedAt).getTime()) > 24 * 3600 * 1000;
+}
+
+function renderAgentPersonalSummary(emp) {
+  const box = document.getElementById('agent-personal-summary');
+  if (!box) return;
+  const finished = data.orders.filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const sevenDaysAgo = new Date(startOfToday.getTime() - 6 * 86400000);
+  const todayDelivered = finished.filter(o => o.deliveryStatus === 'delivered' && new Date(o.date) >= startOfToday).length;
+  const todayReturned = finished.filter(o => o.deliveryStatus === 'returned' && new Date(o.date) >= startOfToday).length;
+  const weekDelivered = finished.filter(o => o.deliveryStatus === 'delivered' && new Date(o.date) >= sevenDaysAgo).length;
+  const weekReturned = finished.filter(o => o.deliveryStatus === 'returned' && new Date(o.date) >= sevenDaysAgo).length;
+  const totalShippingEarned = finished.filter(o => o.deliveryStatus === 'delivered').reduce((s, o) => s + (o.agentFeeSnapshot || 0), 0);
+  const overdueCount = agentPendingCustodyOrders(emp.id).filter(isAgentOrderOverdue).length;
+  const commissionLabel = emp.commissionType === 'percentage' ? `${emp.commissionValue}% لكل طلب` : `${emp.commissionValue.toLocaleString()} د لكل طلب`;
+  box.innerHTML = `
+    <div class="grid3">
+      <div class="stat"><div class="stat-num">${todayDelivered}</div><div class="stat-label">واصلة اليوم</div></div>
+      <div class="stat"><div class="stat-num">${todayReturned}</div><div class="stat-label">راجعة اليوم</div></div>
+      <div class="stat"><div class="stat-num">${weekDelivered}</div><div class="stat-label">واصلة آخر 7 أيام</div></div>
+      <div class="stat"><div class="stat-num">${weekReturned}</div><div class="stat-label">راجعة آخر 7 أيام</div></div>
+      <div class="stat"><div class="stat-num">${totalShippingEarned.toLocaleString()}</div><div class="stat-label">مجموع أجور توصيلك (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${overdueCount > 0 ? '#B3261E' : 'inherit'};">${overdueCount}</div><div class="stat-label">طلبات متأخرة بعهدتك (+24 ساعة)</div></div>
+    </div>
+    <div style="font-size:12px; color:var(--text-mute); margin-top:8px; border-top:1px dashed #EEE; padding-top:8px;">
+      أجرة التوصيل الأساسية لك: <b>${emp.deliveryFee.toLocaleString()} د</b> لكل طلب — عمولة المنصة منك: <b>${commissionLabel}</b>
+    </div>
+  `;
+}
+
+function renderAgentActiveOrders(emp) {
+  const el = document.getElementById('agent-orders-list');
+  if (!el) return;
+  const mine = data.orders
+    .filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping') && !o.cancelled)
+    .slice().reverse();
+  if (mine.length === 0) {
+    el.innerHTML = '<div class="empty">ما فيه طلبات موكلة لك حالياً</div>';
+    return;
+  }
+  const groups = groupOrders(mine);
+  el.innerHTML = groups.map(g => {
+    const items = g.orders;
+    const first = items[0];
+    const m = data.merchants.find(x => x.id === first.merchantId);
+    const subtotal = items.reduce((s, o) => s + o.price, 0);
+    const shipping = items.reduce((s, o) => s + (o.shippingFee || 0), 0);
+    const overdue = isAgentOrderOverdue(first);
+    const itemsHtml = items.map(o => `<div class="invoice-line"><span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''}</span></div>`).join('');
+    return `
+    <div class="list-item" style="align-items:flex-start; flex-direction:column; gap:8px; ${overdue ? 'border-right:3px solid #B3261E;' : ''}">
+      <div style="width:100%;">
+        <b>${m ? esc(m.shop) : '—'}${items.length > 1 ? ' (' + items.length + ' قطع)' : ''}</b>
+        <span class="badge ${deliveryStatusBadgeClass(first.deliveryStatus)}" style="margin-right:6px;">${deliveryStatusLabel(first.deliveryStatus)}</span>
+        ${overdue ? '<span class="badge rejected" style="margin-right:6px;">متأخرة — أكثر من 24 ساعة بعهدتك</span>' : ''}
+        ${orderCustomerLine(first)}
+        <div style="margin-top:6px;">${itemsHtml}</div>
+        <div style="font-size:11px; color:#64748B; margin-top:6px; border-top:1px dashed #EEE; padding-top:6px;">
+          مبلغ التاجر (المنتجات): <b>${subtotal.toLocaleString()} د</b> — أجرة التوصيل: <b>${shipping.toLocaleString()} د</b>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
+        ${first.deliveryStatus === 'with_shipping' ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId}); renderAgentOrders();">استلمتها</button>` : ''}
+        <button class="btn small" onclick="markInvoiceDelivered(${g.groupId}); renderAgentOrders();">واصل</button>
+        <button class="btn secondary small" onclick="openReturnReasonModal(${g.groupId})">غير واصل</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// آخر 30 يوم من طلبات المندوب المنتهية (واصلة/راجعة) — نفس فكرة buildAgentLedgerDays
+// بملف المحاسبة، بس هذي نسخة للقراءة بس (بدون أي أزرار تسديد/حذف — تلك خاصة بالأدمن) حتى
+// يراجع المندوب شغله القديم ويعرف هل الأدمن سجّل تسديد يومه ولا لسا.
+function renderAgentHistory(emp) {
+  const el = document.getElementById('agent-orders-list');
+  if (!el) return;
+  const thirtyDaysAgo = Date.now() - 30 * 86400000;
+  const finished = data.orders.filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned') && new Date(o.date).getTime() >= thirtyDaysAgo);
+  if (finished.length === 0) { el.innerHTML = '<div class="empty">ما فيه طلبات منتهية بآخر 30 يوم</div>'; return; }
+  const byDay = new Map();
+  finished.forEach(o => {
+    const dateKey = ledgerDayKey(o.date);
+    if (!byDay.has(dateKey)) byDay.set(dateKey, { delivered: [], returned: [] });
+    byDay.get(dateKey)[o.deliveryStatus === 'returned' ? 'returned' : 'delivered'].push(o);
+  });
+  const days = Array.from(byDay.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  el.innerHTML = days.map(([dateKey, bucket]) => {
+    const settled = isAgentDaySettled(emp.id, dateKey);
+    const shippingTotal = bucket.delivered.reduce((s, o) => s + (o.agentFeeSnapshot || 0), 0);
+    return `<div class="card" style="margin-top:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <b style="font-size:13px;">${ledgerPageLabel(dateKey)}</b>
+        <span class="badge ${settled ? 'active' : 'pending'}">${settled ? 'مسدَّد' : 'غير مسدَّد بعد'}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-mute); margin-top:6px;">
+        واصلة: ${bucket.delivered.length} — راجعة: ${bucket.returned.length} — أجور توصيلك: ${shippingTotal.toLocaleString()} د
+      </div>
+      ${bucket.returned.map(o => `<div style="font-size:11.5px; color:#92400E; padding:4px 0; border-top:1px dashed #FDE68A;">${esc(o.productName)} — سبب الإرجاع: ${esc(o.returnReason || '—')}</div>`).join('')}
+    </div>`;
+  }).join('');
+}
+
+function renderAgentOrders() {
+  const emp = currentEmployee();
+  if (!emp) return;
+  renderAgentPersonalSummary(emp);
+  const tabsEl = document.getElementById('agent-dashboard-tabs');
+  if (tabsEl) {
+    tabsEl.querySelectorAll('.toggle').forEach(t => t.classList.toggle('selected', t.dataset.agenttab === agentDashboardTab));
+  }
+  if (agentDashboardTab === 'history') renderAgentHistory(emp);
+  else renderAgentActiveOrders(emp);
+}

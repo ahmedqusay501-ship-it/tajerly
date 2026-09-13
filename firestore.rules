@@ -73,6 +73,22 @@ service cloud.firestore {
         && employeeDoc().status == 'active';
     }
 
+    // مندوب توصيل — نفس مجموعة employees، ownerType مختلف. عنده حساب دخول (يعينه الأدمن
+    // مباشرة، نفس آلية موظف الإدارة) لكن ما يشوف/يعدّل إلا الطلبات المخصصة له تحديداً
+    // (orders.deliveryAgentId == معرّفه المحلي، شوف isAssignedAgentForOrder تحت).
+    function isDeliveryAgent() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && employeeDoc().ownerType == 'delivery_agent'
+        && employeeDoc().status == 'active';
+    }
+
+    // هل نفس المندوب المسجل دخوله هو المكلّف بهذا الطلب تحديداً (orderDoc.deliveryAgentId
+    // = رقم موظف/مندوب محلي، مو uid). لا تستخدم إلا مع isDeliveryAgent() أولاً.
+    function isAssignedAgentForOrder(orderDoc) {
+      return isDeliveryAgent() && orderDoc.deliveryAgentId == employeeDoc().id;
+    }
+
     // هل نفس التاجر مسجّل دخوله (uid المسجل = uid وثيقة التاجر نفسها).
     function isMerchantSelf(merchantUid) {
       return signedIn() && request.auth.uid == merchantUid;
@@ -321,7 +337,10 @@ service cloud.firestore {
       allow read: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting') ||
         isAdminEmployee('shipping') ||
         isMerchantSelf(resource.data.merchantAuthUid) ||
-        isMerchantEmployeeWithAny(resource.data.merchantAuthUid, ['orders', 'charts', 'earnings']);
+        isMerchantEmployeeWithAny(resource.data.merchantAuthUid, ['orders', 'charts', 'earnings']) ||
+        // مندوب توصيل: يشوف بس الطلبات المخصصة له تحديداً (deliveryAgentId == معرّفه) —
+        // ما يشوف طلبات مندوبين ثانين ولا طلبات محلات ما هو مسؤول عنها.
+        isAssignedAgentForOrder(resource.data);
 
       allow create: if
         request.resource.data.status == 'pending' &&
@@ -335,7 +354,14 @@ service cloud.firestore {
         // ما يقدر يلمس السعر ولا بيانات الزبون ولا أي حقل ثاني بالطلب.
         (
           isAdminEmployee('shipping') &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'cancelled', 'cancelReason'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'cancelled', 'cancelReason', 'returnReason', 'deliveryAgentId', 'agentFeeSnapshot', 'agentCommissionTypeSnapshot', 'agentCommissionValueSnapshot'])
+        ) ||
+        (
+          // مندوب التوصيل: يقدر بس يحدّث حالة التوصيل وسبب الإرجاع لطلبه هو المخصص له —
+          // ما يقدر يلمس السعر ولا بيانات الزبون ولا يحوّل الطلب لمندوب/تاجر ثاني.
+          isAssignedAgentForOrder(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
+          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
         ) ||
         (
           (isMerchantSelf(resource.data.merchantAuthUid) ||

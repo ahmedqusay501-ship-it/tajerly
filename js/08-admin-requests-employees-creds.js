@@ -680,6 +680,239 @@ async function submitAdminEmployeeModal() {
   renderAll();
 }
 
+// ---------------------------------------------------------------------------------
+// DELIVERY AGENTS ("مندوبين التوصيل") — admin-only, created directly (same pattern as an
+// admin-team employee above: name+company set once on creation, login created immediately,
+// nothing goes through the employee_requests approval queue). Stored in the exact same
+// data.employees array with ownerType: 'delivery_agent' — see ensureEmployeeDefaults() in
+// 03-storage-firebase.js for the extra fields (companyName, merchantIds, deliveryFee,
+// commissionType, commissionValue) and firestore.rules' isDeliveryAgent()/
+// isAssignedAgentForOrder() for how their access to `orders` is scoped down to only the
+// invoices assigned to them.
+// ---------------------------------------------------------------------------------
+let editingAgentId = null;
+
+// Renders the "assign shops" checkbox list inside the agent modal. A shop already assigned
+// to ANOTHER active agent is shown but disabled with a note — a shop can only ever belong to
+// one agent at a time (see submitAgentModal), so silently letting two agents "share" a shop
+// would make renderAgentAccounts()'s per-agent totals double-count that shop's orders.
+function renderAgentMerchantPicker(currentAgentId, selectedIds) {
+  const box = document.getElementById('agent-merchant-picker');
+  if (!box) return;
+  const merchants = data.merchants.filter(m => m.status === 'active');
+  if (merchants.length === 0) { box.innerHTML = '<div class="empty">ما فيه محلات نشطة حالياً</div>'; return; }
+  box.innerHTML = merchants.map(m => {
+    const owner = deliveryAgentForMerchant(m.id);
+    const ownedByOther = owner && owner.id !== currentAgentId;
+    const checked = selectedIds.includes(m.id) ? 'checked' : '';
+    return `<label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-weight:400; ${ownedByOther ? 'opacity:.55;' : ''}">
+      <input type="checkbox" class="agent-merchant-check" value="${m.id}" ${checked} ${ownedByOther ? 'disabled' : ''} style="width:auto;">
+      ${esc(m.shop)}${ownedByOther ? ' <span style="font-size:11px; color:#94A3B8;">(مسؤول عنه المندوب: ' + esc(owner.name) + ')</span>' : ''}
+    </label>`;
+  }).join('');
+}
+
+function openAgentModal(existingId) {
+  editingAgentId = existingId || null;
+  const a = editingAgentId ? data.employees.find(x => x.id === editingAgentId && x.ownerType === 'delivery_agent') : null;
+  document.getElementById('agent-modal-title').textContent = a ? 'تعديل مندوب التوصيل' : 'إضافة مندوب توصيل';
+  document.getElementById('agent-name').value = a ? a.name : '';
+  document.getElementById('agent-company').value = a ? a.companyName : '';
+  document.getElementById('agent-credentials-fields').style.display = a ? 'none' : 'block';
+  document.getElementById('agent-username').value = '';
+  document.getElementById('agent-password').value = '';
+  document.getElementById('agent-delivery-fee').value = a ? a.deliveryFee : '';
+  document.getElementById('agent-commission-type').value = a ? a.commissionType : 'fixed';
+  document.getElementById('agent-commission-value').value = a ? a.commissionValue : '';
+  renderAgentMerchantPicker(editingAgentId, a ? a.merchantIds : []);
+  document.getElementById('agent-modal').classList.add('show');
+}
+function closeAgentModal() {
+  editingAgentId = null;
+  document.getElementById('agent-modal').classList.remove('show');
+}
+async function submitAgentModal() {
+  const name = document.getElementById('agent-name').value.trim();
+  const companyName = document.getElementById('agent-company').value.trim();
+  const deliveryFee = parseInt(document.getElementById('agent-delivery-fee').value, 10);
+  const commissionType = document.getElementById('agent-commission-type').value === 'percentage' ? 'percentage' : 'fixed';
+  const commissionValue = parseFloat(document.getElementById('agent-commission-value').value);
+  const merchantIds = Array.from(document.querySelectorAll('.agent-merchant-check:checked')).map(c => parseInt(c.value, 10));
+
+  if (!name) { showToast('عبي اسم المندوب'); return; }
+  if (isNaN(deliveryFee) || deliveryFee < 0) { showToast('عبي أجرة التوصيل (رقم صحيح)'); return; }
+  if (isNaN(commissionValue) || commissionValue < 0) { showToast('عبي قيمة عمولة المنصة'); return; }
+  if (commissionType === 'percentage' && commissionValue > 100) { showToast('النسبة المئوية ما تكدر تتجاوز 100%'); return; }
+
+  if (editingAgentId) {
+    const a = data.employees.find(x => x.id === editingAgentId);
+    if (!a) return;
+    a.name = name;
+    a.companyName = companyName;
+    a.deliveryFee = deliveryFee;
+    a.commissionType = commissionType;
+    a.commissionValue = commissionValue;
+    a.merchantIds = merchantIds;
+    if (window.authApi && a.authUid) await window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+    saveData();
+    closeAgentModal();
+    showToast('تم تحديث بيانات المندوب');
+    renderAll();
+    return;
+  }
+
+  const username = document.getElementById('agent-username').value.trim();
+  const password = document.getElementById('agent-password').value.trim();
+  if (!username || !password) { showToast('عبي اليوزر نيم والباسورد'); return; }
+  if (password.length < 6) { showToast('لازم كلمة المرور ٦ خانات أو أكثر (شرط Firebase)'); return; }
+
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const agent = {
+    id: newId, name, companyName, phone: '', permissions: [],
+    ownerType: 'delivery_agent', merchantId: null, merchantIds, deliveryFee, commissionType, commissionValue,
+    username: '', password: '', status: 'active', authUid: null
+  };
+
+  if (window.authApi) {
+    const btn = document.querySelector('#agent-modal .btn:not(.secondary)');
+    if (btn) { btn.disabled = true; btn.textContent = 'جاري إنشاء الحساب...'; }
+    try {
+      const uid = await window.authApi.createAccount(username, password);
+      agent.authUid = uid;
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'إضافة'; }
+      if (err && err.code === 'auth/email-already-in-use') showToast('اليوزرنيم هذا مستخدم من قبل — جرب يوزرنيم ثاني');
+      else { console.error('Agent account creation failed:', err); showToast('تعذر إنشاء حساب الدخول — تأكد من الاتصال وحاول مرة ثانية'); }
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'إضافة'; }
+  }
+
+  agent.username = username;
+  agent.password = await hashPassword(password);
+  data.employees.push(agent);
+
+  if (window.authApi && agent.authUid) await window.authApi.saveDoc('employees', agent.authUid, agent).catch(() => {});
+  saveData();
+  closeAgentModal();
+  logAudit('إضافة مندوب توصيل', name);
+  showToast('تمت إضافة مندوب التوصيل');
+  renderAll();
+}
+
+function renderDeliveryAgentsList() {
+  const el = document.getElementById('delivery-agents-list');
+  if (!el) return;
+  const agents = data.employees.filter(e => e.ownerType === 'delivery_agent');
+  if (agents.length === 0) { el.innerHTML = '<div class="empty">ما ضفت مندوبين توصيل بعد</div>'; return; }
+  el.innerHTML = agents.map(a => {
+    const shopsCount = a.merchantIds.length;
+    const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${a.commissionValue.toLocaleString()} د لكل طلب`;
+    // مؤشر أداء بسيط: نسبة الإرجاع من كل تاريخ هذا المندوب (موصلة + راجعة، بدون الطلبات
+    // اللي لسا بعهدته) — تنبيه بصري بس لو النسبة عالية، مو حكم قاطع على أداء المندوب.
+    const finished = data.orders.filter(o => o.deliveryAgentId === a.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
+    const returnedCount = finished.filter(o => o.deliveryStatus === 'returned').length;
+    const returnRate = finished.length > 0 ? Math.round((returnedCount / finished.length) * 100) : null;
+    const pendingCount = agentPendingCustodyOrders(a.id).length;
+    return `<div class="list-item" style="align-items:flex-start; flex-direction:column; gap:6px;">
+      <div style="width:100%;">
+        <b>${esc(a.name)}</b>${a.companyName ? ' — ' + esc(a.companyName) : ''}
+        <span class="badge ${a.status === 'active' ? 'active' : 'rejected'}" style="margin-right:6px;">${a.status === 'active' ? 'نشط' : 'موقوف مؤقتاً'}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">عدد المحلات المسؤول عنها: ${shopsCount} — أجرة التوصيل: ${a.deliveryFee.toLocaleString()} د — عمولة المنصة منه: ${commissionLabel}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">طلبات بعهدته حالياً: ${pendingCount}${returnRate != null ? ` — نسبة الإرجاع (من كامل تاريخه): <span style="color:${returnRate >= 20 ? '#B3261E' : 'inherit'}; font-weight:${returnRate >= 20 ? '700' : '400'};">${returnRate}%</span>` : ''}</span>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn small secondary" onclick="openAgentModal(${a.id})">تعديل</button>
+        <button class="btn small secondary" onclick="toggleAgentStatus(${a.id})">${a.status === 'active' ? 'إيقاف مؤقت' : 'إعادة تفعيل'}</button>
+        ${pendingCount > 0 ? `<button class="btn small secondary" onclick="openReassignAgentOrdersModal(${a.id})">إعادة توجيه الطلبات المفتوحة (${pendingCount})</button>` : ''}
+        <button class="btn danger small" onclick="deleteAgent(${a.id})">حذف</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---- Pause/resume — status flips between 'active' and 'paused'. A paused agent can't log
+// in (platformLogin only accepts status === 'active') and stops getting new orders auto-
+// assigned to them (deliveryAgentForMerchant only matches active agents) — but nothing about
+// their history, accounts, or already-assigned orders changes. Re-activating just flips it
+// back; nothing needs to be "restored".
+async function toggleAgentStatus(id) {
+  const a = data.employees.find(x => x.id === id);
+  if (!a) return;
+  a.status = a.status === 'active' ? 'paused' : 'active';
+  if (window.authApi && a.authUid) await window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+  saveData();
+  logAudit(a.status === 'active' ? 'إعادة تفعيل مندوب توصيل' : 'إيقاف مؤقت لمندوب توصيل', a.name);
+  showToast(a.status === 'active' ? 'تم تفعيل المندوب' : 'تم إيقاف المندوب مؤقتاً — ما يكدر يسجل دخول ولا توصله طلبات جديدة');
+  renderAll();
+}
+
+// ---- Bulk-reassign an agent's currently-open (with_shipping/received_by_shipping) orders
+// to another active agent — needed before deleteAgent() will allow removing someone who
+// still has orders "in the air" (see the guard inside deleteAgent below). Re-snapshots the
+// fee/commission fields to the NEW agent's current values, exactly like a fresh
+// handOverInvoiceToShipping assignment would.
+let reassignSourceAgentId = null;
+function openReassignAgentOrdersModal(agentId) {
+  reassignSourceAgentId = agentId;
+  const sel = document.getElementById('reassign-target-agent');
+  const others = data.employees.filter(e => e.ownerType === 'delivery_agent' && e.id !== agentId && e.status === 'active');
+  sel.innerHTML = others.length === 0
+    ? '<option value="">ما فيه مندوب نشط ثاني تنقلها له</option>'
+    : others.map(a => `<option value="${a.id}">${esc(a.name)}${a.companyName ? ' — ' + esc(a.companyName) : ''}</option>`).join('');
+  const count = agentPendingCustodyOrders(agentId).length;
+  document.getElementById('reassign-text').textContent = `عندك ${count} فاتورة بعهدة هذا المندوب لسا ما وصلت ولا رجعت. اختر مندوب ثاني تنقلها له:`;
+  document.getElementById('reassign-agent-modal').classList.add('show');
+}
+function closeReassignAgentOrdersModal() {
+  reassignSourceAgentId = null;
+  document.getElementById('reassign-agent-modal').classList.remove('show');
+}
+async function confirmReassignAgentOrders() {
+  if (reassignSourceAgentId == null) return;
+  const targetId = parseInt(document.getElementById('reassign-target-agent').value, 10);
+  if (isNaN(targetId)) { showToast('ما فيه مندوب لتنقل له الطلبات'); return; }
+  const target = data.employees.find(x => x.id === targetId);
+  if (!target) return;
+  const items = agentPendingCustodyOrders(reassignSourceAgentId);
+  items.forEach(o => {
+    o.deliveryAgentId = target.id;
+    o.agentFeeSnapshot = target.deliveryFee;
+    o.agentCommissionTypeSnapshot = target.commissionType;
+    o.agentCommissionValueSnapshot = target.commissionValue;
+    o.deliveryAssignedAt = new Date().toISOString();
+  });
+  saveData();
+  if (window.authApi) await Promise.allSettled(items.map(o => window.authApi.saveDoc('orders', String(o.id), o)));
+  logAudit('إعادة توجيه طلبات مندوب', `${items.length} فاتورة إلى ${target.name}`);
+  showToast(`تم نقل ${items.length} فاتورة إلى ${target.name}`);
+  closeReassignAgentOrdersModal();
+  renderAll();
+}
+
+// ---- Delete — blocked while the agent still has open (not yet delivered/returned) orders,
+// so a deletion never leaves orders silently orphaned with no one responsible for them. The
+// admin has to reassign those first (see openReassignAgentOrdersModal above).
+function deleteAgent(id) {
+  const a = data.employees.find(e => e.id === id);
+  if (!a) return;
+  const pendingCount = agentPendingCustodyOrders(id).length;
+  if (pendingCount > 0) {
+    showToast(`ما تكدر تحذف "${a.name}" — عنده ${pendingCount} فاتورة لسا بعهدته. سوّي "إعادة توجيه الطلبات المفتوحة" أول`);
+    return;
+  }
+  openConfirmModal('حذف مندوب التوصيل', `متأكد تريد تحذف "${a.name}"؟ الطلبات اللي وصّلها سابقاً تضل مسجلة بالحسابات، بس ما يكدر يسجل دخول بعدها ولا توصله طلبات جديدة.`, async () => {
+    data.employees = data.employees.filter(e => e.id !== id);
+    if (window.authApi) {
+      if (a.authUid) window.authApi.deleteDoc('employees', a.authUid).catch(() => {});
+    }
+    saveData();
+    logAudit('حذف مندوب توصيل', a.name);
+    showToast('تم حذف المندوب');
+    renderAll();
+  });
+}
+
 // ---------- ANNOUNCEMENTS (admin broadcasts messages to merchants) ----------
 // Toggles the multi-select merchant checkbox list on/off depending on whether "كل التجار"
 // or "تجار محددين" is chosen in the composer above.

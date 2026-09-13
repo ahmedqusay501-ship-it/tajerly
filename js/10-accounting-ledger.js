@@ -1076,3 +1076,406 @@ function exportAccountingExcel() {
 }
 
 
+
+// ---------- DELIVERY AGENT ACCOUNTS ("حسابات المندوبين") — admin-only screen ----------
+// Same daily-page idea as the merchant ledger above (reuses ledgerDayKey/ledgerDayLabel/
+// ledgerPageLabel as-is — a calendar day is a calendar day either way), but grouped by
+// delivery agent instead of merchant, and with a THIRD number the merchant ledger doesn't
+// need: the platform's own commission taken FROM the agent on every delivered order, which
+// then reduces what's still owed to the merchant (see orderAgentDueSplit below).
+//
+// Money only ever flows through here for orders that actually reached this agent
+// (o.deliveryAgentId === agent.id) and finished one way or another (delivered/returned) —
+// still-in-transit orders (with_shipping/received_by_shipping) don't count toward any total
+// yet, same principle as the merchant ledger only counting 'accepted' orders.
+function orderAgentDueSplit(o) {
+  if (o.deliveryStatus !== 'delivered') return { shippingDue: 0, merchantDue: 0, platformCommission: 0, merchantNetDue: 0 };
+  const shippingDue = o.agentFeeSnapshot || 0;
+  const merchantDue = o.price || 0;
+  const platformCommission = o.agentCommissionTypeSnapshot === 'percentage'
+    ? Math.round(merchantDue * (o.agentCommissionValueSnapshot || 0) / 100)
+    : (o.agentCommissionValueSnapshot || 0);
+  return { shippingDue, merchantDue, platformCommission, merchantNetDue: merchantDue - platformCommission };
+}
+
+// true when an agent's (agentId, day) page was closed/reset by the admin. Unlike the
+// merchant ledger's three-way scope ('both'/'admin'/'merchant'), an agent never has their own
+// login view of this screen at all, so there's nothing to keep separately visible for them —
+// closing a day here always just means "hide it from the admin's agent-accounts screen from
+// now on". The underlying orders are NEVER deleted or altered — a merchant's own accounting
+// (renderMerchantAccounting) and the admin's general accounting screen keep counting them
+// exactly as before. scope 'reset' is used by resetAgentAccount() below to hide every day at
+// once (a full "تصفير الحسابات") without a separate data shape.
+function isAgentLedgerDayHiddenFor(agentId, dateKey) {
+  return (data.agentLedgerClosures || []).some(c => c.agentId === agentId && (c.dateKey === dateKey || c.scope === 'reset'));
+}
+
+function buildAgentLedgerDays(agentId) {
+  const orders = data.orders.filter(o => o.deliveryAgentId === agentId && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
+  const byDay = new Map();
+  orders.forEach(o => {
+    const dateKey = ledgerDayKey(o.date);
+    if (isAgentLedgerDayHiddenFor(agentId, dateKey)) return;
+    if (!byDay.has(dateKey)) byDay.set(dateKey, { dateKey, delivered: [], returned: [], byMerchant: {}, adjustments: [] });
+    const bucket = byDay.get(dateKey);
+    if (o.deliveryStatus === 'returned') { bucket.returned.push(o); return; }
+    bucket.delivered.push(o);
+    if (!bucket.byMerchant[o.merchantId]) bucket.byMerchant[o.merchantId] = { merchantId: o.merchantId, count: 0, merchantDue: 0, platformCommission: 0, merchantNetDue: 0 };
+    const mb = bucket.byMerchant[o.merchantId];
+    const split = orderAgentDueSplit(o);
+    mb.count += 1;
+    mb.merchantDue += split.merchantDue;
+    mb.platformCommission += split.platformCommission;
+    mb.merchantNetDue += split.merchantNetDue;
+  });
+  // Fold in manual adjustments even for a day with zero real orders (e.g. a pure correction
+  // entry) — so it still shows up as its own page instead of being silently unreachable.
+  (data.agentAdjustments || []).filter(adj => adj.agentId === agentId && !isAgentLedgerDayHiddenFor(agentId, adj.dateKey)).forEach(adj => {
+    if (!byDay.has(adj.dateKey)) byDay.set(adj.dateKey, { dateKey: adj.dateKey, delivered: [], returned: [], byMerchant: {}, adjustments: [] });
+    byDay.get(adj.dateKey).adjustments.push(adj);
+  });
+  const days = Array.from(byDay.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+  days.forEach(day => {
+    day.deliveredCount = day.delivered.length;
+    day.returnedCount = day.returned.length;
+    day.totalShipping = day.delivered.reduce((s, o) => s + orderAgentDueSplit(o).shippingDue, 0);
+    day.totalMerchantDue = day.delivered.reduce((s, o) => s + orderAgentDueSplit(o).merchantDue, 0);
+    day.totalAdjustments = day.adjustments.reduce((s, adj) => s + adj.amount, 0);
+    day.totalPlatformCommission = day.delivered.reduce((s, o) => s + orderAgentDueSplit(o).platformCommission, 0) + day.totalAdjustments;
+    day.totalMerchantNetDue = day.totalMerchantDue - day.totalPlatformCommission;
+  });
+  return days;
+}
+
+// ---- Manual per-day adjustment (+/-) with a mandatory reason. Folds straight into
+// totalPlatformCommission above (a positive adjustment = agent owes the platform more that
+// day, a negative one = a discount) — never touches the underlying orders.
+let adjustmentTargetAgentId = null, adjustmentTargetDateKey = null;
+function openAgentAdjustmentModal(agentId, dateKey) {
+  adjustmentTargetAgentId = agentId;
+  adjustmentTargetDateKey = dateKey;
+  document.getElementById('agent-adjustment-day-label').textContent = ledgerPageLabel(dateKey);
+  document.getElementById('agent-adjustment-amount').value = '';
+  document.getElementById('agent-adjustment-reason').value = '';
+  document.getElementById('agent-adjustment-modal').classList.add('show');
+}
+function closeAgentAdjustmentModal() {
+  adjustmentTargetAgentId = null; adjustmentTargetDateKey = null;
+  document.getElementById('agent-adjustment-modal').classList.remove('show');
+}
+async function submitAgentAdjustment() {
+  if (adjustmentTargetAgentId == null) return;
+  const amount = parseInt(document.getElementById('agent-adjustment-amount').value, 10);
+  const reason = document.getElementById('agent-adjustment-reason').value.trim();
+  if (isNaN(amount) || amount === 0) { showToast('عبي مبلغ التعديل (موجب للزيادة، سالب للخصم)'); return; }
+  if (!reason) { showToast('لازم تكتب سبب التعديل'); return; }
+  data.agentAdjustments.push({
+    id: Date.now() + '-' + adjustmentTargetAgentId + '-' + Math.random().toString(36).slice(2, 6),
+    agentId: adjustmentTargetAgentId, dateKey: adjustmentTargetDateKey, amount, reason,
+    at: new Date().toISOString(), by: currentActorLabel()
+  });
+  await saveData();
+  const a = data.employees.find(x => x.id === adjustmentTargetAgentId);
+  await logAudit('تعديل يدوي بحساب مندوب', `${a ? a.name : adjustmentTargetAgentId} — ${adjustmentTargetDateKey} — ${amount > 0 ? '+' : ''}${amount.toLocaleString()} د — ${reason}`);
+  showToast('تم تسجيل التعديل');
+  closeAgentAdjustmentModal();
+  renderAll();
+}
+function deleteAgentAdjustment(id) {
+  openConfirmModal('حذف تعديل يدوي', 'متأكد تريد تحذف هذا التعديل؟ هذا الإجراء يخص الأدمن بس.', async () => {
+    data.agentAdjustments = (data.agentAdjustments || []).filter(adj => adj.id !== id);
+    await saveData();
+    showToast('تم حذف التعديل');
+    renderAll();
+  });
+}
+
+// ---- Admin-only: delete one day's page, or reset the whole agent account ----
+let closeAgentLedgerTarget = null; // { agentId, dateKey } | { agentId, reset: true }
+function openCloseAgentLedgerDayModal(agentId, dateKey) {
+  closeAgentLedgerTarget = { agentId, dateKey };
+  const a = data.employees.find(x => x.id === agentId);
+  const day = buildAgentLedgerDays(agentId).find(d => d.dateKey === dateKey);
+  const settled = isAgentDaySettled(agentId, dateKey);
+  let text = `راح تحذف ${ledgerPageLabel(dateKey)} من حسابات المندوب "${esc(a ? a.name : '')}". الطلبات نفسها ما تنحذف — تبقى موجودة بمحاسبة التاجر والمحاسبة العامة، بس هذي الصفحة تختفي من هذا التقرير. بس الأدمن يقدر يسوي هذا الإجراء.`;
+  if (!settled && day && (day.totalPlatformCommission > 0 || day.totalMerchantNetDue > 0)) {
+    text += `<br><br><b style="color:#B3261E;">⚠️ تنبيه:</b> هذا اليوم لسا "غير مسدَّد" — فيه ${day.totalPlatformCommission.toLocaleString()} د مستحقة للمنصة و${day.totalMerchantNetDue.toLocaleString()} د صافي مستحق للتجار. حذف الصفحة قبل التسديد يخليك تنسى هذا المبلغ. الأفضل تسجل "تم التسديد" أول.`;
+  }
+  document.getElementById('close-agent-ledger-text').innerHTML = text;
+  document.getElementById('close-agent-ledger-modal').classList.add('show');
+}
+function closeAgentLedgerModalHide() {
+  document.getElementById('close-agent-ledger-modal').classList.remove('show');
+  closeAgentLedgerTarget = null;
+}
+async function confirmCloseAgentLedgerDay() {
+  if (!closeAgentLedgerTarget) return;
+  const { agentId, dateKey } = closeAgentLedgerTarget;
+  const a = data.employees.find(x => x.id === agentId);
+  data.agentLedgerClosures.push({
+    id: Date.now() + '-' + agentId + '-' + Math.random().toString(36).slice(2, 6),
+    dateKey, agentId, scope: 'day',
+    closedAt: new Date().toISOString(),
+    closedBy: currentActorLabel()
+  });
+  await saveData();
+  await logAudit('حذف صفحة يومية من حسابات مندوب', `${a ? a.name : agentId} — ${dateKey}`);
+  closeAgentLedgerModalHide();
+  showToast('تم حذف صفحة هذا اليوم من حسابات المندوب');
+  renderAll();
+}
+
+function resetAgentAccount(agentId) {
+  const a = data.employees.find(x => x.id === agentId);
+  if (!a) return;
+  openConfirmModal(
+    'تصفير حسابات المندوب',
+    `راح يختفي كل سجل الحسابات السابق للمندوب "${a.name}" من هذا التقرير (الطلبات نفسها ما تنحذف، تبقى بمحاسبة التاجر والمحاسبة العامة). بس الأدمن يقدر يسوي هذا الإجراء، وما ينرجع.`,
+    async () => {
+      data.agentLedgerClosures.push({
+        id: Date.now() + '-' + agentId + '-reset-' + Math.random().toString(36).slice(2, 6),
+        dateKey: ledgerDayKey(new Date()), agentId, scope: 'reset',
+        closedAt: new Date().toISOString(),
+        closedBy: currentActorLabel()
+      });
+      await saveData();
+      await logAudit('تصفير حسابات مندوب توصيل', a.name);
+      showToast('تم تصفير حسابات المندوب');
+      renderAll();
+    }
+  );
+}
+
+// ---- Admin screen: pick an agent, see their daily pages ----
+let selectedAgentAccountId = null;
+function renderAgentAccountsFilter() {
+  const sel = document.getElementById('agent-accounts-select');
+  if (!sel) return;
+  const agents = data.employees.filter(e => e.ownerType === 'delivery_agent');
+  sel.innerHTML = agents.map(a => `<option value="${a.id}">${esc(a.name)}${a.companyName ? ' — ' + esc(a.companyName) : ''}</option>`).join('');
+  if (selectedAgentAccountId == null && agents.length > 0) selectedAgentAccountId = agents[0].id;
+  if (sel.value != selectedAgentAccountId && selectedAgentAccountId != null) sel.value = selectedAgentAccountId;
+}
+function onAgentAccountsSelectChange() {
+  const sel = document.getElementById('agent-accounts-select');
+  selectedAgentAccountId = sel ? parseInt(sel.value, 10) : null;
+  renderAgentAccounts();
+}
+function renderAgentAccounts() {
+  const el = document.getElementById('agent-accounts-days');
+  if (!el) return;
+  renderAgentAccountsFilter();
+  const agents = data.employees.filter(e => e.ownerType === 'delivery_agent');
+  if (agents.length === 0) { el.innerHTML = '<div class="empty">ما فيه مندوبين توصيل بعد</div>'; return; }
+  const agentId = selectedAgentAccountId != null ? selectedAgentAccountId : agents[0].id;
+  const agent = data.employees.find(x => x.id === agentId);
+  if (!agent) { el.innerHTML = '<div class="empty">اختر مندوب</div>'; return; }
+
+  const days = buildAgentLedgerDays(agentId);
+  const summaryEl = document.getElementById('agent-accounts-summary');
+  if (summaryEl) {
+    const totalDelivered = days.reduce((s, d) => s + d.deliveredCount, 0);
+    const totalReturned = days.reduce((s, d) => s + d.returnedCount, 0);
+    const totalShipping = days.reduce((s, d) => s + d.totalShipping, 0);
+    const totalMerchantDue = days.reduce((s, d) => s + d.totalMerchantDue, 0);
+    const totalCommission = days.reduce((s, d) => s + d.totalPlatformCommission, 0);
+    const totalNetDue = days.reduce((s, d) => s + d.totalMerchantNetDue, 0);
+    const pendingCount = agentPendingCustodyOrders(agentId).length;
+    const unsettled = agentUnsettledCommissionTotal(agentId);
+    summaryEl.innerHTML = `
+      <div class="stat"><div class="stat-num">${pendingCount}</div><div class="stat-label">طلبات بعهدته حالياً</div></div>
+      <div class="stat"><div class="stat-num">${totalDelivered}</div><div class="stat-label">طلبات موصلة</div></div>
+      <div class="stat"><div class="stat-num">${totalReturned}</div><div class="stat-label">طلبات راجعة</div></div>
+      <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">مجموع أجور الشحن (د)</div></div>
+      <div class="stat"><div class="stat-num">${totalMerchantDue.toLocaleString()}</div><div class="stat-label">مجموع مبالغ التجار (د)</div></div>
+      <div class="stat"><div class="stat-num">${totalCommission.toLocaleString()}</div><div class="stat-label">مستحقات المنصة من المندوب (د)</div></div>
+      <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${unsettled > 0 ? '#B3261E' : 'inherit'};">${unsettled.toLocaleString()}</div><div class="stat-label">غير مسدَّد بعد (د)</div></div>
+    `;
+  }
+  const actionsEl = document.getElementById('agent-accounts-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = `
+      <button class="btn secondary small" onclick="copyAgentStatement(${agentId})">نسخ كشف الحساب</button>
+      <button class="btn secondary small" onclick="openAgentCashLogModal(${agentId})">+ تسجيل استلام نقدي</button>
+      <button class="btn danger small" onclick="resetAgentAccount(${agentId})">تصفير حسابات هذا المندوب</button>
+    `;
+  }
+  const cashLogEl = document.getElementById('agent-cash-log-list');
+  if (cashLogEl) cashLogEl.innerHTML = renderAgentCashLogs(agentId);
+
+  if (days.length === 0) { el.innerHTML = '<div class="empty">ما فيه عمليات مسجلة لهذا المندوب</div>'; return; }
+
+  el.innerHTML = days.map(day => {
+    const settled = isAgentDaySettled(agentId, day.dateKey);
+    const merchantRows = Object.values(day.byMerchant).map(mb => {
+      const m = data.merchants.find(x => x.id === mb.merchantId);
+      return `<div style="font-size:11.5px; color:var(--ink-2); padding:4px 0; border-top:1px dashed #EEE;">
+        ${esc(m ? m.shop : 'تاجر محذوف')} — عدد الطلبات: ${mb.count} — مستحق التاجر: ${mb.merchantDue.toLocaleString()} د —
+        عمولة المنصة: ${mb.platformCommission.toLocaleString()} د — صافي المستحق للتاجر: <b>${mb.merchantNetDue.toLocaleString()} د</b>
+      </div>`;
+    }).join('');
+    const returnedRows = day.returned.map(o => {
+      const m = data.merchants.find(x => x.id === o.merchantId);
+      return `<div style="font-size:11.5px; color:#92400E; padding:4px 0; border-top:1px dashed #FDE68A;">
+        ${esc(m ? m.shop : '—')} — ${esc(o.productName)} — سبب الإرجاع: ${esc(o.returnReason || '—')}
+      </div>`;
+    }).join('');
+    const adjustmentRows = (day.adjustments || []).map(adj => `<div style="font-size:11.5px; color:${adj.amount >= 0 ? '#92400E' : '#065F46'}; padding:4px 0; border-top:1px dashed #E2E8F0; display:flex; justify-content:space-between; align-items:center; gap:6px;">
+        <span>تعديل يدوي: <b>${adj.amount > 0 ? '+' : ''}${adj.amount.toLocaleString()} د</b> — ${esc(adj.reason)} <span style="color:var(--text-mute);">(${esc(adj.by)})</span></span>
+        <button class="btn danger small" style="padding:2px 8px; font-size:10px;" onclick="deleteAgentAdjustment('${adj.id}')">حذف</button>
+      </div>`).join('');
+    return `<div class="card" style="margin-top:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <b style="font-size:13px;">${ledgerPageLabel(day.dateKey)}</b>
+        <span class="badge ${settled ? 'active' : 'pending'}">${settled ? 'مسدَّد' : 'غير مسدَّد'}</span>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          ${settled
+            ? `<button class="btn secondary small" style="padding:4px 10px; font-size:11px;" onclick="unmarkAgentDaySettled(${agentId}, '${day.dateKey}')">إلغاء التسديد</button>`
+            : `<button class="btn small" style="padding:4px 10px; font-size:11px;" onclick="markAgentDaySettled(${agentId}, '${day.dateKey}')">تسجيل تسديد هذا اليوم</button>`}
+          <button class="btn secondary small" style="padding:4px 10px; font-size:11px;" onclick="openAgentAdjustmentModal(${agentId}, '${day.dateKey}')">+ تعديل يدوي</button>
+          <button class="btn danger small" style="padding:4px 10px; font-size:11px;" onclick="openCloseAgentLedgerDayModal(${agentId}, '${day.dateKey}')">حذف صفحة هذا اليوم</button>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-mute); margin-top:6px;">
+        موصلة: ${day.deliveredCount} — راجعة: ${day.returnedCount} — أجور شحن: ${day.totalShipping.toLocaleString()} د —
+        مستحق المنصة: ${day.totalPlatformCommission.toLocaleString()} د${day.totalAdjustments ? ` (منها ${day.totalAdjustments > 0 ? '+' : ''}${day.totalAdjustments.toLocaleString()} د تعديل يدوي)` : ''} —
+        صافي مستحق التجار: <b>${day.totalMerchantNetDue.toLocaleString()} د</b>
+      </div>
+      ${merchantRows ? `<div style="margin-top:6px;">${merchantRows}</div>` : ''}
+      ${returnedRows ? `<div style="margin-top:6px;">${returnedRows}</div>` : ''}
+      ${adjustmentRows ? `<div style="margin-top:6px;">${adjustmentRows}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ==================== ADDITIONAL AGENT-ACCOUNTS TOOLS ====================
+// Everything below builds on buildAgentLedgerDays()/orderAgentDueSplit() above. All of it is
+// admin-only (agent_accounts is excluded from ADMIN_EMPLOYEE_PERMS — see 07-nav-auth.js).
+
+// ---------- 1) SETTLEMENT — did the money for this day actually change hands? ----------
+// A day can be visible in the report AND settled at once — settling never hides anything
+// (that's what "حذف صفحة هذا اليوم" / closeAgentLedgerDay is for). This is purely a
+// paid/unpaid flag layered on top.
+function isAgentDaySettled(agentId, dateKey) {
+  return (data.agentSettlements || []).some(s => s.agentId === agentId && s.dateKey === dateKey);
+}
+async function markAgentDaySettled(agentId, dateKey) {
+  if (isAgentDaySettled(agentId, dateKey)) return;
+  data.agentSettlements.push({
+    id: Date.now() + '-' + agentId + '-' + Math.random().toString(36).slice(2, 6),
+    agentId, dateKey, settledAt: new Date().toISOString(), settledBy: currentActorLabel()
+  });
+  await saveData();
+  const a = data.employees.find(x => x.id === agentId);
+  await logAudit('تسديد يوم من حساب مندوب', `${a ? a.name : agentId} — ${dateKey}`);
+  showToast('تم تسجيل هذا اليوم كمسدَّد');
+  renderAll();
+}
+async function unmarkAgentDaySettled(agentId, dateKey) {
+  openConfirmModal('إلغاء التسديد', 'متأكد تريد ترجع هذا اليوم "غير مسدَّد"؟ هذا الإجراء يخص الأدمن بس.', async () => {
+    data.agentSettlements = (data.agentSettlements || []).filter(s => !(s.agentId === agentId && s.dateKey === dateKey));
+    await saveData();
+    const a = data.employees.find(x => x.id === agentId);
+    await logAudit('إلغاء تسديد يوم من حساب مندوب', `${a ? a.name : agentId} — ${dateKey}`);
+    showToast('تم إلغاء التسديد لهذا اليوم');
+    renderAll();
+  });
+}
+
+// ---------- 2) PENDING CUSTODY — orders currently WITH this agent, not yet finalized ----------
+// Not part of any daily page (they haven't been delivered or returned yet, so there's nothing
+// to settle) — shown as a live running count in the summary instead.
+function agentPendingCustodyOrders(agentId) {
+  return data.orders.filter(o => o.deliveryAgentId === agentId && !o.cancelled &&
+    (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping'));
+}
+
+// ---------- 3) MANUAL CASH-HANDOVER LOG ----------
+let cashLogAgentId = null;
+function openAgentCashLogModal(agentId) {
+  cashLogAgentId = agentId;
+  document.getElementById('agent-cash-amount').value = '';
+  document.getElementById('agent-cash-note').value = '';
+  document.getElementById('agent-cash-log-modal').classList.add('show');
+}
+function closeAgentCashLogModal() {
+  cashLogAgentId = null;
+  document.getElementById('agent-cash-log-modal').classList.remove('show');
+}
+async function submitAgentCashLog() {
+  if (cashLogAgentId == null) return;
+  const amount = parseInt(document.getElementById('agent-cash-amount').value, 10);
+  const note = document.getElementById('agent-cash-note').value.trim();
+  if (isNaN(amount) || amount <= 0) { showToast('عبي مبلغ صحيح'); return; }
+  data.agentCashLogs.push({
+    id: Date.now() + '-' + cashLogAgentId + '-' + Math.random().toString(36).slice(2, 6),
+    agentId: cashLogAgentId, amount, note, at: new Date().toISOString(), by: currentActorLabel()
+  });
+  await saveData();
+  const a = data.employees.find(x => x.id === cashLogAgentId);
+  await logAudit('تسجيل استلام نقدي من مندوب', `${a ? a.name : cashLogAgentId} — ${amount.toLocaleString()} د`);
+  showToast('تم تسجيل الاستلام');
+  closeAgentCashLogModal();
+  renderAll();
+}
+function deleteAgentCashLog(id) {
+  openConfirmModal('حذف سجل استلام نقدي', 'متأكد تريد تحذف هذا السجل؟ هذا الإجراء يخص الأدمن بس.', async () => {
+    data.agentCashLogs = (data.agentCashLogs || []).filter(l => l.id !== id);
+    await saveData();
+    showToast('تم حذف السجل');
+    renderAll();
+  });
+}
+function renderAgentCashLogs(agentId) {
+  const logs = (data.agentCashLogs || []).filter(l => l.agentId === agentId).slice().sort((a, b) => new Date(b.at) - new Date(a.at));
+  if (logs.length === 0) return '<div class="empty">ما فيه أي استلام نقدي مسجل يدوياً لهذا المندوب</div>';
+  return logs.map(l => `<div class="list-item">
+    <span>${new Date(l.at).toLocaleString('ar-IQ')} — <b>${l.amount.toLocaleString()} د</b>${l.note ? ' — ' + esc(l.note) : ''} <span style="color:var(--text-mute); font-size:11px;">(${esc(l.by)})</span></span>
+    <button class="btn danger small" onclick="deleteAgentCashLog('${l.id}')">حذف</button>
+  </div>`).join('');
+}
+
+// ---------- 4) SHAREABLE STATEMENT — copies a plain-text summary to the clipboard ----------
+// Covers every VISIBLE unsettled day for this agent (settled or hidden days are left out —
+// this is meant to be "here's what's still open", not a full historical dump).
+function copyAgentStatement(agentId) {
+  const a = data.employees.find(x => x.id === agentId);
+  if (!a) return;
+  const days = buildAgentLedgerDays(agentId).filter(d => !isAgentDaySettled(agentId, d.dateKey));
+  const pending = agentPendingCustodyOrders(agentId).length;
+  let text = `كشف حساب مندوب التوصيل: ${a.name}${a.companyName ? ' — ' + a.companyName : ''}\n`;
+  text += `تاريخ الكشف: ${new Date().toLocaleDateString('ar-IQ')}\n`;
+  text += `عدد الطلبات بعهدته حالياً (لسا ما وصلت/رجعت): ${pending}\n\n`;
+  if (days.length === 0) {
+    text += 'ما فيه أيام غير مسدَّدة حالياً.';
+  } else {
+    days.forEach(d => {
+      text += `${ledgerPageLabel(d.dateKey)}:\n`;
+      text += `  موصلة: ${d.deliveredCount} — راجعة: ${d.returnedCount}\n`;
+      text += `  أجور شحن: ${d.totalShipping.toLocaleString()} د\n`;
+      text += `  مستحق المنصة منه: ${d.totalPlatformCommission.toLocaleString()} د\n`;
+      text += `  صافي مستحق التجار: ${d.totalMerchantNetDue.toLocaleString()} د\n\n`;
+    });
+    const totalCommission = days.reduce((s, d) => s + d.totalPlatformCommission, 0);
+    const totalNet = days.reduce((s, d) => s + d.totalMerchantNetDue, 0);
+    text += `-----\nالإجمالي غير المسدَّد — مستحق المنصة: ${totalCommission.toLocaleString()} د — صافي مستحق التجار: ${totalNet.toLocaleString()} د`;
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => showToast('تم نسخ كشف الحساب — تكدر تلصقه بواتساب أو أي مكان'),
+      () => showToast('تعذر النسخ التلقائي')
+    );
+  } else {
+    showToast('تعذر النسخ التلقائي — متصفحك ما يدعمه');
+  }
+}
+
+// ---------- 5) THRESHOLD ALERT — how much does an agent currently owe, unsettled ----------
+// Used by 18-admin-alerts.js. Threshold itself lives in data.settings.agentDueAlertThreshold
+// (0 = disabled), editable from the settings screen like any other platform setting.
+function agentUnsettledCommissionTotal(agentId) {
+  return buildAgentLedgerDays(agentId)
+    .filter(d => !isAgentDaySettled(agentId, d.dateKey))
+    .reduce((s, d) => s + d.totalPlatformCommission, 0);
+}

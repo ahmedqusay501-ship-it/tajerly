@@ -26,6 +26,8 @@ function renderSettings() {
   `;
   document.getElementById('shipping-amount').value = s.shippingAmount;
   document.getElementById('item-deduction').value = s.itemDeduction || 0;
+  const agentThresholdEl = document.getElementById('agent-due-alert-threshold');
+  if (agentThresholdEl) agentThresholdEl.value = s.agentDueAlertThreshold || 0;
 
   renderZonesList();
   renderAdminAreaGovernorateSelect();
@@ -54,6 +56,8 @@ function saveSettings() {
   data.settings.feeMerchant = clamp(parseFloat(document.getElementById('fee-merchant').value) || 0);
   data.settings.itemDeduction = Math.max(0, parseFloat(document.getElementById('item-deduction').value) || 0);
   data.settings.shippingAmount = parseFloat(document.getElementById('shipping-amount').value) || 0;
+  const agentThresholdEl = document.getElementById('agent-due-alert-threshold');
+  if (agentThresholdEl) data.settings.agentDueAlertThreshold = Math.max(0, parseFloat(agentThresholdEl.value) || 0);
   saveData();
   renderSettings();
 }
