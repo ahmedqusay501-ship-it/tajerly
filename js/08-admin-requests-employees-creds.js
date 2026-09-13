@@ -814,16 +814,24 @@ function renderDeliveryAgentsList() {
     const returnedCount = finished.filter(o => o.deliveryStatus === 'returned').length;
     const returnRate = finished.length > 0 ? Math.round((returnedCount / finished.length) * 100) : null;
     const pendingCount = agentPendingCustodyOrders(a.id).length;
+    const ukey = 'agent-' + a.id;
+    const revealed = revealedUsernames.has(ukey);
+    const usernameDisplay = a.username ? (revealed ? a.username : '•'.repeat(Math.max(6, a.username.length))) : '—';
     return `<div class="list-item" style="align-items:flex-start; flex-direction:column; gap:6px;">
       <div style="width:100%;">
         <b>${esc(a.name)}</b>${a.companyName ? ' — ' + esc(a.companyName) : ''}
         <span class="badge ${a.status === 'active' ? 'active' : 'rejected'}" style="margin-right:6px;">${a.status === 'active' ? 'نشط' : 'موقوف مؤقتاً'}</span>
         <br><span style="color:var(--text-mute); font-size:11px;">عدد المحلات المسؤول عنها: ${shopsCount} — أجرة التوصيل: ${a.deliveryFee.toLocaleString()} د — عمولة المنصة منه: ${commissionLabel}</span>
         <br><span style="color:var(--text-mute); font-size:11px;">طلبات بعهدته حالياً: ${pendingCount}${returnRate != null ? ` — نسبة الإرجاع (من كامل تاريخه): <span style="color:${returnRate >= 20 ? '#B3261E' : 'inherit'}; font-weight:${returnRate >= 20 ? '700' : '400'};">${returnRate}%</span>` : ''}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">
+          يوزر: ${esc(usernameDisplay)}
+          ${a.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${ukey}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
+        </span>
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn small secondary" onclick="openAgentModal(${a.id})">تعديل</button>
         <button class="btn small secondary" onclick="toggleAgentStatus(${a.id})">${a.status === 'active' ? 'إيقاف مؤقت' : 'إعادة تفعيل'}</button>
+        <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${a.id})">تصفير كلمة المرور</button>
         ${pendingCount > 0 ? `<button class="btn small secondary" onclick="openReassignAgentOrdersModal(${a.id})">إعادة توجيه الطلبات المفتوحة (${pendingCount})</button>` : ''}
         <button class="btn danger small" onclick="deleteAgent(${a.id})">حذف</button>
       </div>

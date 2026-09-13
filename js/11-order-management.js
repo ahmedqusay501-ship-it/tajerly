@@ -1039,6 +1039,73 @@ function renderAgentHistory(emp) {
   }).join('');
 }
 
+// ---------- DELIVERY AGENT — own read-only "accounts with merchants" view ----------
+// Read-only mirror of the admin's per-merchant numbers inside renderAgentAccounts()
+// (10-accounting-ledger.js), but grouped by merchant across the agent's WHOLE history
+// instead of day-by-day, and with none of the admin-only actions (settle/adjust/close/reset).
+// Reuses orderAgentDueSplit() so the numbers always match the admin's screen exactly, and
+// honors isAgentLedgerDayHiddenFor() so an admin "تصفير حسابات المندوب" also clears this
+// view for the agent — same underlying orders, just a different, friendlier presentation.
+function buildAgentSelfMerchantTotals(agentId) {
+  const orders = data.orders.filter(o => o.deliveryAgentId === agentId && o.deliveryStatus === 'delivered');
+  const byMerchant = {};
+  orders.forEach(o => {
+    const dateKey = ledgerDayKey(o.date);
+    if (isAgentLedgerDayHiddenFor(agentId, dateKey)) return;
+    const split = orderAgentDueSplit(o);
+    if (!byMerchant[o.merchantId]) byMerchant[o.merchantId] = { merchantId: o.merchantId, count: 0, shippingDue: 0, merchantDue: 0, platformCommission: 0, merchantNetDue: 0 };
+    const b = byMerchant[o.merchantId];
+    b.count += 1;
+    b.shippingDue += split.shippingDue;
+    b.merchantDue += split.merchantDue;
+    b.platformCommission += split.platformCommission;
+    b.merchantNetDue += split.merchantNetDue;
+  });
+  return Object.values(byMerchant).sort((a, b) => b.platformCommission - a.platformCommission);
+}
+
+function renderAgentSelfAccounts(emp) {
+  const el = document.getElementById('agent-orders-list');
+  if (!el) return;
+  const rows = buildAgentSelfMerchantTotals(emp.id);
+  const totalCount = rows.reduce((s, r) => s + r.count, 0);
+  const totalShipping = rows.reduce((s, r) => s + r.shippingDue, 0);
+  const totalCommission = rows.reduce((s, r) => s + r.platformCommission, 0);
+  const totalNetDue = rows.reduce((s, r) => s + r.merchantNetDue, 0);
+  const commissionLabel = emp.commissionType === 'percentage' ? `${emp.commissionValue}% من كل طلب` : `${emp.commissionValue.toLocaleString()} د لكل طلب`;
+
+  let html = `
+    <div class="subtitle" style="margin-bottom:8px;">حسابك مع كل تاجر تسلّم منه فواتير — عمولة المنصة منك محسوبة حسب: <b>${commissionLabel}</b>. هذا عرض للقراءة بس؛ التسديد والتعديلات يديرها الأدمن.</div>
+    <div class="grid3">
+      <div class="stat"><div class="stat-num">${totalCount}</div><div class="stat-label">إجمالي الطلبات الموصلة</div></div>
+      <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">مجموع مستحقات التوصيل لك (د)</div></div>
+      <div class="stat"><div class="stat-num">${totalCommission.toLocaleString()}</div><div class="stat-label">مجموع مستحقات المنصة منك (د)</div></div>
+      <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
+    </div>`;
+
+  if (rows.length === 0) {
+    html += '<div class="empty" style="margin-top:10px;">ما فيه طلبات موصلة مسجلة بحسابك بعد</div>';
+    el.innerHTML = html;
+    return;
+  }
+
+  html += rows.map(r => {
+    const m = data.merchants.find(x => x.id === r.merchantId);
+    return `<div class="card" style="margin-top:10px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+        <b style="font-size:13px;">${esc(m ? m.shop : 'تاجر محذوف')}</b>
+        <span style="font-size:11px; color:var(--text-mute);">عدد الطلبات: ${r.count}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-mute); margin-top:6px;">
+        مستحقات التوصيل: <b>${r.shippingDue.toLocaleString()} د</b> —
+        مستحقات المنصة منك: <b>${r.platformCommission.toLocaleString()} د</b> —
+        صافي مستحق هذا التاجر: <b>${r.merchantNetDue.toLocaleString()} د</b>
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML = html;
+}
+
 function renderAgentOrders() {
   const emp = currentEmployee();
   if (!emp) return;
@@ -1048,5 +1115,6 @@ function renderAgentOrders() {
     tabsEl.querySelectorAll('.toggle').forEach(t => t.classList.toggle('selected', t.dataset.agenttab === agentDashboardTab));
   }
   if (agentDashboardTab === 'history') renderAgentHistory(emp);
+  else if (agentDashboardTab === 'accounts') renderAgentSelfAccounts(emp);
   else renderAgentActiveOrders(emp);
 }
