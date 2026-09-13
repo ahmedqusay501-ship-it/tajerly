@@ -954,6 +954,7 @@ function renderAgentPersonalSummary(emp) {
   const commissionLabel = emp.commissionType === 'percentage' ? `${emp.commissionValue}% لكل طلب` : `${emp.commissionValue.toLocaleString()} د لكل طلب`;
   box.innerHTML = `
     <div class="grid3">
+      <div class="stat"><div class="stat-num">${emp.merchantIds.length}</div><div class="stat-label">عدد التجار المسؤول عنهم</div></div>
       <div class="stat"><div class="stat-num">${todayDelivered}</div><div class="stat-label">واصلة اليوم</div></div>
       <div class="stat"><div class="stat-num">${todayReturned}</div><div class="stat-label">راجعة اليوم</div></div>
       <div class="stat"><div class="stat-num">${weekDelivered}</div><div class="stat-label">واصلة آخر 7 أيام</div></div>
