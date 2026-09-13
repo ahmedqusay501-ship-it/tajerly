@@ -629,6 +629,8 @@ function renderMerchantActions() {
     const key = 'merchant-' + m.id;
     const revealed = revealedUsernames.has(key);
     const usernameDisplay = m.username ? (revealed ? m.username : '•'.repeat(Math.max(6, m.username.length))) : '—';
+    const deliveryAgent = deliveryAgentForMerchant(m.id);
+    const deliveryAgentLabel = deliveryAgent ? esc(deliveryAgent.name) + (deliveryAgent.companyName ? ' — ' + esc(deliveryAgent.companyName) : '') : 'بدون مندوب مخصص';
     return `
     <div class="list-item" style="align-items:flex-start;">
       <span>${m.shop} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> <span class="badge" style="background:${m.type==='restaurant' ? '#FFF7ED' : '#EEF2FF'}; color:${m.type==='restaurant' ? '#9A3412' : '#3730A3'};">${m.type==='restaurant' ? '🍽️ مطعم' : '🛒 ماركت'}</span>${m.hiddenFromMarket ? ` <span class="badge disabled">مخفي من ${m.type==='restaurant' ? 'صفحة المطاعم' : 'السوق العام'}</span>` : ''}${!m.ownDelivery ? ` <span class="badge" style="background:#E0F2FE; color:#0369A1;">توصيل: ${deliverySpeedLabel(m)}</span>` : ''}${m.ownDelivery ? ` <span class="badge" style="background:#FEF3C7; color:#92400E;">توصيل خاص — ${(m.ownDeliveryPrice||0).toLocaleString()} د</span>` : ''}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
@@ -636,7 +638,8 @@ function renderMerchantActions() {
         يوزر: ${usernameDisplay}
         ${m.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${key}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
         — باسورد: مخفية
-      </span></span>
+      </span>
+      <br><span style="color:var(--text-mute); font-size:11px;">مندوب/شركة التوصيل: <b>${deliveryAgentLabel}</b></span></span>
       <span>
         <select class="small" style="width:auto; display:inline-block; padding:4px 6px; font-size:11px;" onchange="setMerchantType(${m.id}, this.value)" title="نوع المتجر — يحدد فيه هذا التاجر يظهر بالسوق العام العادي أو بصفحة المطاعم المنفصلة">
           <option value="market" ${m.type !== 'restaurant' ? 'selected' : ''}>🛒 ماركت</option>
@@ -647,6 +650,7 @@ function renderMerchantActions() {
         </select>
         <button class="btn secondary small" onclick="editMerchantFees(${m.id})">تعديل الرسوم والتوصيل</button>
         <button class="btn secondary small" onclick="exportMerchantAccountingExcel(${m.id})">تصدير حسابات</button>
+        <button class="btn secondary small" onclick="openReassignMerchantAgentModal(${m.id})">نقل مندوب التوصيل</button>
         <button class="btn secondary small" onclick="openResetPasswordModal('merchant', ${m.id})">تصفير الباسورد</button>
         <button class="btn ${m.ownDelivery ? 'secondary' : 'warn'} small" onclick="openOwnDeliveryModal(${m.id})">${m.ownDelivery ? 'تعديل التوصيل الخاص' : 'توصيل خاص بالمحل'}</button>
         <button class="btn ${m.customDomain ? 'secondary' : 'warn'} small" onclick="openCustomDomainModal(${m.id})">${m.customDomain ? 'تعديل الدومين' : 'إضافة دومين مخصص'}</button>

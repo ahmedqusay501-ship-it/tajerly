@@ -1435,6 +1435,23 @@
   </div>
 </div>
 
+<!-- Admin: move ONE merchant from its current delivery agent/company to another (see openReassignMerchantAgentModal) -->
+<div class="modal-overlay" id="reassign-merchant-agent-modal">
+  <div class="modal-box">
+    <div class="modal-title">نقل التاجر لمندوب/شركة توصيل أخرى</div>
+    <div class="subtitle" id="reassign-merchant-agent-text" style="margin-bottom:8px;"></div>
+    <label>المندوب/الشركة الجديدة</label>
+    <select id="reassign-merchant-target-agent" style="width:100%; padding:8px;">
+      <option value="">بدون مندوب (إلغاء الربط)</option>
+    </select>
+    <div class="subtitle" style="margin-top:8px;">أي طلبات لسا بعهدة المندوب الحالي (ما وصلت ولا رجعت بعد) لهذا التاجر تنتقل تلقائياً للمندوب الجديد بنفس اللحظة.</div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeReassignMerchantAgentModal()">إلغاء</button>
+      <button class="btn small" onclick="confirmReassignMerchantAgent()">تأكيد النقل</button>
+    </div>
+  </div>
+</div>
+
 <!-- Admin: manual +/- adjustment on one specific agent day (see openAgentAdjustmentModal) -->
 <div class="modal-overlay" id="agent-adjustment-modal">
   <div class="modal-box">

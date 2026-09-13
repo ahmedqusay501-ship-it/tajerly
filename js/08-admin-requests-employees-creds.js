@@ -904,6 +904,74 @@ async function confirmReassignAgentOrders() {
   renderAll();
 }
 
+// ---- Move ONE merchant from its current delivery agent/company to another (or unassign it
+// entirely) in a single action, instead of the admin having to open the old agent's modal to
+// uncheck the shop then the new agent's modal to check it. Also carries over any orders of
+// THIS merchant currently in custody of the old agent (not yet delivered/returned) to the new
+// one — same re-snapshot logic as confirmReassignAgentOrders() above, just merchant-scoped.
+let reassignMerchantTargetId = null;
+function openReassignMerchantAgentModal(merchantId) {
+  reassignMerchantTargetId = merchantId;
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (!m) return;
+  const currentAgent = deliveryAgentForMerchant(merchantId);
+  const others = data.employees.filter(e => e.ownerType === 'delivery_agent' && e.status === 'active' && e.id !== (currentAgent ? currentAgent.id : null));
+  const sel = document.getElementById('reassign-merchant-target-agent');
+  sel.innerHTML = '<option value="">بدون مندوب (إلغاء الربط)</option>' +
+    others.map(a => `<option value="${a.id}">${esc(a.name)}${a.companyName ? ' — ' + esc(a.companyName) : ''}</option>`).join('');
+  const pendingCount = currentAgent ? data.orders.filter(o => o.merchantId === merchantId && o.deliveryAgentId === currentAgent.id && !o.cancelled && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping')).length : 0;
+  document.getElementById('reassign-merchant-agent-text').textContent =
+    `التاجر "${m.shop}" — المندوب/الشركة الحالية: ${currentAgent ? (currentAgent.name + (currentAgent.companyName ? ' — ' + currentAgent.companyName : '')) : 'ما فيه مندوب مخصص حالياً'}${pendingCount > 0 ? ` — عنده ${pendingCount} فاتورة لسا بعهدة المندوب الحالي` : ''}. اختر الوجهة الجديدة:`;
+  document.getElementById('reassign-merchant-agent-modal').classList.add('show');
+}
+function closeReassignMerchantAgentModal() {
+  reassignMerchantTargetId = null;
+  document.getElementById('reassign-merchant-agent-modal').classList.remove('show');
+}
+async function confirmReassignMerchantAgent() {
+  if (reassignMerchantTargetId == null) return;
+  const merchantId = reassignMerchantTargetId;
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (!m) return;
+  const sel = document.getElementById('reassign-merchant-target-agent');
+  const targetId = sel.value ? parseInt(sel.value, 10) : null;
+  const newAgent = targetId != null ? data.employees.find(x => x.id === targetId && x.ownerType === 'delivery_agent') : null;
+  if (targetId != null && !newAgent) { showToast('تعذر إيجاد المندوب المختار'); return; }
+
+  const oldAgent = deliveryAgentForMerchant(merchantId);
+  if (oldAgent && oldAgent.id !== (newAgent ? newAgent.id : null)) {
+    oldAgent.merchantIds = oldAgent.merchantIds.filter(id => id !== merchantId);
+  }
+  if (newAgent && !newAgent.merchantIds.includes(merchantId)) {
+    newAgent.merchantIds.push(merchantId);
+  }
+
+  // Carry over this merchant's orders currently in the OLD agent's custody (not yet
+  // delivered/returned) to the new agent — or un-assign them if there's no new agent.
+  const pending = oldAgent ? data.orders.filter(o => o.merchantId === merchantId && o.deliveryAgentId === oldAgent.id && !o.cancelled && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping')) : [];
+  pending.forEach(o => {
+    o.deliveryAgentId = newAgent ? newAgent.id : null;
+    o.agentFeeSnapshot = newAgent ? newAgent.deliveryFee : 0;
+    o.agentCommissionTypeSnapshot = newAgent ? newAgent.commissionType : 'fixed';
+    o.agentCommissionValueSnapshot = newAgent ? newAgent.commissionValue : 0;
+    o.deliveryAssignedAt = new Date().toISOString();
+  });
+
+  saveData();
+  const savePromises = [];
+  if (window.authApi) {
+    if (oldAgent && oldAgent.authUid) savePromises.push(window.authApi.saveDoc('employees', oldAgent.authUid, oldAgent).catch(() => {}));
+    if (newAgent && newAgent.authUid) savePromises.push(window.authApi.saveDoc('employees', newAgent.authUid, newAgent).catch(() => {}));
+    pending.forEach(o => savePromises.push(window.authApi.saveDoc('orders', String(o.id), o).catch(() => {})));
+    await Promise.allSettled(savePromises);
+  }
+
+  logAudit('نقل تاجر بين مناديب التوصيل', `${m.shop}: ${oldAgent ? oldAgent.name : 'بدون مندوب'} ← ${newAgent ? (newAgent.name + (newAgent.companyName ? ' (' + newAgent.companyName + ')' : '')) : 'بدون مندوب'}${pending.length > 0 ? ` — ${pending.length} فاتورة انتقلت معه` : ''}`);
+  showToast(newAgent ? `تم نقل "${m.shop}" إلى ${newAgent.name}` : `تم إلغاء ربط "${m.shop}" بأي مندوب`);
+  closeReassignMerchantAgentModal();
+  renderAll();
+}
+
 // ---- Delete — blocked while the agent still has open (not yet delivered/returned) orders,
 // so a deletion never leaves orders silently orphaned with no one responsible for them. The
 // admin has to reassign those first (see openReassignAgentOrdersModal above).
@@ -1303,6 +1371,15 @@ function renderMerchantPanel() {
           : `<div class="subtitle" style="margin-top:8px;">الرابط اعلاه يشتغل بعد ما يفعّل الأدمن متجرك. لين هسه استخدم زر المعاينة تحت لتشوف شكل متجرك.</div>`}
         <button class="btn small" style="margin-top:8px;" onclick="openMerchantPreview(${m.id})">عاين متجرك متل ما راح يشوفه الزبون</button>
       </div>
+      ${!m.ownDelivery ? `<div class="card">
+        <div class="card-title">شركة التوصيل المسؤولة عن طلباتك</div>
+        ${(() => {
+          const agent = deliveryAgentForMerchant(m.id);
+          return agent
+            ? `<div class="subtitle" style="margin-bottom:0;">طلباتك الجاهزة تتوجه تلقائياً لشركة <b style="color:var(--ink);">${esc(agent.companyName || agent.name)}</b> للتوصيل.</div>`
+            : `<div class="subtitle" style="margin-bottom:0;">ما فيه شركة توصيل مخصصة لمتجرك حالياً — تواصل مع الإدارة.</div>`;
+        })()}
+      </div>` : ''}
       <div class="card" id="own-credentials-card-${m.id}">
         <div class="card-title">بيانات حسابي (خاصة بيك انت بس)</div>
         <div class="subtitle" style="margin-bottom:8px;">هاي البيانات ما يشوفها أي تاجر ثاني — يشوفها الأدمن وانت بس</div>
