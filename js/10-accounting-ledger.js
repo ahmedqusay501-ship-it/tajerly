@@ -1479,3 +1479,142 @@ function agentUnsettledCommissionTotal(agentId) {
     .filter(d => !isAgentDaySettled(agentId, d.dateKey))
     .reduce((s, d) => s + d.totalPlatformCommission, 0);
 }
+
+// ---------- 6) ALL-TIME TOTALS (settled + unsettled) — used in the admin's delivery-agents
+// management list so the admin sees, next to every agent, exactly how much platform
+// commission that agent has generated in total from the merchants assigned to them, and how
+// much of that is still unpaid. Unlike agentUnsettledCommissionTotal above, this counts every
+// visible day regardless of settlement status. ----------
+function agentAllTimeTotals(agentId) {
+  const days = buildAgentLedgerDays(agentId);
+  return {
+    deliveredCount: days.reduce((s, d) => s + d.deliveredCount, 0),
+    returnedCount: days.reduce((s, d) => s + d.returnedCount, 0),
+    totalShipping: days.reduce((s, d) => s + d.totalShipping, 0),
+    totalCommission: days.reduce((s, d) => s + d.totalPlatformCommission, 0),
+    totalMerchantNetDue: days.reduce((s, d) => s + d.totalMerchantNetDue, 0),
+    unsettled: agentUnsettledCommissionTotal(agentId)
+  };
+}
+
+// ---------- 7) DETAILED PER-AGENT EXCEL EXPORT ----------
+// Every number here is derived from orderAgentDueSplit()/buildAgentLedgerDays() — the exact
+// same source of truth as the admin's "حسابات المندوبين" screen and the agent's own "حسابي مع
+// التجار" tab — so the exported file always matches what's on screen, order by order, down to
+// the dinar. Five sheets: an overall summary, one row per merchant, one row per delivered/
+// returned order (full detail), one row per daily settlement page, and the manual adjustments/
+// cash-log entries (if any) so nothing about this agent's account is left out of the file.
+function exportAgentAccountingExcel(agentId) {
+  if (typeof XLSX === 'undefined') { showToast('تعذر تحميل مكتبة تصدير الإكسل — تأكد من اتصالك بالإنترنت'); return; }
+  const a = data.employees.find(x => x.id === agentId && x.ownerType === 'delivery_agent');
+  if (!a) return;
+  const days = buildAgentLedgerDays(agentId);
+  if (days.length === 0) { showToast('ما فيه أي حسابات مسجلة لهذا المندوب لتصديرها'); return; }
+
+  const totals = agentAllTimeTotals(agentId);
+  const pendingCount = agentPendingCustodyOrders(agentId).length;
+  const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${a.commissionValue.toLocaleString()} د لكل طلب`;
+
+  const summaryRows = [
+    { 'البند': 'اسم المندوب', 'القيمة': a.name },
+    { 'البند': 'الشركة/الجهة', 'القيمة': a.companyName || '—' },
+    { 'البند': 'يوزر الدخول', 'القيمة': a.username || '—' },
+    { 'البند': 'الحالة', 'القيمة': a.status === 'active' ? 'نشط' : 'موقوف مؤقتاً' },
+    { 'البند': 'عدد التجار المسؤول عنهم حالياً', 'القيمة': a.merchantIds.length },
+    { 'البند': 'أجرة التوصيل الأساسية له', 'القيمة': a.deliveryFee },
+    { 'البند': 'نوع/قيمة عمولة المنصة منه', 'القيمة': commissionLabel },
+    { 'البند': 'طلبات بعهدته حالياً (لم تُسلَّم/تُرجَع بعد)', 'القيمة': pendingCount },
+    { 'البند': 'إجمالي الطلبات الموصلة (كل الوقت)', 'القيمة': totals.deliveredCount },
+    { 'البند': 'إجمالي الطلبات الراجعة (كل الوقت)', 'القيمة': totals.returnedCount },
+    { 'البند': 'إجمالي مستحقات التوصيل له (د)', 'القيمة': totals.totalShipping },
+    { 'البند': 'إجمالي مستحقات المنصة عليه من عمولته (د)', 'القيمة': totals.totalCommission },
+    { 'البند': 'إجمالي صافي مستحقات التجار (د)', 'القيمة': totals.totalMerchantNetDue },
+    { 'البند': 'غير المسدَّد حالياً من مستحقات المنصة (د)', 'القيمة': totals.unsettled },
+    { 'البند': 'تاريخ التصدير', 'القيمة': new Date().toLocaleString('ar-IQ') }
+  ];
+
+  const merchantRows = buildAgentSelfMerchantTotals(agentId).map(r => {
+    const m = data.merchants.find(x => x.id === r.merchantId);
+    return {
+      'التاجر': m ? m.shop : 'تاجر محذوف',
+      'عدد الطلبات': r.count,
+      'مستحقات التوصيل (د)': r.shippingDue,
+      'مستحقات المنصة منه (د)': r.platformCommission,
+      'إجمالي مبلغ التاجر (د)': r.merchantDue,
+      'صافي مستحق التاجر (د)': r.merchantNetDue
+    };
+  });
+
+  const orderRows = [];
+  days.forEach(day => {
+    day.delivered.forEach(o => {
+      const m = data.merchants.find(x => x.id === o.merchantId);
+      const split = orderAgentDueSplit(o);
+      orderRows.push({
+        'اليوم (صفحة الحساب)': ledgerPageLabel(day.dateKey),
+        'التاريخ والوقت': orderDateTimeLabel(o.date),
+        'التاجر': m ? m.shop : 'تاجر محذوف',
+        'المنتج': o.productName,
+        'الحالة': 'واصل',
+        'سعر الفاتورة (د)': o.price,
+        'مستحق التوصيل (د)': split.shippingDue,
+        'عمولة المنصة (د)': split.platformCommission,
+        'صافي مستحق التاجر (د)': split.merchantNetDue,
+        'مسدَّد هذا اليوم؟': isAgentDaySettled(agentId, day.dateKey) ? 'نعم' : 'لا'
+      });
+    });
+    day.returned.forEach(o => {
+      const m = data.merchants.find(x => x.id === o.merchantId);
+      orderRows.push({
+        'اليوم (صفحة الحساب)': ledgerPageLabel(day.dateKey),
+        'التاريخ والوقت': orderDateTimeLabel(o.date),
+        'التاجر': m ? m.shop : 'تاجر محذوف',
+        'المنتج': o.productName,
+        'الحالة': 'راجع — ' + (o.returnReason || '—'),
+        'سعر الفاتورة (د)': o.price,
+        'مستحق التوصيل (د)': 0,
+        'عمولة المنصة (د)': 0,
+        'صافي مستحق التاجر (د)': 0,
+        'مسدَّد هذا اليوم؟': isAgentDaySettled(agentId, day.dateKey) ? 'نعم' : 'لا'
+      });
+    });
+  });
+
+  const dayRows = days.map(day => ({
+    'اليوم': ledgerPageLabel(day.dateKey),
+    'واصلة': day.deliveredCount,
+    'راجعة': day.returnedCount,
+    'مستحقات التوصيل (د)': day.totalShipping,
+    'مستحقات المنصة (د)': day.totalPlatformCommission,
+    'منها تعديل يدوي (د)': day.totalAdjustments,
+    'صافي مستحق التجار (د)': day.totalMerchantNetDue,
+    'الحالة': isAgentDaySettled(agentId, day.dateKey) ? 'مسدَّد' : 'غير مسدَّد'
+  }));
+
+  const adjustmentRows = (data.agentAdjustments || []).filter(adj => adj.agentId === agentId).map(adj => ({
+    'اليوم': ledgerPageLabel(adj.dateKey),
+    'المبلغ (د)': adj.amount,
+    'السبب': adj.reason,
+    'بواسطة': adj.by,
+    'التاريخ': new Date(adj.at).toLocaleString('ar-IQ')
+  }));
+
+  const cashLogRows = (data.agentCashLogs || []).filter(l => l.agentId === agentId).map(l => ({
+    'المبلغ المستلم (د)': l.amount,
+    'ملاحظة': l.note || '—',
+    'بواسطة': l.by,
+    'التاريخ': new Date(l.at).toLocaleString('ar-IQ')
+  }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'ملخص عام');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(merchantRows), 'حسب التاجر');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderRows), 'تفصيل كل طلب');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dayRows), 'حسب اليوم');
+  if (adjustmentRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(adjustmentRows), 'تعديلات يدوية');
+  if (cashLogRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cashLogRows), 'استلام نقدي يدوي');
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `حسابات-مندوب-${a.name}-${stamp}.xlsx`);
+  showToast('تم تحميل تقرير حسابات المندوب بالتفصيل');
+}
