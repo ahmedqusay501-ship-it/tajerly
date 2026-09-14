@@ -945,6 +945,88 @@ function isAgentOrderOverdue(o) {
   return (Date.now() - new Date(o.deliveryAssignedAt).getTime()) > 24 * 3600 * 1000;
 }
 
+// ---------- DELIVERY AGENT — nav badge + new-assignment sound alert ----------
+// Mirrors the merchant new-order alarm (toggleNewOrderSound in 05-alerts-inbox.js) and the
+// admin alert center (18-admin-alerts.js): same "seed a snapshot the moment this agent's
+// session starts, then alarm on anything genuinely NEW after that" pattern — so the agent
+// is never alarmed for invoices that were already sitting in their custody before they
+// opened the app this session. Also drives a live numbered badge on their single nav tab
+// (data-view="delivery_agent") using the same setNavBadgeCount() the admin badges use, so
+// they notice a fresh assignment even before opening "طلباتي للتوصيل".
+let agentAlertSoundEnabled = (localStorage.getItem('agentAlertSoundEnabled') === '1');
+let agentAlertTrackedEmpId = null; // which agent's assignments we're currently watching
+let seenAgentOrderGroupIds = null; // Set of group ids already known about
+let agentAlertAutoStopHandle = null;
+
+function agentActiveOrderGroupIds(emp) {
+  const items = data.orders.filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping') && !o.cancelled);
+  return groupOrders(items).map(g => g.groupId);
+}
+
+function seedAgentAlertTracking(emp) {
+  seenAgentOrderGroupIds = new Set(agentActiveOrderGroupIds(emp));
+  agentAlertTrackedEmpId = emp.id;
+}
+
+// Called on every renderAgentOrders() (i.e. every 5s poll tick — see renderAll). Cheap: just
+// an array filter + set lookup over data already in memory, same as the admin/merchant checks.
+function checkAgentAlertsAndNotify(emp) {
+  const activeIds = agentActiveOrderGroupIds(emp);
+  setNavBadgeCount('delivery_agent', activeIds.length);
+
+  if (agentAlertTrackedEmpId !== emp.id) { seedAgentAlertTracking(emp); return; } // جلسة جديدة لهذا المندوب — ما ننذر على شغل قديم أصلاً موجود
+  const newIds = activeIds.filter(id => !seenAgentOrderGroupIds.has(id));
+  seenAgentOrderGroupIds = new Set(activeIds);
+  if (newIds.length > 0 && agentAlertSoundEnabled) playAgentAlertAlarm(newIds.length);
+}
+
+function playAgentAlertAlarm(count) {
+  const subtitleEl = document.getElementById('agent-alarm-subtitle');
+  if (subtitleEl) subtitleEl.textContent = count > 1 ? `توكلت لك ${count} فواتير جديدة` : 'توكلت لك فاتورة جديدة';
+  const modal = document.getElementById('agent-alarm-modal');
+  if (modal) modal.classList.add('show');
+  const audio = document.getElementById('agent-alarm-audio');
+  if (audio) { audio.loop = true; audio.currentTime = 0; audio.play().catch(() => {}); } // لو المتصفح رفض التشغيل التلقائي، البانر المرئي يبقى كافي للتنبيه
+  // شبكة أمان: نفس مبدأ إنذار الطلبات — نوقف الرنين تلقائياً بعد دقيقتين حتى لو المندوب
+  // ترك الجهاز ولم يضغط "استلمت".
+  clearTimeout(agentAlertAutoStopHandle);
+  agentAlertAutoStopHandle = setTimeout(stopAgentAlertAlarm, 120000);
+}
+function stopAgentAlertAlarm() {
+  const audio = document.getElementById('agent-alarm-audio');
+  if (audio) { audio.pause(); audio.currentTime = 0; audio.loop = false; }
+  const modal = document.getElementById('agent-alarm-modal');
+  if (modal) modal.classList.remove('show');
+  clearTimeout(agentAlertAutoStopHandle);
+}
+function acknowledgeAgentAlarm() { stopAgentAlertAlarm(); }
+
+// Called on logout (see platformLogout) so the NEXT agent session — even a different agent
+// logging into the same browser — seeds fresh instead of silently reusing this one's "seen"
+// state, and doesn't leave a stale badge number showing on the login/nav screen.
+function resetAgentAlertTracking() {
+  agentAlertTrackedEmpId = null;
+  seenAgentOrderGroupIds = null;
+  stopAgentAlertAlarm();
+  setNavBadgeCount('delivery_agent', 0);
+}
+
+function toggleAgentAlertSound() {
+  agentAlertSoundEnabled = !agentAlertSoundEnabled;
+  localStorage.setItem('agentAlertSoundEnabled', agentAlertSoundEnabled ? '1' : '0');
+  if (agentAlertSoundEnabled) {
+    // تشغيل وإيقاف فوري بنفس لحظة ضغطة الزر — هذا "يفتح" صلاحية تشغيل الصوت بالمتصفح
+    // لاحقاً تلقائياً من غير تفاعل جديد من المستخدم (نفس فكرة toggleNewOrderSound).
+    const audio = document.getElementById('agent-alarm-audio');
+    if (audio) { audio.play().then(() => { audio.pause(); audio.currentTime = 0; }).catch(() => {}); }
+    showToast('تفعّل — رح تسمع صوت إنذار فور ما توكل لك فاتورة جديدة');
+  } else {
+    stopAgentAlertAlarm();
+    showToast('تم إيقاف الإنذار الصوتي لفواتيرك الجديدة');
+  }
+  if (typeof renderAgentOrders === 'function') renderAgentOrders();
+}
+
 function renderAgentPersonalSummary(emp) {
   const box = document.getElementById('agent-personal-summary');
   if (!box) return;
@@ -959,6 +1041,9 @@ function renderAgentPersonalSummary(emp) {
   const overdueCount = agentPendingCustodyOrders(emp.id).filter(isAgentOrderOverdue).length;
   const commissionLabel = emp.commissionType === 'percentage' ? `${emp.commissionValue}% لكل طلب` : `${emp.commissionValue.toLocaleString()} د لكل طلب`;
   box.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <button class="btn small ${agentAlertSoundEnabled ? '' : 'secondary'}" onclick="toggleAgentAlertSound()">${agentAlertSoundEnabled ? '🔔 التنبيه الصوتي مفعّل' : '🔕 فعّل تنبيه الفواتير الجديدة'}</button>
+    </div>
     <div class="grid3">
       <div class="stat"><div class="stat-num">${emp.merchantIds.length}</div><div class="stat-label">عدد التجار المسؤول عنهم</div></div>
       <div class="stat"><div class="stat-num">${todayDelivered}</div><div class="stat-label">واصلة اليوم</div></div>
@@ -1117,6 +1202,7 @@ function renderAgentOrders() {
   const emp = currentEmployee();
   if (!emp) return;
   renderAgentPersonalSummary(emp);
+  checkAgentAlertsAndNotify(emp);
   const tabsEl = document.getElementById('agent-dashboard-tabs');
   if (tabsEl) {
     tabsEl.querySelectorAll('.toggle').forEach(t => t.classList.toggle('selected', t.dataset.agenttab === agentDashboardTab));

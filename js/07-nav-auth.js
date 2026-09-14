@@ -405,6 +405,7 @@ function platformLogout() {
   ordersLoadWarningShown = false;
   applyMerchantDashboardColor(null);
   resetAdminAlertTracking(); // next admin login re-seeds fresh instead of reusing a stale session's "seen" state
+  resetAgentAlertTracking(); // same idea for a delivery agent's own "new assignment" alarm
   clearSession();
   if (window.authApi) window.authApi.signOutMain().catch(() => {});
   showLoginScreen();
