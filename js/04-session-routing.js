@@ -171,6 +171,16 @@ function ensureMerchantTheme(m) {
   // 20-restaurants-market.js). قفلها أدمن بس (نفس قفل hiddenFromMarket بـ firestore.rules).
   // كل التجار القدامى يرجعون 'market' تلقائياً فما يتغيّر شي على وضعهم الحالي.
   if (m.type !== 'restaurant' && m.type !== 'market') m.type = 'market';
+  // ساعات عمل المطعم (مطاعم بس — شوف isMerchantOpenNow بـ 20-restaurants-market.js). اختيارية
+  // بالكامل: enabled=false (الافتراضي لأي تاجر قديم أو ماركت عادي) يعني المتجر يعتبر مفتوح
+  // دايماً، بالضبط نفس السلوك قبل هذي الميزة — ما ينكسر شي لأي تاجر ما فعّلها بنفسه.
+  if (!m.workingHours || typeof m.workingHours !== 'object') m.workingHours = { enabled: false, days: {} };
+  if (!m.workingHours.days || typeof m.workingHours.days !== 'object') m.workingHours.days = {};
+  WEEK_DAYS.forEach(d => {
+    if (!m.workingHours.days[d.key] || typeof m.workingHours.days[d.key] !== 'object') {
+      m.workingHours.days[d.key] = { closed: false, open: '10:00', close: '23:00' };
+    }
+  });
   // Per-product commission exemption requests — a merchant asks to stop paying platform
   // commission on one specific product, the admin approves/rejects it. { id, productId,
   // productName, status: 'pending'|'approved'|'rejected', createdAt, respondedAt }. See

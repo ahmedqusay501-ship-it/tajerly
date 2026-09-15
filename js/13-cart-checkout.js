@@ -78,6 +78,7 @@ function addToCart(merchantId, productId) {
   const p = m && m.products.find(x => x.id === productId);
   if (!p) return;
   ensureProductVariants(p);
+  if (!isMerchantOpenNow(m)) { showToast('المطعم مغلق حالياً — جرب أوقات دوامه'); return; }
   const size = p.sizes.length ? (selectedProductSize[productId] || p.sizes[0].value) : null;
   const colorVal = p.colors.length ? (selectedProductColor[productId] || p.colors[0].name) : null;
 
@@ -237,6 +238,15 @@ function openCheckoutFromCart() {
   if (cart.length === 0) return;
   const merchantId = cart[0].merchantId;
   const m = data.merchants.find(x => x.id === merchantId);
+
+  // Re-check the restaurant's working hours right before checkout — same idea as the stock
+  // re-validation right below: the customer might have sat in the product list past closing
+  // time, or the merchant closed early after adding items to the cart.
+  if (m && !isMerchantOpenNow(m)) {
+    showToast('المطعم مغلق حالياً — تقدر تكمل طلبك لما يفتح');
+    renderCartModal();
+    return;
+  }
 
   // Re-validate stock right before checkout in case it changed while browsing
   for (const item of cart) {

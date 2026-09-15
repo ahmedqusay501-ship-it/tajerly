@@ -219,6 +219,7 @@ function renderProductDetailContent(p, color, m) {
     ` : ''}
     <div class="product-detail-name">${esc(p.name)}</div>
     <div class="product-detail-price">${p.price.toLocaleString()} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
+    ${!isMerchantOpenNow(m) ? `<div class="empty" style="margin:6px 0;">🕓 هذا المطعم مغلق حالياً — تقدر تشوف القائمة بس ما تقدر تطلب لين يفتح</div>` : ''}
     ${(() => { const avg = productAvgRating(p); return avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : `<div class="store-product-card-rating">لا يوجد تقييمات بعد — كن أول من يقيّم</div>`; })()}
     ${p.description ? `<div class="product-desc">${esc(p.description)}</div>` : ''}
     ${p.sizes.length ? `
@@ -247,7 +248,9 @@ function renderProductDetailContent(p, color, m) {
     <div style="margin-top:12px;">
       ${outOfStock
         ? `<button class="btn secondary" disabled style="width:100%;">غير متوفر</button>`
-        : `<button class="btn" style="background:${color}; width:100%;" onclick="addToCart(${m.id}, ${p.id})">أضف للسلة</button>`}
+        : (!isMerchantOpenNow(m)
+          ? `<button class="btn secondary" disabled style="width:100%;">المطعم مغلق حالياً</button>`
+          : `<button class="btn" style="background:${color}; width:100%;" onclick="addToCart(${m.id}, ${p.id})">أضف للسلة</button>`)}
     </div>
     ${renderRelatedProducts(p, m, color)}
     ${renderProductReviewsSection(p, m)}
@@ -408,7 +411,7 @@ function renderStorefrontInto(merchantId, content, opts) {
         </div>`}
       <div class="store-header">
         ${m.theme.logo ? `<img class="store-logo" src="${m.theme.logo}">` : `<div class="store-logo store-logo-default" style="background:${color};">${(m.shop||'م').trim().charAt(0)}</div>`}
-        <div class="card-title" style="color:${color};">${m.shop}</div>
+        <div class="card-title" style="color:${color};">${m.shop} ${restaurantOpenBadgeHtml(m)}</div>
       </div>
       ${m.bio ? `<div class="store-bio">${m.bio}</div>` : ''}
       ${visibleSocials.length > 0 ? `

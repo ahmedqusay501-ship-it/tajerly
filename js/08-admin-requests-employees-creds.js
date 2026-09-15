@@ -1371,6 +1371,15 @@ function renderMerchantPanel() {
           : `<div class="subtitle" style="margin-top:8px;">الرابط اعلاه يشتغل بعد ما يفعّل الأدمن متجرك. لين هسه استخدم زر المعاينة تحت لتشوف شكل متجرك.</div>`}
         <button class="btn small" style="margin-top:8px;" onclick="openMerchantPreview(${m.id})">عاين متجرك متل ما راح يشوفه الزبون</button>
       </div>
+      ${m.type === 'restaurant' ? `
+      <div class="card">
+        <div class="card-title">ساعات عمل المطعم</div>
+        <div class="subtitle" style="margin-bottom:8px;">فعّلها إذا تريد متجرك يبين "مغلق الآن" تلقائياً خارج أوقات دوامك، وما يقدر الزبون يطلب بهذي الفترة. تركها معطّلة يخليه مفتوح دايماً متل باقي المتاجر.</div>
+        <div class="toggle-group" style="margin-bottom:10px;">${renderWorkingHoursEnabledToggle(m)}</div>
+        <div id="working-hours-rows-${m.id}">${renderWorkingHoursRows(m)}</div>
+        <button class="btn secondary small" style="margin-top:8px;" onclick="saveWorkingHours(${m.id})">حفظ ساعات العمل</button>
+      </div>
+      ` : ''}
       ${!m.ownDelivery ? `<div class="card">
         <div class="card-title">شركة التوصيل المسؤولة عن طلباتك</div>
         ${(() => {
