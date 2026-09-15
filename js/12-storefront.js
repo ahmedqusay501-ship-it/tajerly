@@ -327,12 +327,29 @@ function submitReview(merchantId, productId) {
   const comment = commentInput.value.trim();
   const stars = reviewStarsDraft[productId] || 5;
   if (!name) { showToast('اكتب اسمك قبل إرسال التقييم'); return; }
-  p.reviews.push({ id: genId(), name, stars, comment, date: new Date().toISOString() });
+  const review = { id: genId(), merchantId: m.id, productId: p.id, merchantAuthUid: m.authUid, name, stars, comment, date: new Date().toISOString() };
+  // Written to its own product_reviews doc (see firestore.rules) — NOT saved as part of the
+  // merchant document. A guest here has no write access to the merchant doc itself (only the
+  // merchant/its employee/admin do), so embedding it there used to silently fail to persist:
+  // it looked saved in this one browser tab but was never actually written to the server and
+  // vanished for everyone else on refresh. Optimistic local push below still happens first so
+  // the reviewer sees it immediately without waiting on the network round-trip.
+  p.reviews.push(review);
   reviewStarsDraft[productId] = 5;
-  saveData();
   refreshOpenProductDetail();
   updateStoreProductsArea(merchantId); // keep the card's average rating in sync too
   showToast('تم إرسال تقييمك، شكراً! ');
+  if (window.authApi) {
+    window.authApi.saveDoc('product_reviews', String(review.id), review).catch(() => {
+      // Genuinely failed to save (not just "no backend configured") — don't leave the
+      // reviewer thinking it went through when it didn't.
+      showToast('تعذر حفظ التقييم، حاول مرة ثانية');
+      const idx = p.reviews.indexOf(review);
+      if (idx !== -1) p.reviews.splice(idx, 1);
+      refreshOpenProductDetail();
+      updateStoreProductsArea(merchantId);
+    });
+  }
 }
 
 function openProductDetail(merchantId, productId) {

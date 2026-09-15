@@ -717,7 +717,7 @@ async function fetchRemoteData() {
     // Before this change, one denied collection silently emptied the entire app (storefront,
     // dashboards, everything) for that visitor, because a single failed promise inside
     // Promise.all rejects the whole batch.
-    const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes, offersRes] = await Promise.allSettled([
+    const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes, offersRes, reviewsRes] = await Promise.allSettled([
       window.authApi.listCollection('merchants'),
       ordersPromise,
       window.authApi.listCollection('join_requests'),
@@ -727,7 +727,11 @@ async function fetchRemoteData() {
       // offers is publicly readable (allow read: if true — see firestore.rules), so this
       // never hits the "all-or-nothing list" restriction the orders/employees fixes above
       // work around; every visitor, logged in or not, can list it the same way.
-      window.authApi.listCollection('offers')
+      window.authApi.listCollection('offers'),
+      // product_reviews: same "publicly readable" shape as offers — any visitor, logged in
+      // or not, can list every review for every merchant (see firestore.rules). Attached to
+      // each product below once merchants have loaded.
+      window.authApi.listCollection('product_reviews')
     ]);
 
     if (merchantsRes.status === 'fulfilled') {
@@ -762,6 +766,24 @@ async function fetchRemoteData() {
       });
     } else {
       console.error('Storage error while loading merchants:', merchantsRes.reason);
+    }
+
+    // Attach reviews to their products. Reviews live in their own collection (not embedded in
+    // the merchant doc) specifically so an anonymous customer can post one — writing to the
+    // merchant doc itself requires being that merchant/its employee/admin (see
+    // firestore.rules), which a guest checking out or reviewing a product never is. Matched by
+    // (merchantId, productId) rather than nested inside the merchant doc; re-attached fresh
+    // from the server on every fetch (not appended) so a review deleted by the merchant/admin
+    // for moderation actually disappears instead of lingering from a stale local copy.
+    if (reviewsRes.status === 'fulfilled') {
+      const allReviews = reviewsRes.value;
+      data.merchants.forEach(m => {
+        (m.products || []).forEach(p => {
+          p.reviews = allReviews.filter(r => r.merchantId === m.id && r.productId === p.id);
+        });
+      });
+    } else {
+      console.error('Storage error while loading product reviews:', reviewsRes.reason);
     }
 
     if (ordersRes.status === 'fulfilled') {
