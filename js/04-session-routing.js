@@ -128,6 +128,7 @@ function openPublicStore(slug) {
   m.visits = (m.visits || 0) + 1;
   saveData();
   renderStorefrontInto(m.id, content);
+  updateCartFab();
 }
 
 // Backfill theme/shipping fields for merchants created before these features existed

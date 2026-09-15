@@ -63,6 +63,7 @@ function openGeneralMarket() {
   data.settings.marketVisits = (data.settings.marketVisits || 0) + 1;
   saveData();
   renderGeneralMarket();
+  updateCartFab();
 }
 
 // All products from every active merchant, each tagged with its own merchant object so the

@@ -25,6 +25,7 @@ function openRestaurantsMarket() {
   data.settings.restaurantsVisits = (data.settings.restaurantsVisits || 0) + 1;
   saveData();
   renderRestaurantsMarket();
+  updateCartFab();
 }
 
 // All products from every active restaurant-type merchant not hidden from this page —

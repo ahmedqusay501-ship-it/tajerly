@@ -6,6 +6,23 @@ let appliedCoupon = null;
 function cartCount() { return cart.reduce((s, i) => s + i.qty, 0); }
 function cartSubtotal() { return cart.reduce((s, i) => s + i.price * i.qty, 0); }
 
+// Floating cart button (see .cart-fab in styles.css) — lives outside all three customer
+// screens in the DOM, so it just auto-detects which one (if any) is currently visible rather
+// than being wired into every navigation function individually. Shown only while the cart
+// actually has something in it, same idea as the support-chat badge only showing on unread.
+function updateCartFab() {
+  const fab = document.getElementById('cart-fab');
+  const badge = document.getElementById('cart-fab-badge');
+  if (!fab || !badge) return;
+  const onCustomerScreen =
+    document.getElementById('public-store-screen').style.display === 'block' ||
+    document.getElementById('general-market-screen').style.display === 'block' ||
+    document.getElementById('restaurants-screen').style.display === 'block';
+  const count = cartCount();
+  fab.classList.toggle('show', onCustomerScreen && count > 0);
+  badge.textContent = count > 99 ? '99+' : count;
+}
+
 // Computes the discount a coupon gives on a given subtotal — 0 if the subtotal hasn't hit
 // the coupon's minimum order yet, so the discount silently switches on once it does.
 // For 'percent' coupons, the result is capped at coupon.maxDiscount (if set) so a big order
@@ -354,6 +371,7 @@ document.getElementById('checkout-confirm-btn').addEventListener('click', async 
     closeCheckoutModal();
     cart = [];
     renderCartModal();
+    updateCartFab();
     showToast('تم إرسال الطلب ');
     return;
   }
@@ -519,6 +537,7 @@ document.getElementById('checkout-confirm-btn').addEventListener('click', async 
 
   cart = [];
   appliedCoupon = null;
+  updateCartFab();
   try { sessionStorage.setItem('tajerly-last-order-ts', String(Date.now())); } catch (e) {} // anti-spam cooldown, see checks above
   saveData(); // best-effort sync of anything else (nextId, etc.) — orders themselves are already confirmed saved
   closeCheckoutModal();
@@ -1093,6 +1112,7 @@ function refreshStorefrontView() {
     renderStorefront();
   }
   refreshOpenProductDetail();
+  updateCartFab();
 }
 
 

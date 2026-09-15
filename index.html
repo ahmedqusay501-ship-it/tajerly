@@ -1563,6 +1563,13 @@
   </div>
 </div>
 
+<!-- Customer-facing floating cart button — shown on the single-store, general market, and
+     restaurants screens whenever the cart has items; badge shows the item count -->
+<button class="cart-fab" id="cart-fab" onclick="openCartModal()" aria-label="سلة المشتريات">
+  🛒
+  <span class="cart-fab-badge" id="cart-fab-badge">0</span>
+</button>
+
 <!-- Cart modal: customer's shopping cart — holds multiple products/quantities before checkout -->
 <div class="modal-overlay" id="cart-modal">
   <div class="modal-box" style="max-width:380px;">

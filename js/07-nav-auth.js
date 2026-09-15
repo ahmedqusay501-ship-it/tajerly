@@ -176,6 +176,7 @@ function showHomeScreen() {
   document.getElementById('app-shell').style.display = 'none';
   applyMarketPagesVisibility();
   document.getElementById('home-screen').style.display = 'flex';
+  updateCartFab();
 }
 
 function showLoginScreen() {
@@ -191,6 +192,7 @@ function showLoginScreen() {
   document.getElementById('login-username').value = '';
   document.getElementById('login-password').value = '';
   document.getElementById('login-error').textContent = '';
+  updateCartFab();
 }
 
 function showJoinScreen() {
@@ -204,6 +206,7 @@ function showJoinScreen() {
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('join-screen').style.display = 'flex';
   populateAreaSelect('req-area', document.getElementById('req-governorate').value);
+  updateCartFab();
 }
 
 // One login box, one set of credentials — the account type (admin / merchant)
