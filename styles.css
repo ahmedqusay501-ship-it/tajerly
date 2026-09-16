@@ -449,6 +449,7 @@
   .store-product-row-img img { width: 100%; height: 100%; object-fit: cover; }
   .store-product-row-img .thumb-placeholder { width: 100%; height: 100%; border: none; border-radius: 0; font-size: 18px; }
   .store-product-row-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .store-product-row-price { font-size: 12px; font-weight: 700; color: var(--accent-dark); white-space: nowrap; margin-top: 2px; }
   .store-product-row button { flex: 0 0 auto; margin: 0; padding: 6px 12px; white-space: nowrap; }
 
   /* ---- Grid/list toggle — fixed corner button on the single-store customer page (see

@@ -79,6 +79,7 @@ function renderStoreProductCardGrid(p, color, m) {
       </div>
       <div class="store-product-card-info">
         <div class="store-product-card-name">${esc(p.name)}</div>
+        <div class="store-product-card-price">${p.price.toLocaleString()} د</div>
         <button class="btn small ${disabled ? 'secondary' : ''}" style="width:100%; margin-top:6px;" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
       </div>
     </div>
@@ -100,7 +101,7 @@ function renderStoreProductCardList(p, color, m) {
       <div class="store-product-row-img">
         ${img ? `<img src="${img}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
       </div>
-      <div class="store-product-row-name">${esc(p.name)}</div>
+      <div class="store-product-row-name">${esc(p.name)}<div class="store-product-row-price">${p.price.toLocaleString()} د</div></div>
       <button class="btn small ${disabled ? 'secondary' : ''}" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
     </div>
   `;
