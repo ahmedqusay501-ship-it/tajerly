@@ -1117,12 +1117,15 @@ function refreshStorefrontView() {
   } else if (restaurantsMarketActive) {
     renderRestaurantsMarket();
   } else if (publicStoreMerchantId) {
-    renderStorefrontInto(publicStoreMerchantId, document.getElementById('public-storefront-content'));
+    // لو التفاصيل بملء الصفحة مفتوحة حالياً، ما نعيد رسم قائمة المتجر فوقها — refreshOpenProductDetail()
+    // تحت هي اللي تحدّث المحتوى المعروض فعلياً (جسم التفاصيل بس، مو كل الصفحة، فزر الرجوع يضل مكانه)
+    if (!productDetailFullPageActive) renderStorefrontInto(publicStoreMerchantId, document.getElementById('public-storefront-content'));
   } else {
     renderStorefront();
   }
   refreshOpenProductDetail();
   updateCartFab();
+  updateStoreViewToggleFab();
 }
 
 

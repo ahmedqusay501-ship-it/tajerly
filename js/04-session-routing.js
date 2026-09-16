@@ -120,9 +120,13 @@ function openPublicStore(slug) {
   if (!m) {
     brandEl.textContent = 'المتجر غير متاح';
     content.innerHTML = '<div class="card"><div class="empty">هذا الرابط غير صحيح أو المتجر غير متاح حالياً</div></div>';
+    publicStoreMerchantId = null;
+    productDetailFullPageActive = false;
+    updateStoreViewToggleFab();
     return;
   }
   publicStoreMerchantId = m.id;
+  productDetailFullPageActive = false; // زيارة جديدة لمتجر — نضمن ما ترث حالة "تفاصيل مفتوحة" من متجر سابق
   updateBootMerchantLogo(m);
   brandEl.textContent = m.shop;
   m.visits = (m.visits || 0) + 1;

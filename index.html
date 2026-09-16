@@ -1570,6 +1570,13 @@
   <span class="cart-fab-badge" id="cart-fab-badge">0</span>
 </button>
 
+<!-- Single-store page only: toggles the product listing between grid (عامودي) and list
+     (أفقي) view. Opposite corner from the cart button, hidden while a product's full-page
+     detail is open (see productDetailFullPageActive in 12-storefront.js). -->
+<button class="store-view-toggle-fab" id="store-view-toggle-fab" onclick="toggleStoreViewModeForCurrentStore()" aria-label="تبديل طريقة عرض المنتجات">
+  <span id="store-view-toggle-fab-icon">☰</span>
+</button>
+
 <!-- Cart modal: customer's shopping cart — holds multiple products/quantities before checkout -->
 <div class="modal-overlay" id="cart-modal">
   <div class="modal-box" style="max-width:380px;">

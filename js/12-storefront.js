@@ -60,26 +60,48 @@ function pickStoreImage(merchantId, productId, index) {
   if (strip) Array.from(strip.children).forEach((el, i) => el.classList.toggle('selected', i === index));
 }
 
-// Compact grid card shown in the store listing — just a thumbnail, name, and price, like a
-// normal e-commerce catalog. Tapping it opens the full product detail modal (images, sizes,
-// colors, description, add-to-cart) instead of cramming all of that into the grid itself.
-function renderStoreProductCard(p, color, m) {
+// Compact grid card shown in the store listing (عامودي) — thumbnail, name, and an "أضف
+// للسلة" button below it. Tapping the card itself (not the button) opens the full-page
+// product detail; the button adds the default variant straight from the listing without
+// leaving it (event.stopPropagation() keeps that tap from also opening the detail page).
+function renderStoreProductCardGrid(p, color, m) {
   ensureProductImages(p);
   ensureProductVariants(p);
   const outOfStock = productOutOfStock(p);
+  const closed = !isMerchantOpenNow(m);
+  const disabled = outOfStock || closed;
   const img = p.images[0];
-  const avg = productAvgRating(p);
   return `
     <div class="store-product-card" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-card-img">
         ${img ? `<img src="${img}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
-        ${outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : ''}
+        ${closed ? `<span class="badge rejected">مغلق الآن</span>` : (outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : '')}
       </div>
       <div class="store-product-card-info">
         <div class="store-product-card-name">${esc(p.name)}</div>
-        <div class="store-product-card-price">${p.price.toLocaleString()} د</div>
-        ${avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} (${p.reviews.length})</div>` : ''}
+        <button class="btn small ${disabled ? 'secondary' : ''}" style="width:100%; margin-top:6px;" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
       </div>
+    </div>
+  `;
+}
+
+// Same idea, horizontal row (أفقي) — thumbnail + name, "أضف للسلة" button beside it instead
+// of below it. Toggled against the grid card above via storeViewMode (see
+// toggleStoreViewModeForCurrentStore).
+function renderStoreProductCardList(p, color, m) {
+  ensureProductImages(p);
+  ensureProductVariants(p);
+  const outOfStock = productOutOfStock(p);
+  const closed = !isMerchantOpenNow(m);
+  const disabled = outOfStock || closed;
+  const img = p.images[0];
+  return `
+    <div class="store-product-row" onclick="openProductDetail(${m.id}, ${p.id})">
+      <div class="store-product-row-img">
+        ${img ? `<img src="${img}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+      </div>
+      <div class="store-product-row-name">${esc(p.name)}</div>
+      <button class="btn small ${disabled ? 'secondary' : ''}" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
     </div>
   `;
 }
@@ -97,6 +119,34 @@ let storeFilter = {};
 function getStoreFilter(merchantId) {
   if (!storeFilter[merchantId]) storeFilter[merchantId] = { query: '', categoryId: 'all' };
   return storeFilter[merchantId];
+}
+
+// ---------- Grid (عامودي) vs list (أفقي) view toggle — single-store page only ----------
+// Kept per-merchant like storeFilter, for the same reason (switching stores never carries the
+// previous store's view choice over unexpectedly). Grid is the default/original look.
+let storeViewMode = {};
+function getStoreViewMode(merchantId) {
+  return storeViewMode[merchantId] === 'list' ? 'list' : 'grid';
+}
+function toggleStoreViewModeForCurrentStore() {
+  if (!publicStoreMerchantId) return;
+  storeViewMode[publicStoreMerchantId] = getStoreViewMode(publicStoreMerchantId) === 'grid' ? 'list' : 'grid';
+  updateStoreProductsArea(publicStoreMerchantId);
+  updateStoreViewToggleFab();
+}
+// Shows/hides the fixed corner toggle button and keeps its icon in sync — same auto-detect
+// idea as updateCartFab(): lives outside the screen-specific DOM, so it just checks what's
+// currently visible instead of being wired into every navigation function individually.
+// Hidden while a product's full-page detail is open (see productDetailFullPageActive below) —
+// toggling the listing's layout makes no sense while looking at one product's own page.
+function updateStoreViewToggleFab() {
+  const fab = document.getElementById('store-view-toggle-fab');
+  const icon = document.getElementById('store-view-toggle-fab-icon');
+  if (!fab || !icon) return;
+  const onSingleStore = document.getElementById('public-store-screen').style.display === 'block' && !!publicStoreMerchantId;
+  fab.classList.toggle('show', onSingleStore && !productDetailFullPageActive);
+  // الأيقونة تعرض الوضع اللي راح ينتقله لو ضغط عليه (متعارف عليه بأغلب التطبيقات)
+  icon.textContent = publicStoreMerchantId && getStoreViewMode(publicStoreMerchantId) === 'list' ? '▦' : '☰';
 }
 
 // Only redraws the product grid area (not the search input itself), so the customer's
@@ -139,7 +189,10 @@ function renderStoreSearchBar(m) {
 
 function renderStoreProducts(m, color) {
   if (m.products.length === 0) return '<div class="empty">ما فيه منتجات معروضة</div>';
-  const grid = (items) => `<div class="store-products-grid">${items.map(p => renderStoreProductCard(p, color, m)).join('')}</div>`;
+  const mode = getStoreViewMode(m.id);
+  const grid = (items) => mode === 'list'
+    ? `<div class="store-products-list">${items.map(p => renderStoreProductCardList(p, color, m)).join('')}</div>`
+    : `<div class="store-products-grid">${items.map(p => renderStoreProductCardGrid(p, color, m)).join('')}</div>`;
 
   const f = getStoreFilter(m.id);
   const q = (f.query || '').trim().toLowerCase();
@@ -192,9 +245,12 @@ function renderStoreProducts(m, color) {
   return html;
 }
 
-// ---- Product detail modal: opened when a customer taps a card in the grid. Shows the big
-// image gallery, full description, size/color pickers, and the real "أضف للسلة" button. ----
+// ---- Product detail: on the single-store page this opens full-page (replaces the store
+// listing's own content, no overlay on top of it); everywhere else (general market,
+// restaurants market) it still opens the shared modal. Shows the big image gallery, full
+// description, size/color pickers, reviews, and the real "أضف للسلة" button either way. ----
 let openProductDetailId = null; // { merchantId, productId } of whichever detail view is open, so re-renders (after picking a size/color, or a live data refresh) can redraw the same one.
+let productDetailFullPageActive = false; // true only while the single-store full-page detail (not the modal) is showing
 
 function renderProductDetailContent(p, color, m) {
   ensureProductImages(p);
@@ -274,7 +330,7 @@ function renderRelatedProducts(p, m, color) {
   if (related.length === 0) return '';
   return `
     <div class="card-title" style="margin-top:18px;">منتجات مقترحة من نفس المتجر</div>
-    <div class="store-products-grid">${related.map(rp => renderStoreProductCard(rp, color, m)).join('')}</div>
+    <div class="store-products-grid">${related.map(rp => renderStoreProductCardGrid(rp, color, m)).join('')}</div>
   `;
 }
 
@@ -361,6 +417,23 @@ function openProductDetail(merchantId, productId) {
   if (!m || !p) return;
   openProductDetailId = { merchantId, productId };
   const color = (m.theme && m.theme.primaryColor) || '#C77B4A';
+  // على صفحة المتجر الفردي بس (مو السوق العام ولا صفحة المطاعم — هذولا يبقون بنفس نافذة
+  // التفاصيل المنبثقة القديمة): التفاصيل تفتح بملء الصفحة، بمعنى تستبدل محتوى المتجر نفسه
+  // بدل ما تفتح كطبقة فوقه.
+  if (publicStoreMerchantId === merchantId && !generalMarketActive && !restaurantsMarketActive) {
+    productDetailFullPageActive = true;
+    const content = document.getElementById('public-storefront-content');
+    if (content) {
+      content.innerHTML = `
+        <button class="btn secondary small" style="margin-bottom:10px;" onclick="closeStoreProductDetailFullPage()">→ الرجوع للمتجر</button>
+        <div id="store-product-detail-fullpage-body">${renderProductDetailContent(p, color, m)}</div>
+      `;
+      content.scrollTop = 0;
+    }
+    window.scrollTo(0, 0);
+    updateStoreViewToggleFab();
+    return;
+  }
   const content = document.getElementById('product-detail-content');
   if (content) content.innerHTML = renderProductDetailContent(p, color, m);
   document.getElementById('product-detail-modal').classList.add('show');
@@ -369,6 +442,13 @@ function closeProductDetail() {
   openProductDetailId = null;
   document.getElementById('product-detail-modal').classList.remove('show');
 }
+// الرجوع من التفاصيل بملء الصفحة لقائمة المتجر — عكس فتحها بـ openProductDetail أعلاه.
+function closeStoreProductDetailFullPage() {
+  productDetailFullPageActive = false;
+  openProductDetailId = null;
+  if (publicStoreMerchantId) renderStorefrontInto(publicStoreMerchantId, document.getElementById('public-storefront-content'));
+  updateStoreViewToggleFab();
+}
 // Redraws whichever product detail view is currently open — called after picking a
 // size/color box's live-refresh redraw, and after adding to cart, so stock/labels stay accurate.
 function refreshOpenProductDetail() {
@@ -376,8 +456,13 @@ function refreshOpenProductDetail() {
   const { merchantId, productId } = openProductDetailId;
   const m = data.merchants.find(x => x.id === merchantId);
   const p = m && m.products.find(x => x.id === productId);
-  if (!m || !p) { closeProductDetail(); return; }
+  if (!m || !p) { if (productDetailFullPageActive) closeStoreProductDetailFullPage(); else closeProductDetail(); return; }
   const color = (m.theme && m.theme.primaryColor) || '#C77B4A';
+  if (productDetailFullPageActive) {
+    const body = document.getElementById('store-product-detail-fullpage-body');
+    if (body) body.innerHTML = renderProductDetailContent(p, color, m);
+    return;
+  }
   const content = document.getElementById('product-detail-content');
   if (content) content.innerHTML = renderProductDetailContent(p, color, m);
 }
@@ -438,6 +523,7 @@ function renderStorefrontInto(merchantId, content, opts) {
       <div id="store-products-area-${m.id}">${renderStoreProducts(m, color)}</div>
     </div>
   `;
+  updateStoreViewToggleFab();
 }
 
 // "العدسة": يفتح للتاجر معاينة حية لمتجره بالضبط متل ما يشوفه الزبون — الشعار، الألوان،
