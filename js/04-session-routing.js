@@ -133,6 +133,14 @@ function openPublicStore(slug) {
   saveData();
   renderStorefrontInto(m.id, content);
   updateCartFab();
+  // رابط مشاركة منتج معيّن (شوف shareProduct بـ 12-storefront.js) يجي بصيغة
+  // ?store=SLUG&product=ID — نفتح تفاصيل هذا المنتج مباشرة بدل ما نوقف بقائمة المتجر
+  // ونخلي الشخص يدور عليه بنفسه.
+  const productIdParam = new URLSearchParams(location.search).get('product');
+  if (productIdParam) {
+    const pid = parseInt(productIdParam, 10);
+    if (m.products.some(x => x.id === pid)) openProductDetail(m.id, pid);
+  }
 }
 
 // Backfill theme/shipping fields for merchants created before these features existed

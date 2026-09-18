@@ -274,7 +274,7 @@ function renderProductDetailContent(p, color, m) {
         ${p.images.map((img, i) => `<img src="${img}" class="${i === shownIndex ? 'selected' : ''}" onclick="pickStoreImage(${m.id}, ${p.id}, ${i})">`).join('')}
       </div>
     ` : ''}
-    <div class="product-detail-name">${esc(p.name)}</div>
+    <div class="product-detail-name">${esc(p.name)} <button class="btn secondary small" style="padding:3px 10px; font-size:12px;" onclick="shareProduct(${m.id}, ${p.id})" aria-label="شارك المنتج">↗ شارك</button></div>
     <div class="product-detail-price">${p.price.toLocaleString()} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
     ${!isMerchantOpenNow(m) ? `<div class="empty" style="margin:6px 0;">🕓 هذا المطعم مغلق حالياً — تقدر تشوف القائمة بس ما تقدر تطلب${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ' لين يفتح'}</div>` : ''}
     ${(() => { const avg = productAvgRating(p); return avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : `<div class="store-product-card-rating">لا يوجد تقييمات بعد — كن أول من يقيّم</div>`; })()}
@@ -312,6 +312,55 @@ function renderProductDetailContent(p, color, m) {
     ${renderRelatedProducts(p, m, color)}
     ${renderProductReviewsSection(p, m)}
   `;
+}
+
+// ---------- SHARE PRODUCT (زر "شارك" بصفحة تفاصيل المنتج) ----------
+// رابط مباشر للمنتج نفسه (؟store=SLUG&product=ID) — يفتحه أي شخص يوصله مباشرة على تفاصيل
+// هذا المنتج بالذات (شوف معالجة ?product= بـ openPublicStore، 04-session-routing.js)، مو
+// بس على قائمة المتجر العامة.
+function productShareLink(m, p) {
+  if (m && m.customDomain) return `https://${m.customDomain}?product=${p.id}`;
+  const slug = m ? m.linkSlug : '';
+  return `${location.origin}${location.pathname}?store=${encodeURIComponent(slug)}&product=${p.id}`;
+}
+
+async function dataUrlToImageFile(dataUrl, filename) {
+  try {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+  } catch (e) { return null; }
+}
+
+// رابط wa.me نفسه ما يدعم إرفاق صورة — نص بس. الطريقة الوحيدة اللي فعلياً "ترفق صورة" مع
+// الرسالة (مو مجرد رابط) هي Web Share API بملف، المدعومة بأغلب متصفحات الموبايل (اللي منها
+// المستخدم يختار واتساب كوجهة المشاركة). لو مو مدعومة (أغلب متصفحات الديسكتوب)، نرجع
+// لرابط wa.me نص بس + رابط المنتج.
+async function shareProduct(merchantId, productId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  const p = m && m.products.find(x => x.id === productId);
+  if (!p) return;
+  ensureProductImages(p);
+  const link = productShareLink(m, p);
+  const text = `${p.name}\nالسعر: ${p.price.toLocaleString()} د\n${link}`;
+  if (navigator.share) {
+    try {
+      const img = p.images && p.images[0];
+      if (img && navigator.canShare) {
+        const file = await dataUrlToImageFile(img, 'product.jpg');
+        if (file && navigator.canShare({ files: [file] })) {
+          await navigator.share({ text, files: [file] });
+          return;
+        }
+      }
+      await navigator.share({ text });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // المستخدم سكر نافذة المشاركة بنفسه — مو خطأ
+      // أي خطأ ثاني: نكمل عالاحتياطي بالأسفل بدل ما نوقف بصمت
+    }
+  }
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
 }
 
 // ---------- RELATED / SUGGESTED PRODUCTS ----------
