@@ -276,7 +276,7 @@ function renderProductDetailContent(p, color, m) {
     ` : ''}
     <div class="product-detail-name">${esc(p.name)}</div>
     <div class="product-detail-price">${p.price.toLocaleString()} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
-    ${!isMerchantOpenNow(m) ? `<div class="empty" style="margin:6px 0;">🕓 هذا المطعم مغلق حالياً — تقدر تشوف القائمة بس ما تقدر تطلب لين يفتح</div>` : ''}
+    ${!isMerchantOpenNow(m) ? `<div class="empty" style="margin:6px 0;">🕓 هذا المطعم مغلق حالياً — تقدر تشوف القائمة بس ما تقدر تطلب${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ' لين يفتح'}</div>` : ''}
     ${(() => { const avg = productAvgRating(p); return avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : `<div class="store-product-card-rating">لا يوجد تقييمات بعد — كن أول من يقيّم</div>`; })()}
     ${p.description ? `<div class="product-desc">${esc(p.description)}</div>` : ''}
     ${p.sizes.length ? `
@@ -337,6 +337,32 @@ function renderRelatedProducts(p, m, color) {
 
 // ---------- RATINGS & REVIEWS ----------
 let reviewStarsDraft = {}; // productId -> stars currently picked in the "write a review" form (default 5)
+const REVIEW_COOLDOWN_MS = 15000; // minimum gap between two review submissions from the same browser (see checkout's CHECKOUT_COOLDOWN_MS for the same idea)
+
+// منع تقييم نفس المنتج أكثر من مرة من نفس المتصفح. localStorage (مو متغير بالذاكرة) عشان
+// يستمر حتى لو الزبون سكر المتصفح ورجع بعد فترة — عكس قفل السلة اللي يكفيه يبقى بالجلسة بس.
+function hasReviewedProduct(merchantId, productId) {
+  try {
+    const list = JSON.parse(localStorage.getItem('tajerly-reviewed-products') || '[]');
+    return list.includes(`${merchantId}:${productId}`);
+  } catch (e) { return false; }
+}
+function markProductReviewed(merchantId, productId) {
+  try {
+    const list = JSON.parse(localStorage.getItem('tajerly-reviewed-products') || '[]');
+    const key = `${merchantId}:${productId}`;
+    if (!list.includes(key)) { list.push(key); localStorage.setItem('tajerly-reviewed-products', JSON.stringify(list)); }
+  } catch (e) {}
+}
+// يشيل القفل لو الحفظ فعلياً فشل بالسيرفر (submitReview بالأسفل) — حتى ما يبقى الزبون
+// عالق بلا تقييم محفوظ وبلا قدرة يعيد المحاولة.
+function unmarkProductReviewed(merchantId, productId) {
+  try {
+    const list = JSON.parse(localStorage.getItem('tajerly-reviewed-products') || '[]');
+    const idx = list.indexOf(`${merchantId}:${productId}`);
+    if (idx !== -1) { list.splice(idx, 1); localStorage.setItem('tajerly-reviewed-products', JSON.stringify(list)); }
+  } catch (e) {}
+}
 
 function reviewStarsInputHtml(productId) {
   const cur = reviewStarsDraft[productId] || 5;
@@ -368,10 +394,12 @@ function renderProductReviewsSection(p, m) {
     </div>
     <div style="margin-top:12px;">
       <div class="card-title" style="font-size:13px;">أضف تقييمك</div>
+      ${hasReviewedProduct(m.id, p.id) ? `<div class="empty">قيّمت هذا المنتج من قبل من هالجهاز — شكراً! 🙏</div>` : `
       <div class="review-stars-input" id="review-stars-${p.id}">${reviewStarsInputHtml(p.id)}</div>
       <input id="review-name-${p.id}" placeholder="اسمك">
       <textarea id="review-comment-${p.id}" placeholder="رأيك بالمنتج (اختياري)"></textarea>
       <button class="btn secondary small" onclick="submitReview(${m.id}, ${p.id})">إرسال التقييم</button>
+      `}
     </div>
   `;
 }
@@ -381,6 +409,9 @@ function submitReview(merchantId, productId) {
   const p = m && m.products.find(x => x.id === productId);
   if (!p) return;
   ensureProductVariants(p);
+  if (hasReviewedProduct(merchantId, productId)) { showToast('قيّمت هذا المنتج من قبل'); return; }
+  const lastReviewAt = parseInt((() => { try { return sessionStorage.getItem('tajerly-last-review-ts'); } catch (e) { return null; } })() || '0', 10);
+  if (lastReviewAt && (Date.now() - lastReviewAt) < REVIEW_COOLDOWN_MS) { showToast('أرسلت تقييم للتو — خلي شوية وجرب مرة ثانية'); return; }
   const nameInput = document.getElementById(`review-name-${productId}`);
   const commentInput = document.getElementById(`review-comment-${productId}`);
   const name = nameInput.value.trim();
@@ -395,6 +426,8 @@ function submitReview(merchantId, productId) {
   // vanished for everyone else on refresh. Optimistic local push below still happens first so
   // the reviewer sees it immediately without waiting on the network round-trip.
   p.reviews.push(review);
+  markProductReviewed(merchantId, productId);
+  try { sessionStorage.setItem('tajerly-last-review-ts', String(Date.now())); } catch (e) {} // anti-spam cooldown, see checks above
   reviewStarsDraft[productId] = 5;
   refreshOpenProductDetail();
   updateStoreProductsArea(merchantId); // keep the card's average rating in sync too
@@ -402,10 +435,11 @@ function submitReview(merchantId, productId) {
   if (window.authApi) {
     window.authApi.saveDoc('product_reviews', String(review.id), review).catch(() => {
       // Genuinely failed to save (not just "no backend configured") — don't leave the
-      // reviewer thinking it went through when it didn't.
+      // reviewer thinking it went through when it didn't, and let them try again.
       showToast('تعذر حفظ التقييم، حاول مرة ثانية');
       const idx = p.reviews.indexOf(review);
       if (idx !== -1) p.reviews.splice(idx, 1);
+      unmarkProductReviewed(merchantId, productId);
       refreshOpenProductDetail();
       updateStoreProductsArea(merchantId);
     });

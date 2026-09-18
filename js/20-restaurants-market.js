@@ -45,9 +45,42 @@ function isMerchantOpenNow(m) {
 // الميزة إطلاقاً فـ isMerchantOpenNow ترجعله true دايماً، فما تظهر له الشارة أبداً هنا).
 function restaurantOpenBadgeHtml(m) {
   if (m.type !== 'restaurant' || !m.workingHours || !m.workingHours.enabled) return '';
-  return isMerchantOpenNow(m)
-    ? `<span class="badge active">مفتوح الآن</span>`
-    : `<span class="badge rejected">مغلق الآن</span>`;
+  if (isMerchantOpenNow(m)) return `<span class="badge active">مفتوح الآن</span>`;
+  const next = nextOpenTimeLabel(m);
+  return `<span class="badge rejected">مغلق الآن</span>${next ? `<span class="subtitle" style="display:block; margin:2px 0 0 0;">${next}</span>` : ''}`;
+}
+
+function formatHourMinute(hhmm) {
+  const [h, m2] = (hhmm || '00:00').split(':').map(n => parseInt(n) || 0);
+  const period = h < 12 ? 'ص' : 'م';
+  const h12 = (h % 12) || 12;
+  return `${h12}:${String(m2).padStart(2, '0')} ${period}`;
+}
+
+// يحسب أقرب وقت فتح جاي — يستخدم بس لما المطعم مغلق حالياً، حتى نقول للزبون "يفتح متى"
+// بدل ما يضل يجرب عشوائي. يدور بأول 7 أيام جاية (اليوم الحالي شامل) لين يلقى أول يوم مو
+// مسكّر، ويرجع نص جاهز يناسب المسافة (اليوم / بكرة / اسم اليوم).
+function nextOpenTimeLabel(m) {
+  if (!m.workingHours || !m.workingHours.enabled) return '';
+  const now = new Date();
+  const todayIdx = now.getDay();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  for (let offset = 0; offset <= 7; offset++) {
+    const idx = (todayIdx + offset) % 7;
+    const dayKey = WEEK_DAYS[idx].key;
+    const sched = m.workingHours.days && m.workingHours.days[dayKey];
+    if (!sched || sched.closed) continue;
+    if (offset === 0) {
+      // اليوم نفسه — بس نعتبره "يفتح اليوم" إذا وقت الفتح لسه ما وصل (يعني مغلق حالياً
+      // لأنه بعده بكّر). إذا الوقت عدّى، يعني اليوم خلص دوامه، نكمل ندور بالأيام الجاية.
+      const [oh, om] = (sched.open || '00:00').split(':').map(n => parseInt(n) || 0);
+      if (nowMins < oh * 60 + om) return `يفتح اليوم الساعة ${formatHourMinute(sched.open)}`;
+      continue;
+    }
+    if (offset === 1) return `يفتح بكرة الساعة ${formatHourMinute(sched.open)}`;
+    return `يفتح يوم ${WEEK_DAYS[idx].label} الساعة ${formatHourMinute(sched.open)}`;
+  }
+  return ''; // كل أيام الأسبوع مسكّرة — ما فيه وقت فتح جاي نقوله
 }
 
 // ---------- WORKING HOURS — merchant-side editor (renderMerchantPanel's "store" tab, مطاعم بس) ----------
@@ -141,8 +174,13 @@ function openRestaurantsMarket() {
 // one of the two combined pages that merchant actually belongs to.
 function allRestaurantProducts() {
   const items = [];
-  data.merchants.filter(m => m.status === 'active' && !m.hiddenFromMarket && m.type === 'restaurant').forEach(m => {
-    ensureMerchantTheme(m);
+  const restaurants = data.merchants.filter(m => m.status === 'active' && !m.hiddenFromMarket && m.type === 'restaurant');
+  restaurants.forEach(m => ensureMerchantTheme(m));
+  // المطاعم المفتوحة حالياً تطلع أول بالقائمة — بدون هذا الترتيب، منتج من مطعم مسكّر ممكن
+  // يطلع قبل منتج من مطعم شغال فعلاً بس لأنه انخزن قبله. Array.sort ثابت (stable) بجافاسكربت
+  // الحديث، فترتيب المطاعم مع بعض (بنفس حالة الفتح) يضل متل ما كان.
+  restaurants.sort((a, b) => (isMerchantOpenNow(a) ? 0 : 1) - (isMerchantOpenNow(b) ? 0 : 1));
+  restaurants.forEach(m => {
     m.products.forEach(p => items.push({ p, m }));
   });
   return items;
@@ -199,7 +237,7 @@ function renderRestaurantProductCard(p, m) {
     <div class="store-product-card" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-card-img">
         ${img ? `<img src="${img}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
-        ${closed ? `<span class="badge rejected">مغلق الآن</span>` : (outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : '')}
+        ${closed ? `<span class="badge rejected" title="${esc(nextOpenTimeLabel(m))}">مغلق الآن</span>` : (outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : '')}
       </div>
       <div class="store-product-card-info">
         <div class="store-product-card-name">${esc(p.name)}</div>
