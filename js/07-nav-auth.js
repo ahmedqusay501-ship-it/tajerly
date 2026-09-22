@@ -56,6 +56,16 @@ const MERCHANT_EMPLOYEE_PERMS = [
 // even if given every other permission.
 const ADMIN_EMPLOYEE_PERMS = ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && v.id !== 'delivery_agents' && v.id !== 'agent_accounts');
 
+// What a delivery agent can hand to their own employee — each maps to one sub-tab inside the
+// agent's own dashboard (see agentPanelAllowedTabs()/applyAgentEmployeeGating() in
+// 11-order-management.js). 'employees' itself (managing who works under this agent) is never
+// delegable — only the real agent manages that, same principle as MERCHANT_EMPLOYEE_PERMS above.
+const AGENT_EMPLOYEE_PERMS = [
+  {id: 'orders', labelKey: 'perm_agent_orders'},
+  {id: 'history', labelKey: 'perm_agent_history'},
+  {id: 'accounts', labelKey: 'perm_agent_accounts'}
+];
+
 function currentEmployee() {
   return loggedInEmployeeId != null ? data.employees.find(e => e.id === loggedInEmployeeId) : null;
 }
@@ -73,9 +83,12 @@ function viewsForRole(role) {
       // triggers are separately blocked at the rules level regardless.
       return ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && emp.permissions.includes(v.id));
     }
-    if (emp.ownerType === 'delivery_agent') {
-      // مندوب توصيل: تبويب وحيد يشوف فيه بس طلباته هو (renderAgentOrders) — ما يوصله أي
-      // تبويب ثاني بلوحة الأدمن أو التاجر، حتى لو تلاعب أحد بصلاحيات موظف عادي.
+    if (emp.ownerType === 'delivery_agent' || emp.ownerType === 'agent_employee') {
+      // مندوب توصيل (أو موظف تابع له): تبويب وحيد يشوف فيه بس طلبات المندوب المسؤول عنه
+      // (renderAgentOrders) — ما يوصله أي تبويب ثاني بلوحة الأدمن أو التاجر، حتى لو تلاعب
+      // أحد بصلاحيات موظف عادي. أي فرق بالصلاحيات (الطلبات/السجل/الحسابات، ومنها تبويب
+      // "موظفيني" اللي يبقى خاص بالمندوب الحقيقي بس) يُطبّق داخل نفس التبويب — شوف
+      // agentPanelAllowedTabs()/applyAgentEmployeeGating() بملف 11-order-management.js.
       return [{ id: 'delivery_agent', labelKey: 'nav_my_deliveries' }];
     }
     // A merchant's employee always lands on the single merchant tab — which sub-sections
@@ -367,13 +380,22 @@ function enterApp(role) {
 
   const roleLabels = { admin: 'أدمن', merchant: 'تاجر', employee: 'موظف' };
   document.getElementById('topbar-role').textContent =
-    (role === 'employee' && currentEmployee() && currentEmployee().ownerType === 'delivery_agent') ? 'مندوب توصيل' : (roleLabels[role] || '');
+    (role === 'employee' && currentEmployee() && currentEmployee().ownerType === 'delivery_agent') ? 'مندوب توصيل' :
+    (role === 'employee' && currentEmployee() && currentEmployee().ownerType === 'agent_employee') ? 'موظف توصيل' :
+    (roleLabels[role] || '');
   let name = '';
   if (role === 'admin') { name = data.settings.adminUsername; applyMerchantDashboardColor(null); }
   if (role === 'merchant') { const m = data.merchants.find(x => x.id === loggedInMerchantId); name = m ? m.shop : ''; applyMerchantDashboardColor(m); }
   if (role === 'employee') {
     const emp = currentEmployee();
-    name = emp ? (emp.ownerType === 'delivery_agent' && emp.companyName ? `${emp.name} — ${emp.companyName}` : emp.name) : '';
+    if (emp && emp.ownerType === 'agent_employee') {
+      // اسم الموظف نفسه — مع اسم شركة المندوب اللي يشتغل عنده (نفس فكرة عرض شركة المندوب
+      // نفسه تحت)، حتى يعرف واضح هو مسجل دخول تحت شركة أي مندوب.
+      const agent = data.employees.find(x => x.id === emp.agentId && x.ownerType === 'delivery_agent');
+      name = agent && agent.companyName ? `${emp.name} — ${agent.companyName}` : emp.name;
+    } else {
+      name = emp ? (emp.ownerType === 'delivery_agent' && emp.companyName ? `${emp.name} — ${emp.companyName}` : emp.name) : '';
+    }
     if (emp && emp.ownerType === 'merchant') {
       loggedInMerchantId = emp.merchantId;
       const m = data.merchants.find(x => x.id === emp.merchantId);

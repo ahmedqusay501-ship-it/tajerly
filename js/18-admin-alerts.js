@@ -40,9 +40,19 @@ function agentsOverDueThreshold() {
   if (!threshold || threshold <= 0) return [];
   return data.employees.filter(e => e.ownerType === 'delivery_agent').filter(e => agentUnsettledCommissionTotal(e.id) >= threshold).map(e => e.id);
 }
+// Active merchants whose delivery-price source is set to "سعر المندوب" (see
+// openOwnDeliveryModal in js/15-admin-tools.js) but who have NO delivery agent assigned to
+// them right now (deliveryAgentForMerchant returns null) — their storefront can't quote a
+// delivery price at all, so checkout is blocked for every customer until the admin either
+// assigns an agent or switches the merchant back to platform/merchant pricing. Unlike the
+// one-shot queues above, this can start and stop being true on its own as agents get
+// (re)assigned — same self-correcting logic as agentsOverDueThreshold.
+function merchantsMissingAssignedAgent() {
+  return data.merchants.filter(m => m.status === 'active' && !m.ownDelivery && m.deliveryPriceSource === 'agent' && !deliveryAgentForMerchant(m.id)).map(m => m.id);
+}
 
 let adminAlertSeeded = false;
-let adminAlertSeen = { join: new Set(), removal: new Set(), cancel: new Set(), delivery: new Set(), support: new Set(), agentDue: new Set() };
+let adminAlertSeen = { join: new Set(), removal: new Set(), cancel: new Set(), delivery: new Set(), support: new Set(), agentDue: new Set(), noAgentPricing: new Set() };
 let adminAlertSoundEnabled = (localStorage.getItem('adminAlertSoundEnabled') === '1');
 let adminAlertAutoStopHandle = null;
 
@@ -53,7 +63,8 @@ function currentAdminAlertSnapshot() {
     cancel: pendingCancelRequestGroupIds(),
     delivery: pendingDeliveryRequestGroupIds(),
     support: unreadSupportChatUids(),
-    agentDue: agentsOverDueThreshold()
+    agentDue: agentsOverDueThreshold(),
+    noAgentPricing: merchantsMissingAssignedAgent()
   };
 }
 
@@ -61,7 +72,8 @@ function seedAdminAlertTracking() {
   const snap = currentAdminAlertSnapshot();
   adminAlertSeen = {
     join: new Set(snap.join), removal: new Set(snap.removal), cancel: new Set(snap.cancel),
-    delivery: new Set(snap.delivery), support: new Set(snap.support), agentDue: new Set(snap.agentDue)
+    delivery: new Set(snap.delivery), support: new Set(snap.support), agentDue: new Set(snap.agentDue),
+    noAgentPricing: new Set(snap.noAgentPricing)
   };
   adminAlertSeeded = true;
 }
@@ -77,11 +89,13 @@ function resetAdminAlertTracking() {
 
 const ADMIN_ALERT_SINGULAR = {
   join: 'طلب انضمام تاجر جديد', removal: 'طلب حذف قطعة من فاتورة', cancel: 'طلب إلغاء من زبون',
-  delivery: 'طلب جاهز للتوصيل', support: 'رسالة دعم جديدة من تاجر', agentDue: 'مندوب تجاوز حد المستحقات'
+  delivery: 'طلب جاهز للتوصيل', support: 'رسالة دعم جديدة من تاجر', agentDue: 'مندوب تجاوز حد المستحقات',
+  noAgentPricing: 'محل مصدر سعره "المندوب" وما عنده مندوب مخصص'
 };
 const ADMIN_ALERT_PLURAL = {
   join: 'طلبات انضمام تجار جدد', removal: 'طلبات حذف قطع', cancel: 'طلبات إلغاء',
-  delivery: 'طلبات جاهزة للتوصيل', support: 'رسائل دعم جديدة', agentDue: 'مندوبين تجاوزوا حد المستحقات'
+  delivery: 'طلبات جاهزة للتوصيل', support: 'رسائل دعم جديدة', agentDue: 'مندوبين تجاوزوا حد المستحقات',
+  noAgentPricing: 'محلات مصدر سعرها "المندوب" وما عندها مندوب مخصص'
 };
 function adminAlertLabel(key, n) { return n === 1 ? ADMIN_ALERT_SINGULAR[key] : ADMIN_ALERT_PLURAL[key]; }
 
@@ -170,13 +184,15 @@ function renderAdminAlertUI() {
   const deliveryCount = pendingDeliveryRequestGroupIds().length;
   const supportCount = unreadSupportChatUids().length;
   const agentDueCount = agentsOverDueThreshold().length;
+  const noAgentPricingCount = merchantsMissingAssignedAgent().length;
   const requestsTotal = joinCount + removalCount + cancelCount;
-  const grandTotal = requestsTotal + deliveryCount + supportCount + agentDueCount;
+  const grandTotal = requestsTotal + deliveryCount + supportCount + agentDueCount + noAgentPricingCount;
 
   setNavBadgeCount('requests', requestsTotal);
   setNavBadgeCount('shipping', deliveryCount);
   setNavBadgeCount('agent_accounts', agentDueCount);
   setNavBadgeCount('support', supportCount);
+  setNavBadgeCount('admin_tools', noAgentPricingCount);
 
   const bellIcon = document.getElementById('admin-alert-bell-icon');
   if (bellIcon) bellIcon.textContent = adminAlertSoundEnabled ? '🔔' : '🔕';
@@ -196,6 +212,7 @@ function renderAdminAlertUI() {
       { count: cancelCount, view: 'requests', label: 'طلبات إلغاء من الزبائن' },
       { count: deliveryCount, view: 'shipping', label: 'طلبات جاهزة للتوصيل' },
       { count: agentDueCount, view: 'agent_accounts', label: 'مندوبين تجاوزوا حد المستحقات غير المسدَّدة' },
+      { count: noAgentPricingCount, view: 'admin_tools', label: 'محلات مصدر سعرها "المندوب" وما عندها مندوب مخصص — التوصيل معطّل عندهم' },
       { count: supportCount, view: 'support', label: 'رسائل دعم جديدة من التجار' }
     ];
     const summaryParent = summaryEl.closest('.card');

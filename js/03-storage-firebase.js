@@ -312,6 +312,48 @@ function ownDeliveryAreaEntry(areaPrices, governorate, area) {
   if (typeof raw === 'number') return { price: raw, days: '' };
   return { price: typeof raw.price === 'number' ? raw.price : 0, days: raw.days || '' };
 }
+// ---------- DELIVERY AGENT ZONE PRICING (allowed governorates/areas + fast/slow price + ETA) ----------
+// Finds the most specific configured zone for a location on a delivery agent: an exact
+// governorate+area match wins, otherwise a "whole governorate" entry (area === '') covers it.
+// Returns null if this agent has zones configured but this location isn't one of them.
+function findAgentZone(agent, governorate, area) {
+  const zones = (agent && Array.isArray(agent.deliveryZones)) ? agent.deliveryZones : [];
+  if (zones.length === 0) return null;
+  if (area) {
+    const specific = zones.find(z => z.governorate === governorate && z.area === area);
+    if (specific) return specific;
+  }
+  return zones.find(z => z.governorate === governorate && !z.area) || null;
+}
+// What this agent charges to deliver one order, given the order's governorate/area and the
+// speed the customer picked ('fast' | 'slow'). An agent with NO zones configured yet is
+// treated as unrestricted (legacy behavior): same flat deliveryFee everywhere. Once the admin
+// adds at least one zone, the agent becomes restricted — anywhere not listed, or listed but
+// not offering the requested speed, comes back with covered:false and a zero fee instead of
+// silently charging the old flat rate for a place the admin never actually priced.
+function agentDeliveryQuote(agent, governorate, area, speed) {
+  if (!agent) return { fee: 0, days: '', covered: false };
+  const zones = Array.isArray(agent.deliveryZones) ? agent.deliveryZones : [];
+  if (zones.length === 0) return { fee: agent.deliveryFee || 0, days: '', covered: true };
+  const zone = findAgentZone(agent, governorate, area);
+  if (!zone) return { fee: 0, days: '', covered: false };
+  const enabled = speed === 'fast' ? zone.fastEnabled !== false : zone.slowEnabled !== false;
+  if (!enabled) return { fee: 0, days: '', covered: false };
+  return {
+    fee: (speed === 'fast' ? zone.fastPrice : zone.slowPrice) || 0,
+    days: (speed === 'fast' ? zone.fastDays : zone.slowDays) || '',
+    covered: true
+  };
+}
+// Does this agent deliver AT ALL to this governorate/area (any speed)? Used to warn the admin
+// when assigning a merchant/order to an agent who isn't priced for where it's actually going.
+function agentCoversLocation(agent, governorate, area) {
+  if (!agent) return false;
+  const zones = Array.isArray(agent.deliveryZones) ? agent.deliveryZones : [];
+  if (zones.length === 0) return true; // unrestricted legacy agent
+  const zone = findAgentZone(agent, governorate, area);
+  return !!zone && (zone.fastEnabled !== false || zone.slowEnabled !== false);
+}
 function registerCustomArea(governorate, areaName) {
   const name = (areaName || '').trim();
   if (!governorate || !name) return false;
@@ -513,9 +555,20 @@ function ensureEmployeeDefaults(e) {
   // js/08-admin-requests-employees-creds.js "DELIVERY AGENTS" section for how these are set.
   if (typeof e.companyName !== 'string') e.companyName = ''; // اسم شركة/فريق التوصيل تاع المندوب
   if (!Array.isArray(e.merchantIds)) e.merchantIds = []; // المحلات (م.merchants[].id) المسؤول عنها هذا المندوب
-  if (typeof e.deliveryFee !== 'number') e.deliveryFee = 0; // أجرة التوصيل الثابتة لهذا المندوب (تختلف من مندوب لآخر)
+  if (typeof e.deliveryFee !== 'number') e.deliveryFee = 0; // أجرة التوصيل الثابتة لهذا المندوب — تُستخدم فقط إذا ما عنده أي مناطق مسعّرة أدناه (deliveryZones فاضية = وضع قديم/غير مقيّد، توصيل بأي مكان بنفس السعر)
   if (e.commissionType !== 'fixed' && e.commissionType !== 'percentage') e.commissionType = 'fixed'; // نوع عمولة المنصة من كل طلب توصلّه هذا المندوب
   if (typeof e.commissionValue !== 'number') e.commissionValue = 0; // قيمة العمولة (مبلغ ثابت أو نسبة %)
+  // أسعار التوصيل لهذا المندوب حسب المحافظة/المنطقة — الأدمن فقط يضيف/يعدّل/يحذف (شوف
+  // "DELIVERY AGENT ZONES" بملف js/08). كل عنصر: { id, governorate, area (فاضي = كل
+  // مناطق المحافظة), fastEnabled, slowEnabled, fastPrice, slowPrice, fastDays, slowDays }.
+  // وجود منطقة بهذي القائمة هو نفسه تصريح التوصيل لها — أي محافظة/منطقة غير مضافة هنا تعتبر
+  // غير مسموحة لهذا المندوب (ما عدا لو القائمة فاضية بالكامل، شوف agentDeliveryQuote أدناه).
+  if (!Array.isArray(e.deliveryZones)) e.deliveryZones = [];
+  // ---- Agent-employee-only field (ownerType === 'agent_employee') ----
+  // موظف تابع لمندوب توصيل معيّن (مو موظف تاجر ولا موظف إدارة) — agentId = الحقل المحلي
+  // "id" تاع وثيقة المندوب (employees مع ownerType: 'delivery_agent')، نفس مبدأ merchantId
+  // فوق (يطابق مع merchants[].id، مو authUid). صلاحياته تُحدد من نفس المندوب (AGENT_EMPLOYEE_PERMS).
+  if (typeof e.agentId !== 'number' && e.agentId !== null) e.agentId = null;
   return e;
 }
 
@@ -900,6 +953,10 @@ async function fetchRemoteData() {
     if (o.agentCommissionTypeSnapshot !== 'fixed' && o.agentCommissionTypeSnapshot !== 'percentage') o.agentCommissionTypeSnapshot = 'fixed';
     if (typeof o.agentCommissionValueSnapshot !== 'number') o.agentCommissionValueSnapshot = 0;
     if (typeof o.returnReason !== 'string') o.returnReason = ''; // سبب "غير واصل" — يكتبه المندوب أو الأدمن، يظهر للتاجر وللأدمن
+    // منطقة الزبون المحددة داخل المحافظة (co-area بالتشيك أوت) — قبل هذا الحقل كانت تُطوى
+    // فقط داخل نص العنوان الحر، فما يكدر الكود يطابقها مع مناطق المندوب المسعّرة
+    // (agentDeliveryQuote). طلبات قديمة قبل هذا الحقل ترجع فاضية = "كل مناطق المحافظة".
+    if (typeof o.area !== 'string') o.area = '';
   });
   if (typeof data.settings.itemDeduction !== 'number') data.settings.itemDeduction = 0;
   if (!Array.isArray(data.settings.shippingZones) || data.settings.shippingZones.length === 0) {

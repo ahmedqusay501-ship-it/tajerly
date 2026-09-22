@@ -45,6 +45,7 @@ async function submitRequest() {
     // كل تاجر جديد ينضم من الآن يشحن بنفسه افتراضياً (توصيل خاص بالمحل) بدل توصيل المنصة العام —
     // الأدمن يقدر يرجّعه لتوصيل المنصة لاحقاً من "توصيل خاص بالمحل" بصفحة إدارة التجار لو احتاج.
     ownDelivery: true,
+    deliveryPriceSource: 'merchant', // matches ownDelivery:true above — see ensureMerchantTheme
     ownDeliveryPrice: 0,
     ownDeliveryDays: '',
     ownDeliveryGovernorates: [],
@@ -523,6 +524,95 @@ function deleteEmployee(id) {
   });
 }
 
+// ---- Delivery agent side: request a new employee of their own, or edit an existing one's
+// permissions. Exact mirror of the merchant flow above (openAddEmployeeModal/
+// submitEmployeeModal/renderMerchantEmployeesList) — same pending->admin-approval->active
+// lifecycle, just ownerType 'agent_employee' + agentId instead of 'merchant' + merchantId,
+// and AGENT_EMPLOYEE_PERMS instead of MERCHANT_EMPLOYEE_PERMS. ----
+let editingAgentEmployeeId = null; // non-null while the "add/edit agent employee" modal is open for an edit
+
+function openAddAgentEmployeeModal(existingId) {
+  editingAgentEmployeeId = existingId || null;
+  const emp = editingAgentEmployeeId ? data.employees.find(e => e.id === editingAgentEmployeeId) : null;
+  document.getElementById('agent-emp-modal-title').textContent = emp ? 'تعديل صلاحيات الموظف' : 'إضافة موظف جديد';
+  document.getElementById('agent-emp-name-fields').style.display = emp ? 'none' : 'block';
+  document.getElementById('agent-emp-name').value = emp ? emp.name : '';
+  document.getElementById('agent-emp-phone').value = emp ? emp.phone : '';
+  const permsBox = document.getElementById('agent-emp-permissions-box');
+  const currentPerms = emp ? emp.permissions : [];
+  permsBox.innerHTML = AGENT_EMPLOYEE_PERMS.map(p => `
+    <label style="display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12.5px; cursor:pointer;">
+      <input type="checkbox" value="${p.id}" ${currentPerms.includes(p.id) ? 'checked' : ''} style="width:auto;"> ${t(p.labelKey)}
+    </label>`).join('');
+  document.getElementById('agent-employee-modal').classList.add('show');
+}
+function closeAgentEmployeeModal() {
+  editingAgentEmployeeId = null;
+  document.getElementById('agent-employee-modal').classList.remove('show');
+}
+async function submitAgentEmployeeModal() {
+  const perms = Array.from(document.querySelectorAll('#agent-emp-permissions-box input:checked')).map(c => c.value);
+  if (perms.length === 0) { showToast('حدد صلاحية وحدة على الأقل'); return; }
+
+  if (editingAgentEmployeeId) {
+    const emp = data.employees.find(e => e.id === editingAgentEmployeeId);
+    if (!emp) return;
+    emp.permissions = perms;
+    saveData();
+    closeAgentEmployeeModal();
+    showToast('تم تحديث صلاحيات الموظف');
+    renderAll();
+    return;
+  }
+
+  const emp0 = currentEmployee();
+  if (!emp0 || emp0.ownerType !== 'delivery_agent') return; // نفس ما فوق: يمنع أي محاولة استدعاء خارج سياق لوحة المندوب
+  const name = document.getElementById('agent-emp-name').value.trim();
+  const phone = document.getElementById('agent-emp-phone').value.trim();
+  if (!name || !phone) { showToast('عبي الاسم والهاتف'); return; }
+
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const emp = {
+    id: newId, name, phone, permissions: perms,
+    ownerType: 'agent_employee', agentId: emp0.id,
+    username: '', password: '', status: 'pending', authUid: null
+  };
+  data.employees.push(emp);
+
+  let ok = false;
+  if (window.authApi) {
+    try { await window.authApi.saveDoc('employee_requests', String(newId), emp); ok = true; }
+    catch (e) { console.error('Agent employee request save failed:', e); ok = false; }
+  } else {
+    ok = await saveData();
+  }
+  if (!ok) {
+    data.employees = data.employees.filter(e => e.id !== newId);
+    showToast('صار خطأ ولم يتم إرسال الطلب — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
+    return;
+  }
+  closeAgentEmployeeModal();
+  showToast('تم إرسال طلبك بنجاح راح يجهز الأدمن للموظف يوزر نيم وباسورد دخول');
+  renderAll();
+}
+
+function renderAgentOwnEmployeesList(agentId) {
+  const list = data.employees.filter(e => e.ownerType === 'agent_employee' && e.agentId === agentId);
+  if (list.length === 0) return '<div class="empty">ما ضفت موظفين بعد</div>';
+  return list.map(e => `
+    <div class="list-item" style="align-items:flex-start;">
+      <span>${esc(e.name)}<br>
+        <span style="color:var(--text-mute); font-size:11px;">${esc(e.phone) || '—'}</span><br>
+        <span class="badge ${e.status === 'active' ? 'active' : 'disabled'}">${e.status === 'active' ? 'نشط — يكدر يسجل دخول' : 'بانتظار الأدمن يجهزله بيانات الدخول'}</span><br>
+        <span style="color:var(--text-mute); font-size:11px;">الصلاحيات: ${e.permissions.map(id => labelForPerm(AGENT_EMPLOYEE_PERMS, id)).join('، ') || '—'}</span>
+      </span>
+      <span>
+        <button class="btn small secondary" onclick="openAddAgentEmployeeModal(${e.id})">تعديل الصلاحيات</button>
+        <button class="btn danger small" onclick="deleteEmployee(${e.id})">حذف</button>
+      </span>
+    </div>`).join('');
+}
+
 // ---- Admin side: approve/reject a merchant's employee request, or manage the admin's own team ----
 let pendingApproveEmployeeId = null;
 
@@ -712,6 +802,111 @@ function renderAgentMerchantPicker(currentAgentId, selectedIds) {
   }).join('');
 }
 
+// ---- Per-agent delivery zone pricing (allowed governorates/areas + fast/slow price + ETA) ----
+// Admin-only (same screen as the rest of this agent's data, itself excluded from employee
+// delegation — see ADMIN_EMPLOYEE_PERMS above). Adding a zone here is what grants this agent
+// permission to deliver to that governorate/area at all; deleting it revokes that permission.
+// Saved immediately (its own button), same pattern as addShippingZone/deleteShippingZone in
+// js/14-shipping-pricing.js, instead of waiting on the modal's general "حفظ" button.
+function currentEditingAgent() {
+  return editingAgentId ? data.employees.find(x => x.id === editingAgentId && x.ownerType === 'delivery_agent') : null;
+}
+function renderAgentZoneGovernorateSelect() {
+  const sel = document.getElementById('agent-zone-governorate');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = IRAQ_GOVERNORATES.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  if (current && IRAQ_GOVERNORATES.includes(current)) sel.value = current;
+  renderAgentZoneAreaSelect();
+}
+function renderAgentZoneAreaSelect() {
+  const govSel = document.getElementById('agent-zone-governorate');
+  const areaSel = document.getElementById('agent-zone-area');
+  if (!govSel || !areaSel) return;
+  const current = areaSel.value;
+  const areas = allAreasForGovernorate(govSel.value);
+  areaSel.innerHTML = `<option value="">كل مناطق المحافظة</option>${areas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('')}`;
+  if (current && areas.includes(current)) areaSel.value = current;
+  renderAgentZonesList();
+}
+function renderAgentZonesList() {
+  const list = document.getElementById('agent-zones-list');
+  const a = currentEditingAgent();
+  if (!list || !a) return;
+  const zones = a.deliveryZones || [];
+  if (zones.length === 0) { list.innerHTML = '<div class="empty">ما فيه مناطق توصيل مضافة لهذا المندوب بعد — بدون مناطق، يوصل بأي مكان بالأجرة الافتراضية أعلاه</div>'; return; }
+  list.innerHTML = zones.map(z => `
+    <div class="list-item">
+      <span>${esc(z.governorate)}${z.area ? ' — ' + esc(z.area) : ' (كل المناطق)'} — سريع: ${z.fastEnabled !== false ? z.fastPrice.toLocaleString() + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${z.slowEnabled !== false ? z.slowPrice.toLocaleString() + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
+      <span>
+        <button class="btn secondary small" onclick="editAgentZone('${z.id}')">تعديل</button>
+        <button class="btn danger small" onclick="deleteAgentZone('${z.id}')">حذف</button>
+      </span>
+    </div>
+  `).join('');
+}
+function addAgentZone() {
+  const a = currentEditingAgent();
+  if (!a) return;
+  const governorate = document.getElementById('agent-zone-governorate').value;
+  const area = document.getElementById('agent-zone-area').value;
+  const fastEnabled = document.getElementById('agent-zone-fast-enabled').checked;
+  const slowEnabled = document.getElementById('agent-zone-slow-enabled').checked;
+  const fastPrice = parseFloat(document.getElementById('agent-zone-fast-price').value) || 0;
+  const slowPrice = parseFloat(document.getElementById('agent-zone-slow-price').value) || 0;
+  const fastDays = document.getElementById('agent-zone-fast-days').value.trim();
+  const slowDays = document.getElementById('agent-zone-slow-days').value.trim();
+  if (!governorate) { showToast('اختر المحافظة'); return; }
+  if (!fastEnabled && !slowEnabled) { showToast('لازم يتوفر نوع توصيل واحد على الأقل (سريع أو بطيء)'); return; }
+  if (!a.deliveryZones) a.deliveryZones = [];
+  const existing = a.deliveryZones.find(z => z.governorate === governorate && (z.area || '') === (area || ''));
+  if (existing) {
+    existing.fastEnabled = fastEnabled; existing.slowEnabled = slowEnabled;
+    existing.fastPrice = fastPrice; existing.slowPrice = slowPrice;
+    existing.fastDays = fastDays; existing.slowDays = slowDays;
+    showToast('تم تحديث سعر هذي المنطقة لهذا المندوب');
+  } else {
+    a.deliveryZones.push({ id: 'az' + genId(), governorate, area, fastEnabled, slowEnabled, fastPrice, slowPrice, fastDays, slowDays });
+    showToast('تمت إضافة المنطقة لهذا المندوب');
+  }
+  saveData();
+  if (window.authApi && a.authUid) window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+  document.getElementById('agent-zone-fast-price').value = '';
+  document.getElementById('agent-zone-slow-price').value = '';
+  document.getElementById('agent-zone-fast-days').value = '';
+  document.getElementById('agent-zone-slow-days').value = '';
+  document.getElementById('agent-zone-fast-enabled').checked = true;
+  document.getElementById('agent-zone-slow-enabled').checked = true;
+  renderAgentZonesList();
+  renderDeliveryAgentsList();
+}
+function editAgentZone(id) {
+  const a = currentEditingAgent();
+  const z = a && a.deliveryZones.find(x => x.id === id);
+  if (!z) return;
+  document.getElementById('agent-zone-governorate').value = z.governorate;
+  renderAgentZoneAreaSelect();
+  document.getElementById('agent-zone-area').value = z.area || '';
+  document.getElementById('agent-zone-fast-enabled').checked = z.fastEnabled !== false;
+  document.getElementById('agent-zone-slow-enabled').checked = z.slowEnabled !== false;
+  document.getElementById('agent-zone-fast-price').value = z.fastPrice;
+  document.getElementById('agent-zone-slow-price').value = z.slowPrice;
+  document.getElementById('agent-zone-fast-days').value = z.fastDays || '';
+  document.getElementById('agent-zone-slow-days').value = z.slowDays || '';
+}
+function deleteAgentZone(id) {
+  const a = currentEditingAgent();
+  if (!a) return;
+  openConfirmModal('حذف منطقة توصيل', 'متأكد تحذف هذي المنطقة من مناطق هذا المندوب؟ ما بعدها يقدر يوصل لها (إلا لو رجعت وأضفتها).', () => {
+    a.deliveryZones = a.deliveryZones.filter(z => z.id !== id);
+    saveData();
+    if (window.authApi && a.authUid) window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+    renderAgentZonesList();
+    renderDeliveryAgentsList();
+    showToast('تم حذف المنطقة');
+  });
+}
+
 function openAgentModal(existingId) {
   editingAgentId = existingId || null;
   const a = editingAgentId ? data.employees.find(x => x.id === editingAgentId && x.ownerType === 'delivery_agent') : null;
@@ -725,6 +920,23 @@ function openAgentModal(existingId) {
   document.getElementById('agent-commission-type').value = a ? a.commissionType : 'fixed';
   document.getElementById('agent-commission-value').value = a ? a.commissionValue : '';
   renderAgentMerchantPicker(editingAgentId, a ? a.merchantIds : []);
+
+  // مناطق التوصيل (deliveryZones) تحتاج id فعلي للمندوب تُخزَّن تحته، فما تظهر إلا بعد
+  // ما يُحفظ المندوب أول مرة — نفس مبدأ قائمة "المحلات المسؤول عنها" لكن هذي تُحفظ فوراً
+  // بضغطة زر خاصة بها (مثل مناطق الشحن العامة بـ 14-shipping-pricing.js) بدل انتظار زر
+  // "حفظ" العام تاع المودال.
+  const zonesSection = document.getElementById('agent-zones-section');
+  const feeHint = document.getElementById('agent-delivery-fee-hint');
+  if (a) {
+    zonesSection.style.display = 'block';
+    feeHint.textContent = a.deliveryZones.length
+      ? 'هذا المندوب مسعّر حسب المنطقة أدناه — الأجرة هذي تُستخدم فقط كافتراضي إذا حذفت كل مناطقه.'
+      : 'ما فيه مناطق مضافة لهذا المندوب بعد — هذا الرقم يُستخدم حالياً كأجرة ثابتة بأي مكان.';
+    renderAgentZoneGovernorateSelect();
+  } else {
+    zonesSection.style.display = 'none';
+    feeHint.textContent = 'احفظ المندوب أولاً، بعدين تكدر تعدله لتحديد مناطق توصيل مسعّرة له.';
+  }
   document.getElementById('agent-modal').classList.add('show');
 }
 function closeAgentModal() {
@@ -822,7 +1034,7 @@ function renderDeliveryAgentsList() {
       <div style="width:100%;">
         <b>${esc(a.name)}</b>${a.companyName ? ' — ' + esc(a.companyName) : ''}
         <span class="badge ${a.status === 'active' ? 'active' : 'rejected'}" style="margin-right:6px;">${a.status === 'active' ? 'نشط' : 'موقوف مؤقتاً'}</span>
-        <br><span style="color:var(--text-mute); font-size:11px;">عدد التجار المسؤول عنهم: <b>${shopsCount}</b> — أجرة التوصيل: ${a.deliveryFee.toLocaleString()} د — عمولة المنصة منه: ${commissionLabel}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">عدد التجار المسؤول عنهم: <b>${shopsCount}</b> — أجرة التوصيل: ${a.deliveryZones.length ? `مسعّرة حسب المنطقة (${a.deliveryZones.length} منطقة)` : a.deliveryFee.toLocaleString() + ' د (بأي مكان)'} — عمولة المنصة منه: ${commissionLabel}</span>
         <br><span style="color:var(--text-mute); font-size:11px;">طلبات بعهدته حالياً: ${pendingCount}${returnRate != null ? ` — نسبة الإرجاع (من كامل تاريخه): <span style="color:${returnRate >= 20 ? '#B3261E' : 'inherit'}; font-weight:${returnRate >= 20 ? '700' : '400'};">${returnRate}%</span>` : ''}</span>
         <br><span style="color:var(--text-mute); font-size:11px;">
           مستحقات المنصة عليه من عمولته (كل الوقت): <b>${totals.totalCommission.toLocaleString()} د</b>
@@ -891,7 +1103,7 @@ async function confirmReassignAgentOrders() {
   const items = agentPendingCustodyOrders(reassignSourceAgentId);
   items.forEach(o => {
     o.deliveryAgentId = target.id;
-    o.agentFeeSnapshot = target.deliveryFee;
+    o.agentFeeSnapshot = agentDeliveryQuote(target, o.governorate, o.area, o.shippingSpeed).fee;
     o.agentCommissionTypeSnapshot = target.commissionType;
     o.agentCommissionValueSnapshot = target.commissionValue;
     o.deliveryAssignedAt = new Date().toISOString();
@@ -951,7 +1163,7 @@ async function confirmReassignMerchantAgent() {
   const pending = oldAgent ? data.orders.filter(o => o.merchantId === merchantId && o.deliveryAgentId === oldAgent.id && !o.cancelled && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping')) : [];
   pending.forEach(o => {
     o.deliveryAgentId = newAgent ? newAgent.id : null;
-    o.agentFeeSnapshot = newAgent ? newAgent.deliveryFee : 0;
+    o.agentFeeSnapshot = newAgent ? agentDeliveryQuote(newAgent, o.governorate, o.area, o.shippingSpeed).fee : 0;
     o.agentCommissionTypeSnapshot = newAgent ? newAgent.commissionType : 'fixed';
     o.agentCommissionValueSnapshot = newAgent ? newAgent.commissionValue : 0;
     o.deliveryAssignedAt = new Date().toISOString();
@@ -1081,13 +1293,21 @@ function renderAnnouncementsAdmin() {
 function renderEmployees() {
   const pendingBox = document.getElementById('pending-employee-list');
   if (pendingBox) {
-    const pending = data.employees.filter(e => e.ownerType === 'merchant' && e.status === 'pending');
+    // طلبات موظفين جدد — من التجار (ownerType 'merchant') أو من مناديب التوصيل
+    // (ownerType 'agent_employee') — نفس مسار القبول/الرفض بالضبط (openApproveEmployeeModal/
+    // confirmApproveEmployee/rejectEmployee فوق تعمل بأي ownerType بدون أي تعديل عليها).
+    const pending = data.employees.filter(e => (e.ownerType === 'merchant' || e.ownerType === 'agent_employee') && e.status === 'pending');
     pendingBox.innerHTML = pending.length === 0 ? '<div class="empty">ما فيه طلبات موظفين حالياً</div>' : pending.map(e => {
-      const m = data.merchants.find(x => x.id === e.merchantId);
+      const isAgentEmp = e.ownerType === 'agent_employee';
+      const owner = isAgentEmp ? data.employees.find(x => x.id === e.agentId && x.ownerType === 'delivery_agent') : data.merchants.find(x => x.id === e.merchantId);
+      const ownerLabel = isAgentEmp
+        ? `موظف عند مندوب توصيل ${owner ? esc(owner.companyName || owner.name) : 'محذوف'}`
+        : `موظف عند ${owner ? esc(owner.shop) : 'تاجر محذوف'}`;
+      const permsList = isAgentEmp ? AGENT_EMPLOYEE_PERMS : MERCHANT_EMPLOYEE_PERMS;
       return `<div class="list-item" style="align-items:flex-start;">
-        <span>${esc(e.name)} — موظف عند ${m ? esc(m.shop) : 'تاجر محذوف'}<br>
+        <span>${esc(e.name)} — ${ownerLabel}<br>
           <span style="color:var(--text-mute); font-size:11px;">${esc(e.phone) || '—'}</span><br>
-          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات المطلوبة: ${e.permissions.map(id => labelForPerm(MERCHANT_EMPLOYEE_PERMS, id)).join('، ') || '—'}</span>
+          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات المطلوبة: ${e.permissions.map(id => labelForPerm(permsList, id)).join('، ') || '—'}</span>
         </span>
         <span>
           <button class="btn small" onclick="openApproveEmployeeModal(${e.id})">قبول وتحديد بيانات الدخول</button>
@@ -1116,12 +1336,19 @@ function renderEmployees() {
 
   const activeBox = document.getElementById('active-merchant-employee-list');
   if (activeBox) {
-    const list = data.employees.filter(e => e.ownerType === 'merchant' && e.status === 'active');
-    activeBox.innerHTML = list.length === 0 ? '<div class="empty">ما فيه موظفين نشطين عند التجار حالياً</div>' : list.map(e => {
-      const m = data.merchants.find(x => x.id === e.merchantId);
+    // موظفين نشطين — عند تجار أو عند مناديب توصيل (نفس منطق قائمة الطلبات فوق).
+    const list = data.employees.filter(e => (e.ownerType === 'merchant' || e.ownerType === 'agent_employee') && e.status === 'active');
+    activeBox.innerHTML = list.length === 0 ? '<div class="empty">ما فيه موظفين نشطين حالياً</div>' : list.map(e => {
+      const isAgentEmp = e.ownerType === 'agent_employee';
+      const owner = isAgentEmp ? data.employees.find(x => x.id === e.agentId && x.ownerType === 'delivery_agent') : data.merchants.find(x => x.id === e.merchantId);
+      const ownerLabel = isAgentEmp
+        ? `عند مندوب توصيل ${owner ? esc(owner.companyName || owner.name) : 'محذوف'}`
+        : `عند ${owner ? esc(owner.shop) : 'تاجر محذوف'}`;
+      const permsList = isAgentEmp ? AGENT_EMPLOYEE_PERMS : MERCHANT_EMPLOYEE_PERMS;
+      const ownerNoun = isAgentEmp ? 'المندوب' : 'التاجر';
       return `<div class="list-item" style="align-items:flex-start;">
-        <span>${esc(e.name)} — عند ${m ? esc(m.shop) : 'تاجر محذوف'}<br>
-          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات (يحددها التاجر): ${e.permissions.map(id => labelForPerm(MERCHANT_EMPLOYEE_PERMS, id)).join('، ') || '—'}</span>
+        <span>${esc(e.name)} — ${ownerLabel}<br>
+          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات (يحددها ${ownerNoun}): ${e.permissions.map(id => labelForPerm(permsList, id)).join('، ') || '—'}</span>
         </span>
         <span>
           <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${e.id})">تصفير كلمة المرور</button>

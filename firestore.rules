@@ -89,6 +89,24 @@ service cloud.firestore {
       return isDeliveryAgent() && orderDoc.deliveryAgentId == employeeDoc().id;
     }
 
+    // موظف تابع لمندوب توصيل معيّن (ownerType: 'agent_employee') — نفس مجموعة employees،
+    // عنده صلاحية معيّنة من صلاحيات AGENT_EMPLOYEE_PERMS ونشط. لا حاجة هنا لأي get() إضافي
+    // (خلاف isMerchantEmployee تحت): agentId المخزّن بوثيقة الموظف هو نفسه الحقل المحلي "id"
+    // تاع وثيقة المندوب الحقيقي، فتتم كل المطابقة مباشرة من وثيقة الموظف نفسه.
+    function isAgentEmployeeWithAny(perms) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && employeeDoc().ownerType == 'agent_employee'
+        && employeeDoc().status == 'active'
+        && employeeDoc().permissions.hasAny(perms);
+    }
+
+    // هل نفس موظف المندوب المسجل دخوله (بأي صلاحية من اللي مررناها) تابع لنفس المندوب
+    // المكلّف بهذا الطلب تحديداً.
+    function isAssignedAgentEmployeeForOrder(orderDoc, perms) {
+      return isAgentEmployeeWithAny(perms) && orderDoc.deliveryAgentId == employeeDoc().agentId;
+    }
+
     // هل نفس التاجر مسجّل دخوله (uid المسجل = uid وثيقة التاجر نفسها).
     function isMerchantSelf(merchantUid) {
       return signedIn() && request.auth.uid == merchantUid;
@@ -133,6 +151,16 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/merchants/$(request.auth.uid)) &&
         resource.data.merchantId ==
           get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id;
+    }
+
+    // نفس فكرة isOwningMerchantOfEmployee فوق بس لمندوب توصيل صاحب موظف تابع له
+    // (resource.data.ownerType == 'agent_employee'). ما تحتاج get() إضافي — agentId
+    // بوثيقة الموظف يطابق مباشرة الحقل المحلي "id" تاع وثيقة المندوب نفسه (employeeDoc()).
+    function isOwningAgentOfEmployee() {
+      return signedIn() &&
+        resource.data.ownerType == 'agent_employee' &&
+        isDeliveryAgent() &&
+        resource.data.agentId == employeeDoc().id;
     }
 
     // ---------------------------------------------------------------------------------
@@ -183,10 +211,12 @@ service cloud.firestore {
     //     بالكود يستدعى من نفس الدوال اللي يشغّلها زر المندوب بلوحته (markInvoiceDelivered/
     //     markInvoiceReceivedByShipping/confirmReturnOrderGroup)، ما فيه أي إجراء حساس
     //     ثاني يوصله المندوب أصلاً حتى يستغل هذي الصلاحية.
+    //   • موظف تابع لمندوب (isAgentEmployeeWithAny(['orders'])) — نفس الشي بالضبط، لأنه
+    //     يقدر يضغط نفس الأزرار (واصل/استلمتها/غير واصل) إذا عنده صلاحية "orders".
     // ---------------------------------------------------------------------------------
     match /storage/audit-log {
       allow read: if true;
-      allow write: if isAdmin() || isAdminEmployee('requests') || isDeliveryAgent();
+      allow write: if isAdmin() || isAdminEmployee('requests') || isDeliveryAgent() || isAgentEmployeeWithAny(['orders']);
     }
 
     // ---------------------------------------------------------------------------------
@@ -291,17 +321,18 @@ service cloud.firestore {
     // ---------------------------------------------------------------------------------
     match /employees/{empUid} {
       // مقيّدة الآن: الأدمن يشوف الكل، الموظف يشوف وثيقته هو بس (لازم هذا يشتغل فور
-      // تسجيل الدخول — راجع تعديل platformLogin بالكود)، والتاجر يشوف موظفينه هو بس.
+      // تسجيل الدخول — راجع تعديل platformLogin بالكود)، والتاجر أو المندوب يشوف موظفينه هو بس.
       allow read: if isAdmin() ||
         (signedIn() && request.auth.uid == empUid) ||
-        isOwningMerchantOfEmployee();
+        isOwningMerchantOfEmployee() ||
+        isOwningAgentOfEmployee();
       allow create: if isAdmin();
-      allow delete: if isAdmin() || isOwningMerchantOfEmployee();
+      allow delete: if isAdmin() || isOwningMerchantOfEmployee() || isOwningAgentOfEmployee();
 
-      // التاجر يعدّل صلاحيات (permissions فقط) موظفه هو، الأدمن يعدّل أي شي
+      // التاجر/المندوب يعدّل صلاحيات (permissions فقط) موظفه هو، الأدمن يعدّل أي شي
       allow update: if isAdmin() ||
         (
-          isOwningMerchantOfEmployee() &&
+          (isOwningMerchantOfEmployee() || isOwningAgentOfEmployee()) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['permissions']) &&
           request.resource.data.authUid == resource.data.authUid &&
           request.resource.data.status == resource.data.status
@@ -312,19 +343,32 @@ service cloud.firestore {
     // employee_requests/{id} — طلبات موظفين لتجار (بانتظار موافقة الأدمن)
     // ---------------------------------------------------------------------------------
     match /employee_requests/{id} {
-      // مقيّدة: الأدمن يشوف كل الطلبات، والتاجر يشوف بس الطلبات اللي تخص موظفينه هو
-      // (Firestore يفلتر نتائج listCollection وثيقة وثيقة — التاجر ما يشوف طلبات تاجر ثاني).
+      // مقيّدة: الأدمن يشوف كل الطلبات، التاجر يشوف بس الطلبات اللي تخص موظفينه هو، والمندوب
+      // يشوف بس الطلبات اللي تخص موظفيه هو (Firestore يفلتر نتائج listCollection وثيقة
+      // وثيقة — ولا واحد يشوف طلبات تاجر/مندوب ثاني).
       allow read: if isAdmin() ||
         (signedIn() &&
          exists(/databases/$(database)/documents/merchants/$(request.auth.uid)) &&
          resource.data.merchantId ==
-           get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id);
+           get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id) ||
+        (isDeliveryAgent() && resource.data.ownerType == 'agent_employee' && resource.data.agentId == employeeDoc().id);
       allow create: if signedIn() &&
-        request.resource.data.ownerType == 'merchant' &&
-        request.resource.data.status == 'pending' &&
-        request.resource.data.authUid == null &&
-        request.resource.data.merchantId ==
-          get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id;
+        (
+          (
+            request.resource.data.ownerType == 'merchant' &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.authUid == null &&
+            request.resource.data.merchantId ==
+              get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id
+          ) ||
+          (
+            request.resource.data.ownerType == 'agent_employee' &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.authUid == null &&
+            isDeliveryAgent() &&
+            request.resource.data.agentId == employeeDoc().id
+          )
+        );
       allow update: if false;
       allow delete: if isAdmin();
     }
@@ -345,7 +389,10 @@ service cloud.firestore {
         isMerchantEmployeeWithAny(resource.data.merchantAuthUid, ['orders', 'charts', 'earnings']) ||
         // مندوب توصيل: يشوف بس الطلبات المخصصة له تحديداً (deliveryAgentId == معرّفه) —
         // ما يشوف طلبات مندوبين ثانين ولا طلبات محلات ما هو مسؤول عنها.
-        isAssignedAgentForOrder(resource.data);
+        isAssignedAgentForOrder(resource.data) ||
+        // موظف تابع لمندوب: نفس الشي بالضبط، بس مصرّح له فقط إذا عنده صلاحية "orders" أو
+        // "history" أو "accounts" (الثلاثة تعرض طلبات — شوف AGENT_PERM_TO_TAB بالكود).
+        isAssignedAgentEmployeeForOrder(resource.data, ['orders', 'history', 'accounts']);
 
       allow create: if
         request.resource.data.status == 'pending' &&
@@ -365,6 +412,13 @@ service cloud.firestore {
           // مندوب التوصيل: يقدر بس يحدّث حالة التوصيل وسبب الإرجاع لطلبه هو المخصص له —
           // ما يقدر يلمس السعر ولا بيانات الزبون ولا يحوّل الطلب لمندوب/تاجر ثاني.
           isAssignedAgentForOrder(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
+          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
+        ) ||
+        (
+          // موظف تابع لمندوب وعنده صلاحية "orders" بس: نفس الشي بالضبط — يقدر يضغط
+          // نفس أزرار (واصل/استلمتها/غير واصل) اللي يضغطها المندوب نفسه.
+          isAssignedAgentEmployeeForOrder(resource.data, ['orders']) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
           request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
         ) ||

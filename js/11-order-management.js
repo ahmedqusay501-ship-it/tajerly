@@ -190,7 +190,7 @@ function deliveryStatusBadgeClass(status) {
 function renderOwnDeliveryAreaPricing() {
   const box = document.getElementById('own-delivery-area-pricing');
   if (!box) return;
-  if (!ownDeliveryState.enabled) { box.innerHTML = ''; return; }
+  if (ownDeliveryState.source !== 'merchant') { box.innerHTML = ''; return; }
   const allowedGovs = ownDeliveryState.governorates.length ? ownDeliveryState.governorates : IRAQ_GOVERNORATES;
   box.innerHTML = `
     <label style="margin-top:12px;">أسعار التوصيل حسب المنطقة (اختياري)</label>
@@ -308,7 +308,9 @@ async function handOverInvoiceToShipping(groupId, btn) {
     o.deliveryStatus = 'with_shipping';
     o.deliveryAgentId = agent ? agent.id : null;
     o.deliveryAssignedAt = new Date().toISOString(); // متى انسلمت الفاتورة فعلياً — يُستخدم لتنبيه "تأخر بعهدة المندوب"
-    o.agentFeeSnapshot = agent ? agent.deliveryFee : 0;
+    // أجرة المندوب هنا مش رقم ثابت دايماً — تعتمد على محافظة/منطقة الزبون والسرعة المختارة
+    // (شوف agentDeliveryQuote بـ 03-storage-firebase.js وقائمة deliveryZones تاع المندوب).
+    o.agentFeeSnapshot = agent ? agentDeliveryQuote(agent, o.governorate, o.area, o.shippingSpeed).fee : 0;
     o.agentCommissionTypeSnapshot = agent ? agent.commissionType : 'fixed';
     o.agentCommissionValueSnapshot = agent ? agent.commissionValue : 0;
     o.returnReason = o.returnReason || '';
@@ -334,7 +336,12 @@ async function handOverInvoiceToShipping(groupId, btn) {
     renderAll();
     return;
   }
-  showToast(agent ? `تم تسليم الفاتورة كاملة (${items.length} قطعة) لمندوب التوصيل: ${agent.name}` : `تم تسليم الفاتورة كاملة (${items.length} قطعة) للتوصيل — بانتظار تأكيد الأدمن`);
+  // تنبيه بصري بس (ما يوقف التسليم) لو منطقة/محافظة أول قطعة بالفاتورة غير مسعّرة أصلاً عند
+  // هذا المندوب — يعني الأدمن ما حدد له سعر توصيل لهذا المكان، فالأجرة المحفوظة راحت 0.
+  const notCovered = agent && items[0] && !agentCoversLocation(agent, items[0].governorate, items[0].area);
+  showToast(agent
+    ? `تم تسليم الفاتورة كاملة (${items.length} قطعة) لمندوب التوصيل: ${agent.name}${notCovered ? ' — تنبيه: هذا المندوب ما عنده سعر محدد لمنطقة الزبون، الأجرة انحفظت 0' : ''}`
+    : `تم تسليم الفاتورة كاملة (${items.length} قطعة) للتوصيل — بانتظار تأكيد الأدمن`);
   renderAll();
 }
 
@@ -932,10 +939,58 @@ function returnReasonLine(o) {
 // An agent only ever sees invoices assigned specifically to them (deliveryAgentId ==
 // their own employee id) — see isAssignedAgentForOrder() in firestore.rules for the
 // server-side enforcement of the exact same restriction.
-let agentDashboardTab = 'active'; // 'active' (بعهدته حالياً) | 'history' (آخر 30 يوم)
+let agentDashboardTab = 'active'; // 'active' (بعهدته حالياً) | 'history' (آخر 30 يوم) | 'accounts' | 'employees'
 function showAgentDashboardTab(tab) {
   agentDashboardTab = tab;
   renderAgentOrders();
+}
+
+// Which real delivery-agent record ('employees' doc, ownerType 'delivery_agent') should
+// scope the orders/history/accounts shown right now: the signed-in agent themself, or — if
+// this is one of the agent's OWN employees (ownerType 'agent_employee') — the agent they work
+// under (matched via agentId, the same local-numeric-id scheme merchantId uses for a
+// merchant's employees). Returns null if that owning agent's account was ever deleted.
+function agentScopeRecord(emp) {
+  if (!emp) return null;
+  if (emp.ownerType === 'delivery_agent') return emp;
+  if (emp.ownerType === 'agent_employee') {
+    return data.employees.find(a => a.id === emp.agentId && a.ownerType === 'delivery_agent') || null;
+  }
+  return null;
+}
+
+// Maps an agent-employee permission to the dashboard sub-tab it unlocks. 'employees' (adding/
+// managing the agent's own team) is deliberately absent — never delegable, same principle as
+// MERCHANT_EMPLOYEE_PERMS not delegating 'employees' — so it's excluded here even if an
+// employee's permissions array were ever tampered with to include it.
+const AGENT_PERM_TO_TAB = { orders: 'active', history: 'history', accounts: 'accounts' };
+
+// Returns null for the real agent (sees every tab, including "موظفيني"), or the array of
+// sub-tab ids their own employee is allowed to use, per the permissions the agent granted them.
+function agentPanelAllowedTabs(emp) {
+  if (!emp || emp.ownerType !== 'agent_employee') return null;
+  return emp.permissions.map(p => AGENT_PERM_TO_TAB[p]).filter(Boolean);
+}
+
+function applyAgentEmployeeGating() {
+  const emp = currentEmployee();
+  const tabsEl = document.getElementById('agent-dashboard-tabs');
+  if (!tabsEl) return;
+  const isRealAgent = !!(emp && emp.ownerType === 'delivery_agent');
+  const allowed = agentPanelAllowedTabs(emp);
+  tabsEl.querySelectorAll('.toggle').forEach(btn => {
+    const tab = btn.dataset.agenttab;
+    // 'employees' (managing the agent's own team) stays owner-only, same as the merchant
+    // panel's applyEmployeeGating() above.
+    const visible = tab === 'employees' ? isRealAgent : (allowed === null || allowed.includes(tab));
+    btn.style.display = visible ? '' : 'none';
+  });
+  // If the tab that would open by default isn't one this viewer is allowed to see
+  // (permissions changed, or this is their first visit), fall back to the first tab they do
+  // have access to.
+  if (allowed !== null && !allowed.includes(agentDashboardTab)) {
+    agentDashboardTab = allowed[0] || 'active';
+  }
 }
 
 // "متأخرة" — بعهدة المندوب أكثر من 24 ساعة وما انسجلت واصلة ولا راجعة بعد. تنبيه بصري
@@ -958,23 +1013,28 @@ let agentAlertTrackedEmpId = null; // which agent's assignments we're currently 
 let seenAgentOrderGroupIds = null; // Set of group ids already known about
 let agentAlertAutoStopHandle = null;
 
-function agentActiveOrderGroupIds(emp) {
-  const items = data.orders.filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping') && !o.cancelled);
+// Takes the SCOPE record (see agentScopeRecord) — the real agent whose invoices these are,
+// whether the viewer is that agent themself or one of their own employees.
+function agentActiveOrderGroupIds(agent) {
+  const items = data.orders.filter(o => o.deliveryAgentId === agent.id && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping') && !o.cancelled);
   return groupOrders(items).map(g => g.groupId);
 }
 
-function seedAgentAlertTracking(emp) {
-  seenAgentOrderGroupIds = new Set(agentActiveOrderGroupIds(emp));
+// emp = the real signed-in identity (tracking key — a fresh session, even a different
+// employee of the same agent, should seed fresh rather than reuse another session's "seen"
+// state); agent = the scope record whose invoices are actually being watched.
+function seedAgentAlertTracking(emp, agent) {
+  seenAgentOrderGroupIds = new Set(agentActiveOrderGroupIds(agent));
   agentAlertTrackedEmpId = emp.id;
 }
 
 // Called on every renderAgentOrders() (i.e. every 5s poll tick — see renderAll). Cheap: just
 // an array filter + set lookup over data already in memory, same as the admin/merchant checks.
-function checkAgentAlertsAndNotify(emp) {
-  const activeIds = agentActiveOrderGroupIds(emp);
+function checkAgentAlertsAndNotify(emp, agent) {
+  const activeIds = agentActiveOrderGroupIds(agent);
   setNavBadgeCount('delivery_agent', activeIds.length);
 
-  if (agentAlertTrackedEmpId !== emp.id) { seedAgentAlertTracking(emp); return; } // جلسة جديدة لهذا المندوب — ما ننذر على شغل قديم أصلاً موجود
+  if (agentAlertTrackedEmpId !== emp.id) { seedAgentAlertTracking(emp, agent); return; } // جلسة جديدة — ما ننذر على شغل قديم أصلاً موجود
   const newIds = activeIds.filter(id => !seenAgentOrderGroupIds.has(id));
   seenAgentOrderGroupIds = new Set(activeIds);
   if (newIds.length > 0 && agentAlertSoundEnabled) playAgentAlertAlarm(newIds.length);
@@ -1027,10 +1087,15 @@ function toggleAgentAlertSound() {
   if (typeof renderAgentOrders === 'function') renderAgentOrders();
 }
 
-function renderAgentPersonalSummary(emp) {
+// emp = the real signed-in identity (for the alert-sound toggle, a per-browser-session
+// preference); agent = the scope record whose invoices/fees these numbers describe. For the
+// agent themself these are the same record; for one of the agent's own employees, "you" in
+// the labels below still means the agent's business (their fees, their merchants) — the
+// employee is just viewing it, not earning it personally.
+function renderAgentPersonalSummary(emp, agent) {
   const box = document.getElementById('agent-personal-summary');
   if (!box) return;
-  const finished = data.orders.filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
+  const finished = data.orders.filter(o => o.deliveryAgentId === agent.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
   const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
   const sevenDaysAgo = new Date(startOfToday.getTime() - 6 * 86400000);
   const todayDelivered = finished.filter(o => o.deliveryStatus === 'delivered' && new Date(o.date) >= startOfToday).length;
@@ -1038,32 +1103,32 @@ function renderAgentPersonalSummary(emp) {
   const weekDelivered = finished.filter(o => o.deliveryStatus === 'delivered' && new Date(o.date) >= sevenDaysAgo).length;
   const weekReturned = finished.filter(o => o.deliveryStatus === 'returned' && new Date(o.date) >= sevenDaysAgo).length;
   const totalShippingEarned = finished.filter(o => o.deliveryStatus === 'delivered').reduce((s, o) => s + (o.agentFeeSnapshot || 0), 0);
-  const overdueCount = agentPendingCustodyOrders(emp.id).filter(isAgentOrderOverdue).length;
-  const commissionLabel = emp.commissionType === 'percentage' ? `${emp.commissionValue}% لكل طلب` : `${emp.commissionValue.toLocaleString()} د لكل طلب`;
+  const overdueCount = agentPendingCustodyOrders(agent.id).filter(isAgentOrderOverdue).length;
+  const commissionLabel = agent.commissionType === 'percentage' ? `${agent.commissionValue}% لكل طلب` : `${agent.commissionValue.toLocaleString()} د لكل طلب`;
   box.innerHTML = `
     <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
       <button class="btn small ${agentAlertSoundEnabled ? '' : 'secondary'}" onclick="toggleAgentAlertSound()">${agentAlertSoundEnabled ? '🔔 التنبيه الصوتي مفعّل' : '🔕 فعّل تنبيه الفواتير الجديدة'}</button>
     </div>
     <div class="grid3">
-      <div class="stat"><div class="stat-num">${emp.merchantIds.length}</div><div class="stat-label">عدد التجار المسؤول عنهم</div></div>
+      <div class="stat"><div class="stat-num">${agent.merchantIds.length}</div><div class="stat-label">عدد التجار المسؤول عنهم</div></div>
       <div class="stat"><div class="stat-num">${todayDelivered}</div><div class="stat-label">واصلة اليوم</div></div>
       <div class="stat"><div class="stat-num">${todayReturned}</div><div class="stat-label">راجعة اليوم</div></div>
       <div class="stat"><div class="stat-num">${weekDelivered}</div><div class="stat-label">واصلة آخر 7 أيام</div></div>
       <div class="stat"><div class="stat-num">${weekReturned}</div><div class="stat-label">راجعة آخر 7 أيام</div></div>
-      <div class="stat"><div class="stat-num">${totalShippingEarned.toLocaleString()}</div><div class="stat-label">مجموع أجور توصيلك (د)</div></div>
-      <div class="stat"><div class="stat-num" style="color:${overdueCount > 0 ? '#B3261E' : 'inherit'};">${overdueCount}</div><div class="stat-label">طلبات متأخرة بعهدتك (+24 ساعة)</div></div>
+      <div class="stat"><div class="stat-num">${totalShippingEarned.toLocaleString()}</div><div class="stat-label">مجموع أجور التوصيل (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${overdueCount > 0 ? '#B3261E' : 'inherit'};">${overdueCount}</div><div class="stat-label">طلبات متأخرة (+24 ساعة)</div></div>
     </div>
     <div style="font-size:12px; color:var(--text-mute); margin-top:8px; border-top:1px dashed #EEE; padding-top:8px;">
-      أجرة التوصيل الأساسية لك: <b>${emp.deliveryFee.toLocaleString()} د</b> لكل طلب — عمولة المنصة منك: <b>${commissionLabel}</b>
+      أجرة التوصيل الأساسية: <b>${agent.deliveryFee.toLocaleString()} د</b> لكل طلب — عمولة المنصة: <b>${commissionLabel}</b>
     </div>
   `;
 }
 
-function renderAgentActiveOrders(emp) {
+function renderAgentActiveOrders(agent) {
   const el = document.getElementById('agent-orders-list');
   if (!el) return;
   const mine = data.orders
-    .filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping') && !o.cancelled)
+    .filter(o => o.deliveryAgentId === agent.id && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping') && !o.cancelled)
     .slice().reverse();
   if (mine.length === 0) {
     el.innerHTML = '<div class="empty">ما فيه طلبات موكلة لك حالياً</div>';
@@ -1102,11 +1167,11 @@ function renderAgentActiveOrders(emp) {
 // آخر 30 يوم من طلبات المندوب المنتهية (واصلة/راجعة) — نفس فكرة buildAgentLedgerDays
 // بملف المحاسبة، بس هذي نسخة للقراءة بس (بدون أي أزرار تسديد/حذف — تلك خاصة بالأدمن) حتى
 // يراجع المندوب شغله القديم ويعرف هل الأدمن سجّل تسديد يومه ولا لسا.
-function renderAgentHistory(emp) {
+function renderAgentHistory(agent) {
   const el = document.getElementById('agent-orders-list');
   if (!el) return;
   const thirtyDaysAgo = Date.now() - 30 * 86400000;
-  const finished = data.orders.filter(o => o.deliveryAgentId === emp.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned') && new Date(o.date).getTime() >= thirtyDaysAgo);
+  const finished = data.orders.filter(o => o.deliveryAgentId === agent.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned') && new Date(o.date).getTime() >= thirtyDaysAgo);
   if (finished.length === 0) { el.innerHTML = '<div class="empty">ما فيه طلبات منتهية بآخر 30 يوم</div>'; return; }
   const byDay = new Map();
   finished.forEach(o => {
@@ -1116,7 +1181,7 @@ function renderAgentHistory(emp) {
   });
   const days = Array.from(byDay.entries()).sort((a, b) => b[0].localeCompare(a[0]));
   el.innerHTML = days.map(([dateKey, bucket]) => {
-    const settled = isAgentDaySettled(emp.id, dateKey);
+    const settled = isAgentDaySettled(agent.id, dateKey);
     const shippingTotal = bucket.delivered.reduce((s, o) => s + (o.agentFeeSnapshot || 0), 0);
     return `<div class="card" style="margin-top:10px;">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -1156,15 +1221,15 @@ function buildAgentSelfMerchantTotals(agentId) {
   return Object.values(byMerchant).sort((a, b) => b.platformCommission - a.platformCommission);
 }
 
-function renderAgentSelfAccounts(emp) {
+function renderAgentSelfAccounts(agent) {
   const el = document.getElementById('agent-orders-list');
   if (!el) return;
-  const rows = buildAgentSelfMerchantTotals(emp.id);
+  const rows = buildAgentSelfMerchantTotals(agent.id);
   const totalCount = rows.reduce((s, r) => s + r.count, 0);
   const totalShipping = rows.reduce((s, r) => s + r.shippingDue, 0);
   const totalCommission = rows.reduce((s, r) => s + r.platformCommission, 0);
   const totalNetDue = rows.reduce((s, r) => s + r.merchantNetDue, 0);
-  const commissionLabel = emp.commissionType === 'percentage' ? `${emp.commissionValue}% من كل طلب` : `${emp.commissionValue.toLocaleString()} د لكل طلب`;
+  const commissionLabel = agent.commissionType === 'percentage' ? `${agent.commissionValue}% من كل طلب` : `${agent.commissionValue.toLocaleString()} د لكل طلب`;
 
   let html = `
     <div class="subtitle" style="margin-bottom:8px;">حسابك مع كل تاجر تسلّم منه فواتير — عمولة المنصة منك محسوبة حسب: <b>${commissionLabel}</b>. هذا عرض للقراءة بس؛ التسديد والتعديلات يديرها الأدمن.</div>
@@ -1201,13 +1266,37 @@ function renderAgentSelfAccounts(emp) {
 function renderAgentOrders() {
   const emp = currentEmployee();
   if (!emp) return;
-  renderAgentPersonalSummary(emp);
-  checkAgentAlertsAndNotify(emp);
+  applyAgentEmployeeGating(); // may fall back agentDashboardTab if the current one isn't allowed
   const tabsEl = document.getElementById('agent-dashboard-tabs');
   if (tabsEl) {
     tabsEl.querySelectorAll('.toggle').forEach(t => t.classList.toggle('selected', t.dataset.agenttab === agentDashboardTab));
   }
-  if (agentDashboardTab === 'history') renderAgentHistory(emp);
-  else if (agentDashboardTab === 'accounts') renderAgentSelfAccounts(emp);
-  else renderAgentActiveOrders(emp);
+  const agent = agentScopeRecord(emp);
+  if (!agent) {
+    // نادر: المندوب الأصلي انحذف — ما فيه بيانات نعرضها لموظفه
+    const el = document.getElementById('agent-orders-list');
+    if (el) el.innerHTML = '<div class="empty">حساب المندوب المسؤول عنك محذوف — تواصل مع الإدارة</div>';
+    const box = document.getElementById('agent-personal-summary');
+    if (box) box.innerHTML = '';
+    return;
+  }
+  renderAgentPersonalSummary(emp, agent);
+  checkAgentAlertsAndNotify(emp, agent);
+  if (agentDashboardTab === 'employees') renderAgentOwnEmployeesPanel(agent);
+  else if (agentDashboardTab === 'history') renderAgentHistory(agent);
+  else if (agentDashboardTab === 'accounts') renderAgentSelfAccounts(agent);
+  else renderAgentActiveOrders(agent);
+}
+
+// The "موظفيني" sub-tab, real-agent-only (see applyAgentEmployeeGating) — same shape as the
+// merchant's own "الموظفين" sub-tab (renderMerchantEmployeesList in
+// 08-admin-requests-employees-creds.js), just scoped to this agent's own team instead.
+function renderAgentOwnEmployeesPanel(agent) {
+  const el = document.getElementById('agent-orders-list');
+  if (!el) return;
+  el.innerHTML = `
+    <div class="subtitle" style="margin-bottom:8px;">ضيف موظف يساعدك بالتوصيل وحدد الصلاحيات اللي تريده يشتغل بيها بس (الطلبات بعهدتك، السجل، حساباتك مع التجار) — طلبك يروح للأدمن يجهز للموظف يوزر نيم وباسورد دخول</div>
+    <button class="btn" onclick="openAddAgentEmployeeModal()">إضافة موظف</button>
+    <div style="margin-top:10px;">${renderAgentOwnEmployeesList(agent.id)}</div>
+  `;
 }

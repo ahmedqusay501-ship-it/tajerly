@@ -164,6 +164,19 @@ function ensureMerchantTheme(m) {
   // "own delivery" modal (see renderOwnDeliveryAreaPricing / confirmOwnDelivery). The merchant
   // can't edit these themselves. Falls back to ownDeliveryPrice for any area without its own price.
   if (!m.ownDeliveryAreaPrices || typeof m.ownDeliveryAreaPrices !== 'object') m.ownDeliveryAreaPrices = {};
+  // Which of the three delivery prices the CUSTOMER actually sees/pays at checkout, per
+  // merchant, admin-controlled only (see openOwnDeliveryModal / confirmOwnDelivery in
+  // js/15-admin-tools.js): 'merchant' (m.ownDeliveryPrice/areaPrices — same meaning as
+  // ownDelivery:true always had), 'platform' (data.settings.shippingZones, the old default),
+  // or 'agent' (the merchant's currently assigned delivery agent's own deliveryZones pricing —
+  // see agentDeliveryQuote in js/03-storage-firebase.js). This is purely about WHICH PRICE is
+  // shown; it never changes the fulfillment workflow (m.ownDelivery still decides whether the
+  // order skips the platform's shipping/agent-handover queue). Migrated once from the old
+  // boolean so existing merchants keep behaving exactly like before until the admin explicitly
+  // picks 'agent' for them.
+  if (m.deliveryPriceSource !== 'agent' && m.deliveryPriceSource !== 'platform' && m.deliveryPriceSource !== 'merchant') {
+    m.deliveryPriceSource = m.ownDelivery ? 'merchant' : 'platform';
+  }
   if (!m.feeType) m.feeType = 'fixed';
   if (typeof m.itemDeduction !== 'number') m.itemDeduction = data.settings.itemDeduction || 0;
   // Admin-set exemption: items priced at or below this amount pay zero platform fee (and

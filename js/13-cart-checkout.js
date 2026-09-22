@@ -292,27 +292,61 @@ function updateCheckoutDelivery() {
   if (!currentCheckout) return;
   const m = data.merchants.find(x => x.id === currentCheckout.merchantId);
   const governorate = document.getElementById('co-governorate').value;
-  // Merchant handles their own delivery (see toggleMerchantOwnDelivery) — the platform's
-  // shipping zones / fast-slow pricing never applied to them, so skip straight to a flat
-  // zero delivery fee instead of looking any of that up.
-  const zone = (!m.ownDelivery && data.settings.shippingEnabled) ? findShippingZone(governorate) : null;
+  const area = document.getElementById('co-area').value;
 
-  // السرعة الفعلية المتاحة = تتوفر بالمنطقة (zoneOffersSpeed) وتتوفر عند هذا التاجر تحديداً
-  // (merchantOffersSpeed، اللي يحددها الأدمن وقت القبول). لو ما فيه تقاطع أصلاً (سوء إعداد
-  // نادر)، نرجع لسلوك المنطقة القديم حتى ما ينكسر الشراء.
-  const canFast = !m.ownDelivery && zoneOffersSpeed(zone, 'fast') && merchantOffersSpeed(m, 'fast');
-  const canSlow = !m.ownDelivery && zoneOffersSpeed(zone, 'slow') && merchantOffersSpeed(m, 'slow');
+  // Three possible delivery-price sources, chosen by the admin per merchant (see
+  // openOwnDeliveryModal in js/15-admin-tools.js): 'merchant' (m.ownDelivery — unchanged,
+  // handled below), 'platform' (data.settings.shippingZones — the old default) or 'agent'
+  // (the merchant's currently assigned delivery agent's own zone pricing). Only 'platform'
+  // vs 'agent' is new here; m.ownDelivery keeps meaning exactly what it always did.
+  const useAgentPricing = !m.ownDelivery && m.deliveryPriceSource === 'agent';
+  const agent = useAgentPricing ? deliveryAgentForMerchant(m.id) : null;
+  // Case 1 (no agent assigned at all) and case 2 (agent assigned but not priced for this
+  // exact governorate/area) both mean "no delivery available" for the customer — see
+  // agentDeliveryQuote's covered:false in js/03-storage-firebase.js. Case 1 additionally
+  // surfaces as an ongoing admin alert (see merchantsMissingAssignedAgent in
+  // js/18-admin-alerts.js) since it's a merchant-wide misconfiguration, not just one area.
+  const noAgentAssigned = useAgentPricing && !agent;
+  const agentQuote = (useAgentPricing && agent) ? {
+    fast: agentDeliveryQuote(agent, governorate, area, 'fast'),
+    slow: agentDeliveryQuote(agent, governorate, area, 'slow')
+  } : null;
+
+  // Merchant handles their own delivery — the platform's shipping zones / fast-slow pricing
+  // never applied to them, so skip straight to their own flat/area price below.
+  const zone = (!m.ownDelivery && !useAgentPricing && data.settings.shippingEnabled) ? findShippingZone(governorate) : null;
+
+  // السرعة الفعلية المتاحة = تتوفر بالمنطقة وتتوفر عند هذا التاجر تحديداً (merchantOffersSpeed،
+  // اللي يحددها الأدمن وقت القبول). لو ما فيه تقاطع أصلاً (سوء إعداد نادر)، نرجع لسلوك المنطقة
+  // القديم حتى ما ينكسر الشراء.
+  let canFast, canSlow;
+  if (useAgentPricing) {
+    canFast = !noAgentAssigned && agentQuote.fast.covered && merchantOffersSpeed(m, 'fast');
+    canSlow = !noAgentAssigned && agentQuote.slow.covered && merchantOffersSpeed(m, 'slow');
+  } else {
+    canFast = !m.ownDelivery && zoneOffersSpeed(zone, 'fast') && merchantOffersSpeed(m, 'fast');
+    canSlow = !m.ownDelivery && zoneOffersSpeed(zone, 'slow') && merchantOffersSpeed(m, 'slow');
+  }
   if (checkoutSpeed === 'fast' && !canFast && canSlow) checkoutSpeed = 'slow';
   else if (checkoutSpeed === 'slow' && !canSlow && canFast) checkoutSpeed = 'fast';
-  else if (!canFast && !canSlow) checkoutSpeed = zoneOffersSpeed(zone, 'fast') ? 'fast' : 'slow';
+  else if (!canFast && !canSlow && !useAgentPricing) checkoutSpeed = zoneOffersSpeed(zone, 'fast') ? 'fast' : 'slow';
 
-  let deliveryFee;
+  // "التوصيل غير متوفر" — لا مندوب معيّن لهذا المحل، أو المندوب معيّن بس ما مسعّر منطقة/محافظة
+  // الزبون بالضبط. بالحالتين نمنع إتمام الطلب بدل ما نعرض سعر افتراضي غلط (شوف الحارس بـ
+  // checkout-confirm-btn تحت).
+  const deliveryUnavailable = useAgentPricing && (noAgentAssigned || !canFast && !canSlow);
+  const deliveryUnavailableReason = noAgentAssigned
+    ? 'التوصيل غير متوفر لهذا المتجر حالياً — تواصل معنا'
+    : 'التوصيل غير متوفر لمنطقتك المحددة حالياً — جرب منطقة ثانية أو تواصل معنا';
+
+  let deliveryFee = 0;
   let ownDeliveryDaysText = '';
   if (m.ownDelivery) {
-    const area = document.getElementById('co-area').value;
     const areaEntry = ownDeliveryAreaEntry(m.ownDeliveryAreaPrices, governorate, area);
     deliveryFee = areaEntry ? areaEntry.price : (m.ownDeliveryPrice || 0);
     ownDeliveryDaysText = (areaEntry && areaEntry.days) ? areaEntry.days : (m.ownDeliveryDays || '');
+  } else if (useAgentPricing) {
+    if (!deliveryUnavailable) deliveryFee = checkoutSpeed === 'fast' ? agentQuote.fast.fee : agentQuote.slow.fee;
   } else if (zone) {
     deliveryFee = checkoutSpeed === 'fast' ? zone.fastPrice : zone.slowPrice;
   } else {
@@ -334,26 +368,41 @@ function updateCheckoutDelivery() {
   currentCheckout.couponDiscount = couponDiscount;
   currentCheckout.total = total;
   currentCheckout.governorate = governorate;
+  currentCheckout.area = area;
   currentCheckout.shippingSpeed = checkoutSpeed;
+  currentCheckout.deliveryUnavailable = deliveryUnavailable;
+  currentCheckout.deliveryUnavailableReason = deliveryUnavailableReason;
 
   let speedToggles = '';
-  if (!m.ownDelivery) {
+  if (!m.ownDelivery && !deliveryUnavailable) {
     if (canFast) {
-      speedToggles += `<span class="toggle ${checkoutSpeed==='fast'?'selected':''}" onclick="setCheckoutSpeed('fast')">سريع${zone ? ' — ' + zone.fastPrice.toLocaleString() + ' د' : ''}${zone && zone.fastDays ? ' (' + esc(zone.fastDays) + ')' : ''}</span>`;
+      const fastPrice = useAgentPricing ? agentQuote.fast.fee : (zone ? zone.fastPrice : null);
+      const fastDays = useAgentPricing ? agentQuote.fast.days : (zone ? zone.fastDays : '');
+      speedToggles += `<span class="toggle ${checkoutSpeed==='fast'?'selected':''}" onclick="setCheckoutSpeed('fast')">سريع${fastPrice != null ? ' — ' + fastPrice.toLocaleString() + ' د' : ''}${fastDays ? ' (' + esc(fastDays) + ')' : ''}</span>`;
     }
     if (canSlow) {
-      speedToggles += `<span class="toggle ${checkoutSpeed==='slow'?'selected':''}" onclick="setCheckoutSpeed('slow')">بطيء${zone ? ' — ' + zone.slowPrice.toLocaleString() + ' د' : ''}${zone && zone.slowDays ? ' (' + esc(zone.slowDays) + ')' : ''}</span>`;
+      const slowPrice = useAgentPricing ? agentQuote.slow.fee : (zone ? zone.slowPrice : null);
+      const slowDays = useAgentPricing ? agentQuote.slow.days : (zone ? zone.slowDays : '');
+      speedToggles += `<span class="toggle ${checkoutSpeed==='slow'?'selected':''}" onclick="setCheckoutSpeed('slow')">بطيء${slowPrice != null ? ' — ' + slowPrice.toLocaleString() + ' د' : ''}${slowDays ? ' (' + esc(slowDays) + ')' : ''}</span>`;
     }
   }
   document.getElementById('co-speed-toggles').innerHTML = speedToggles;
-  document.getElementById('co-speed-label').style.display = m.ownDelivery ? 'none' : '';
-  const speedDaysText = (!m.ownDelivery && zone) ? (checkoutSpeed === 'fast' ? zone.fastDays : zone.slowDays) : '';
+  document.getElementById('co-speed-label').style.display = (m.ownDelivery || deliveryUnavailable) ? 'none' : '';
+  const speedDaysText = useAgentPricing
+    ? (checkoutSpeed === 'fast' ? agentQuote.fast.days : agentQuote.slow.days)
+    : ((!m.ownDelivery && zone) ? (checkoutSpeed === 'fast' ? zone.fastDays : zone.slowDays) : '');
+
+  const confirmBtn = document.getElementById('checkout-confirm-btn');
+  if (confirmBtn) confirmBtn.disabled = deliveryUnavailable;
 
   document.getElementById('checkout-summary').innerHTML = `
     ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${i.productName}${i.size ? ' (مقاس ' + i.size + ')' : ''}${i.color ? ' — ' + i.color : ''} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()} د</span></div>`).join('')}
     ${couponDiscount > 0 ? `<div class="checkout-line"><span>خصم الكوبون ${esc(currentCheckout.couponCode || '')}</span><span>-${couponDiscount.toLocaleString()} د</span></div>` : ''}
     ${serviceFee > 0 ? `<div class="checkout-line"><span>رسوم خدمة</span><span>${serviceFee.toLocaleString()} د</span></div>` : ''}
-    <div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' + (ownDeliveryDaysText ? ' — ' + esc(ownDeliveryDaysText) : '') : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>
+    ${deliveryUnavailable
+      ? `<div class="checkout-line"><span>التوصيل</span><span style="color:var(--danger, #DC2626);">غير متوفر</span></div>
+         <div style="font-size:12px; color:var(--danger, #DC2626); background:#FEF2F2; padding:8px 10px; border-radius:8px; margin-top:4px;">${esc(deliveryUnavailableReason)}</div>`
+      : `<div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' + (ownDeliveryDaysText ? ' — ' + esc(ownDeliveryDaysText) : '') : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>`}
     <div class="checkout-line total"><span>الإجمالي</span><span>${total.toLocaleString()} د</span></div>
     <div style="font-size:12px; color:var(--accent-dark); background:#F1F5F9; padding:8px 10px; border-radius:8px; margin-top:8px;">
       <b>الدفع عند الاستلام</b> — تدفع المبلغ نقداً لمندوب التوصيل عند وصول طلبك، ما فيه دفع إلكتروني حالياً
@@ -417,6 +466,14 @@ document.getElementById('checkout-confirm-btn').addEventListener('click', async 
   errorBox.textContent = '';
 
   const m = data.merchants.find(x => x.id === c.merchantId);
+
+  // Delivery marked unavailable (no agent assigned to this merchant, or the assigned agent
+  // doesn't price this exact governorate/area) — see updateCheckoutDelivery. Block the order
+  // instead of placing it with a zero/undefined delivery fee.
+  if (c.deliveryUnavailable) {
+    errorBox.textContent = c.deliveryUnavailableReason || 'التوصيل غير متوفر حالياً لهذا الطلب — تواصل معنا';
+    return;
+  }
 
   // Re-check stock right before placing the order, in case something changed
   for (const item of c.items) {
@@ -484,7 +541,7 @@ document.getElementById('checkout-confirm-btn').addEventListener('click', async 
       newOrders.push({
         id: genId(), merchantId: c.merchantId, merchantAuthUid: m.authUid || null, productId: item.productId, productName: item.productName, price: item.price, size: item.size, color: item.color,
         customerName: name, customerPhone: phone, customerAddress: address,
-        governorate: c.governorate, shippingSpeed: c.shippingSpeed,
+        governorate: c.governorate, area: c.area || '', shippingSpeed: c.shippingSpeed,
         feeFromCustomer: fee.customer, feeFromMerchant: fee.merchant, itemDeduction: fee.exempt ? 0 : (m.itemDeduction || 0),
         shippingFee: (idx === 0 && n === 0) ? c.deliveryFee : 0,
         couponCode: couponCode, couponDiscount: unitDiscount,

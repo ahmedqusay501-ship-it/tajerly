@@ -94,7 +94,11 @@ const I18N = {
     perm_products: 'المنتجات',
     perm_appearance: 'المظهر',
     perm_earnings: 'الأرباح والحسابات',
-    perm_charts: 'الرسوم البيانية'
+    perm_charts: 'الرسوم البيانية',
+    perm_agent_orders: 'الطلبات (بعهدة حالياً)',
+    perm_agent_history: 'السجل (آخر 30 يوم)',
+    perm_agent_accounts: 'الحسابات مع التجار',
+    nav_agent_employees: 'موظفيني'
   },
   en: {
     boot_note: 'Getting things ready...',
@@ -176,7 +180,11 @@ const I18N = {
     perm_products: 'Products',
     perm_appearance: 'Appearance',
     perm_earnings: 'Earnings & Accounts',
-    perm_charts: 'Charts'
+    perm_charts: 'Charts',
+    perm_agent_orders: 'Orders (currently assigned)',
+    perm_agent_history: 'History (last 30 days)',
+    perm_agent_accounts: 'Accounts with merchants',
+    nav_agent_employees: 'My Employees'
   },
   ku: {
     boot_note: 'ئامادەکردنی پەڕەکە...',
@@ -258,7 +266,11 @@ const I18N = {
     perm_products: 'بەرهەمەکان',
     perm_appearance: 'ڕووکار',
     perm_earnings: 'قازانج و هەژمارەکان',
-    perm_charts: 'چارتەکان'
+    perm_charts: 'چارتەکان',
+    perm_agent_orders: 'داواکاری (لەژێر بارمتەم)',
+    perm_agent_history: 'مێژوو (٣٠ ڕۆژی ڕابردوو)',
+    perm_agent_accounts: 'حیساب لەگەڵ فرۆشیاران',
+    nav_agent_employees: 'کارمەندەکانم'
   }
 };
 

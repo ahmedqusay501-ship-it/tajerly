@@ -637,14 +637,14 @@
   </div>
 </div>
 
-<!-- ============ EMPLOYEES (admin sets up any employee's login — merchant or admin team) ============ -->
+<!-- ============ EMPLOYEES (admin sets up any employee's login — merchant, admin team, or delivery agent) ============ -->
 <div class="view" id="view-employees">
   <h2>الموظفين</h2>
-  <div class="subtitle">وافق على طلبات موظفي التجار وحدد لهم يوزر نيم وباسورد، أو ضيف موظفين لفريق الإدارة عندك مباشرة</div>
+  <div class="subtitle">وافق على طلبات موظفي التجار ومناديب التوصيل وحدد لهم يوزر نيم وباسورد، أو ضيف موظفين لفريق الإدارة عندك مباشرة</div>
 
   <div class="card" id="pending-employee-card">
-    <div class="card-title">طلبات موظفين جدد (من التجار)</div>
-    <div class="subtitle" style="margin-bottom:8px;">التاجر يحدد بيانات موظفه وصلاحياته، وانت تحدد يوزر نيم وباسورد الدخول تاعه</div>
+    <div class="card-title">طلبات موظفين جدد (من التجار ومناديب التوصيل)</div>
+    <div class="subtitle" style="margin-bottom:8px;">التاجر أو المندوب يحدد بيانات موظفه وصلاحياته، وانت تحدد يوزر نيم وباسورد الدخول تاعه</div>
     <div id="pending-employee-list"><div class="empty">ما فيه طلبات موظفين حالياً</div></div>
   </div>
 
@@ -656,9 +656,9 @@
   </div>
 
   <div class="card" id="active-merchant-employee-card">
-    <div class="card-title">موظفين التجار النشطين</div>
-    <div class="subtitle" style="margin-bottom:8px;">صلاحيات هذولا يحددها التاجر نفسه — انت تكدر تصفّر كلمة المرور أو تحذف الحساب بس</div>
-    <div id="active-merchant-employee-list"><div class="empty">ما فيه موظفين نشطين عند التجار حالياً</div></div>
+    <div class="card-title">موظفين نشطين (تجار ومناديب توصيل)</div>
+    <div class="subtitle" style="margin-bottom:8px;">صلاحيات هذولا يحددها التاجر أو المندوب نفسه — انت تكدر تصفّر كلمة المرور أو تحذف الحساب بس</div>
+    <div id="active-merchant-employee-list"><div class="empty">ما فيه موظفين نشطين حالياً</div></div>
   </div>
 </div>
 
@@ -910,6 +910,7 @@
       <div class="toggle selected" data-agenttab="active" onclick="showAgentDashboardTab('active')">بعهدتي حالياً</div>
       <div class="toggle" data-agenttab="history" onclick="showAgentDashboardTab('history')">السجل (آخر 30 يوم)</div>
       <div class="toggle" data-agenttab="accounts" onclick="showAgentDashboardTab('accounts')">حسابي مع التجار</div>
+      <div class="toggle" data-agenttab="employees" onclick="showAgentDashboardTab('employees')">موظفيني</div>
     </div>
     <div class="subtitle" style="margin-bottom:8px;">هذي الطلبات الموكلة لك حصراً. سجّل كل فاتورة بمجرد ما تستلمها، وبعدين واصل أو غير واصل (مع كتابة السبب).</div>
     <div id="agent-orders-list"><div class="empty">جاري التحميل...</div></div>
@@ -1296,17 +1297,21 @@
 <!-- Admin: mark a merchant as handling delivery themselves + set their special delivery price -->
 <div class="modal-overlay" id="own-delivery-modal">
   <div class="modal-box" style="max-height:85vh; overflow-y:auto;">
-    <div class="modal-title" id="own-delivery-title">توصيل خاص بالمحل</div>
+    <div class="modal-title" id="own-delivery-title">مصدر سعر التوصيل</div>
+    <div class="subtitle" style="margin-bottom:6px;">تحدد وين يوخذ سعر التوصيل اللي يشوفه ويدفعه الزبون لهذا المحل بالضبط — هذا الخيار من صلاحية الأدمن حصراً.</div>
     <div class="toggle-group" id="own-delivery-toggle-group"></div>
-    <label style="margin-top:8px;">سعر التوصيل الافتراضي (د)</label>
-    <input type="number" id="own-delivery-price-input" placeholder="مثلاً: 3000">
-    <label style="margin-top:8px;">وقت الوصول الافتراضي (اختياري)</label>
-    <input id="own-delivery-days-input" placeholder="مثلاً: يومين">
-    <div class="subtitle" style="margin-top:6px;">هذا السعر والوقت يظهرون للزبون بدل مناطق/أسعار توصيل المنصة، وياخذ التاجر السعر مو المنصة. أسعار التوصيل والمناطق ووقت الوصول من صلاحية الأدمن حصراً — التاجر ما يقدر يعدلها.</div>
-    <label style="margin-top:12px;">المحافظات المسموح للتاجر يوصل الها</label>
-    <div class="subtitle" style="margin-bottom:6px;">اترك الكل فارغ (بدون تحديد) عشان يوصل لكل العراق، أو حدد محافظات معينة بس</div>
-    <div id="own-delivery-governorates-list" class="toggle-group"></div>
-    <div id="own-delivery-area-pricing"></div>
+    <div id="own-delivery-agent-note" class="subtitle" style="display:none; margin-top:6px;"></div>
+    <div id="own-delivery-merchant-fields">
+      <label style="margin-top:8px;">سعر التوصيل الافتراضي (د)</label>
+      <input type="number" id="own-delivery-price-input" placeholder="مثلاً: 3000">
+      <label style="margin-top:8px;">وقت الوصول الافتراضي (اختياري)</label>
+      <input id="own-delivery-days-input" placeholder="مثلاً: يومين">
+      <div class="subtitle" style="margin-top:6px;">هذا السعر والوقت يظهرون للزبون بدل مناطق/أسعار توصيل المنصة، وياخذ التاجر السعر مو المنصة. أسعار التوصيل والمناطق ووقت الوصول من صلاحية الأدمن حصراً — التاجر ما يقدر يعدلها.</div>
+      <label style="margin-top:12px;">المحافظات المسموح للتاجر يوصل الها</label>
+      <div class="subtitle" style="margin-bottom:6px;">اترك الكل فارغ (بدون تحديد) عشان يوصل لكل العراق، أو حدد محافظات معينة بس</div>
+      <div id="own-delivery-governorates-list" class="toggle-group"></div>
+      <div id="own-delivery-area-pricing"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn secondary small" onclick="closeOwnDeliveryModal()">إلغاء</button>
       <button class="btn small" onclick="confirmOwnDelivery()">حفظ</button>
@@ -1379,6 +1384,23 @@
   </div>
 </div>
 
+<!-- Delivery agent: request a new employee of their own, or edit an existing one's permissions -->
+<div class="modal-overlay" id="agent-employee-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="agent-emp-modal-title">إضافة موظف جديد</div>
+    <div id="agent-emp-name-fields">
+      <label>اسم الموظف</label><input id="agent-emp-name" placeholder="مثلاً: أحمد علي">
+      <label>رقم هاتف الموظف</label><input id="agent-emp-phone" placeholder="07xxxxxxxxx">
+    </div>
+    <label style="margin-top:8px;">الصلاحيات — شنو يكدر الموظف يشتغل بيه من لوحتك</label>
+    <div id="agent-emp-permissions-box" style="margin-top:4px;"></div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeAgentEmployeeModal()">إلغاء</button>
+      <button class="btn small" onclick="submitAgentEmployeeModal()">حفظ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Return-order reason modal — shared by admin's shipping screen and a delivery agent's own dashboard -->
 <div class="modal-overlay" id="return-reason-modal">
   <div class="modal-box">
@@ -1403,7 +1425,7 @@
       <label>كلمة المرور</label><input type="password" id="agent-password">
     </div>
     <div class="row2">
-      <div><label>أجرة التوصيل لهذا المندوب (د)</label><input type="number" id="agent-delivery-fee" placeholder="مثلاً: 4000"></div>
+      <div><label>أجرة التوصيل الافتراضية (د)</label><input type="number" id="agent-delivery-fee" placeholder="مثلاً: 4000"></div>
       <div>
         <label>نوع عمولة المنصة من كل طلب</label>
         <select id="agent-commission-type">
@@ -1412,9 +1434,36 @@
         </select>
       </div>
     </div>
+    <div class="subtitle" id="agent-delivery-fee-hint" style="margin-top:-6px; margin-bottom:8px;"></div>
     <label>قيمة العمولة</label><input type="number" id="agent-commission-value" placeholder="مثلاً: 500 أو 5">
     <label style="margin-top:8px;">المحلات المسؤول عنها هذا المندوب</label>
     <div id="agent-merchant-picker" style="margin-top:4px; max-height:200px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;"></div>
+
+    <!-- مناطق التوصيل المسموحة وأسعارها — فقط للمندوب المحفوظ أصلاً (يحتاج id). وجود
+         منطقة هنا هو نفسه تصريح التوصيل لها؛ عدم وجودها = غير مسموح لهذا المندوب. -->
+    <div id="agent-zones-section" style="display:none; margin-top:12px; border-top:1px solid var(--border); padding-top:10px;">
+      <label>مناطق التوصيل المسموحة لهذا المندوب وأسعارها</label>
+      <div class="subtitle" style="margin-bottom:6px;">فقط المحافظات/المناطق المضافة هنا مسموح لهذا المندوب يوصل لها. حدد نوع التوصيل المتوفر (سريع/بطيء/الاثنين) وسعره والوقت المتوقع.</div>
+      <div class="row2">
+        <div><label>المحافظة</label><select id="agent-zone-governorate" onchange="renderAgentZoneAreaSelect()"></select></div>
+        <div><label>منطقة محددة (اختياري)</label><select id="agent-zone-area"></select></div>
+      </div>
+      <div class="row2">
+        <div>
+          <label><input type="checkbox" id="agent-zone-fast-enabled" checked style="width:auto;"> توصيل سريع</label>
+          <input type="number" id="agent-zone-fast-price" placeholder="سعر السريع (د)">
+          <input id="agent-zone-fast-days" placeholder="الوقت المتوقع، مثلاً: نفس اليوم" style="margin-top:4px;">
+        </div>
+        <div>
+          <label><input type="checkbox" id="agent-zone-slow-enabled" checked style="width:auto;"> توصيل بطيء</label>
+          <input type="number" id="agent-zone-slow-price" placeholder="سعر البطيء (د)">
+          <input id="agent-zone-slow-days" placeholder="الوقت المتوقع، مثلاً: 2-3 أيام" style="margin-top:4px;">
+        </div>
+      </div>
+      <button class="btn secondary small" style="margin-top:6px;" onclick="addAgentZone()">إضافة / تحديث المنطقة</button>
+      <div id="agent-zones-list" style="margin-top:8px;"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn secondary small" onclick="closeAgentModal()">إلغاء</button>
       <button class="btn small" onclick="submitAgentModal()">حفظ</button>

@@ -221,7 +221,7 @@ function renderAll() {
   renderAdminShippingControl();
   renderDeliveryAgentsList();
   renderAgentAccounts();
-  if (currentEmployee() && currentEmployee().ownerType === 'delivery_agent') renderAgentOrders();
+  if (currentEmployee() && (currentEmployee().ownerType === 'delivery_agent' || currentEmployee().ownerType === 'agent_employee')) renderAgentOrders();
   renderAuditLog();
   renderAdminSupportList();
   updateSupportNavBadge();

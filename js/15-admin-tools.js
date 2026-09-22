@@ -76,19 +76,23 @@ function toggleMerchantStatus(id) {
 // The merchant's "prepare for shipping" queue is replaced with a note in that case, since the
 // platform's delivery team was never going to pick these orders up in the first place.
 let pendingOwnDeliveryId = null;
-let ownDeliveryState = { enabled: false, governorates: [], areaPrices: {} };
+// source: 'merchant' (توصيل خاص بالمحل — القديم ownDelivery:true) | 'platform' (مناطق الشحن
+// العامة) | 'agent' (سعر المندوب المعيّن لهذا المحل حسب مناطقه). فقط 'merchant' يفعّل ownDelivery
+// وحقول السعر/الأيام/المحافظات تحت — 'platform' و'agent' كلاهما ownDelivery:false، يختلفون
+// فقط بالسعر اللي يشوفه الزبون (شوف updateCheckoutDelivery بـ js/13-cart-checkout.js).
+let ownDeliveryState = { source: 'platform', governorates: [], areaPrices: {} };
 
 function openOwnDeliveryModal(id) {
   const m = data.merchants.find(x => x.id === id);
   if (!m) return;
   pendingOwnDeliveryId = id;
   ownDeliveryState = {
-    enabled: !!m.ownDelivery,
+    source: m.ownDelivery ? 'merchant' : (m.deliveryPriceSource === 'agent' ? 'agent' : 'platform'),
     governorates: [...(m.ownDeliveryGovernorates || [])],
     // Deep-copy so editing in the modal doesn't touch live data until "حفظ" is pressed
     areaPrices: JSON.parse(JSON.stringify(m.ownDeliveryAreaPrices || {}))
   };
-  document.getElementById('own-delivery-title').textContent = `توصيل خاص — ${m.shop}`;
+  document.getElementById('own-delivery-title').textContent = `مصدر سعر التوصيل — ${m.shop}`;
   document.getElementById('own-delivery-price-input').value = m.ownDeliveryPrice || 0;
   document.getElementById('own-delivery-days-input').value = m.ownDeliveryDays || '';
   renderOwnDeliveryToggle();
@@ -98,9 +102,25 @@ function openOwnDeliveryModal(id) {
 }
 function renderOwnDeliveryToggle() {
   document.getElementById('own-delivery-toggle-group').innerHTML = `
-    <span class="toggle ${ownDeliveryState.enabled ? 'selected' : ''}" onclick="setOwnDeliveryEnabled(true)">توصيل خاص بالمحل</span>
-    <span class="toggle ${!ownDeliveryState.enabled ? 'selected' : ''}" onclick="setOwnDeliveryEnabled(false)">توصيل المنصة</span>
+    <span class="toggle ${ownDeliveryState.source === 'merchant' ? 'selected' : ''}" onclick="setOwnDeliverySource('merchant')">سعر التاجر (توصيل خاص بالمحل)</span>
+    <span class="toggle ${ownDeliveryState.source === 'platform' ? 'selected' : ''}" onclick="setOwnDeliverySource('platform')">سعر المنصة</span>
+    <span class="toggle ${ownDeliveryState.source === 'agent' ? 'selected' : ''}" onclick="setOwnDeliverySource('agent')">سعر المندوب</span>
   `;
+  const merchantFields = document.getElementById('own-delivery-merchant-fields');
+  if (merchantFields) merchantFields.style.display = ownDeliveryState.source === 'merchant' ? '' : 'none';
+  const agentNote = document.getElementById('own-delivery-agent-note');
+  if (agentNote) {
+    if (ownDeliveryState.source === 'agent') {
+      const m = data.merchants.find(x => x.id === pendingOwnDeliveryId);
+      const agent = m ? deliveryAgentForMerchant(m.id) : null;
+      agentNote.style.display = '';
+      agentNote.innerHTML = agent
+        ? `الزبون رح يشوف سعر مندوب التوصيل <b>${esc(agent.companyName || agent.name)}</b> حسب مناطقه المسعّرة.`
+        : `<b style="color:var(--danger, #DC2626);">تنبيه:</b> هذا المحل ما عنده مندوب توصيل مخصص حالياً — لو حفظت هذا الخيار، التوصيل يصير غير متوفر للزبون لين تعيّن مندوب (زر "نقل مندوب التوصيل").`;
+    } else {
+      agentNote.style.display = 'none';
+    }
+  }
 }
 function renderOwnDeliveryGovernorates() {
   document.getElementById('own-delivery-governorates-list').innerHTML = IRAQ_GOVERNORATES.map(g => `
@@ -113,7 +133,7 @@ function toggleOwnDeliveryGovernorate(g) {
   renderOwnDeliveryGovernorates();
   renderOwnDeliveryAreaPricing();
 }
-function setOwnDeliveryEnabled(v) { ownDeliveryState.enabled = v; renderOwnDeliveryToggle(); renderOwnDeliveryAreaPricing(); }
+function setOwnDeliverySource(source) { ownDeliveryState.source = source; renderOwnDeliveryToggle(); renderOwnDeliveryAreaPricing(); }
 function closeOwnDeliveryModal() {
   pendingOwnDeliveryId = null;
   document.getElementById('own-delivery-modal').classList.remove('show');
@@ -123,15 +143,15 @@ function confirmOwnDelivery() {
   if (!m) return;
   const price = Math.max(0, parseFloat(document.getElementById('own-delivery-price-input').value) || 0);
   const days = document.getElementById('own-delivery-days-input').value.trim();
-  m.ownDelivery = ownDeliveryState.enabled;
+  m.ownDelivery = ownDeliveryState.source === 'merchant';
+  m.deliveryPriceSource = ownDeliveryState.source;
   m.ownDeliveryPrice = price;
   m.ownDeliveryDays = days;
   m.ownDeliveryGovernorates = [...ownDeliveryState.governorates];
   m.ownDeliveryAreaPrices = JSON.parse(JSON.stringify(ownDeliveryState.areaPrices));
   saveData();
-  showToast(m.ownDelivery
-    ? `تم تفعيل التوصيل الخاص لـ"${m.shop}" بسعر افتراضي ${price.toLocaleString()} د`
-    : `تم رجّاع "${m.shop}" لتوصيل المنصة`);
+  const labels = { merchant: `تم تفعيل التوصيل الخاص لـ"${m.shop}" بسعر افتراضي ${price.toLocaleString()} د`, platform: `تم رجّاع "${m.shop}" لتوصيل المنصة`, agent: `تم تحويل "${m.shop}" لسعر المندوب` };
+  showToast(labels[m.deliveryPriceSource]);
   closeOwnDeliveryModal();
   renderAll();
 }
@@ -631,9 +651,20 @@ function renderMerchantActions() {
     const usernameDisplay = m.username ? (revealed ? m.username : '•'.repeat(Math.max(6, m.username.length))) : '—';
     const deliveryAgent = deliveryAgentForMerchant(m.id);
     const deliveryAgentLabel = deliveryAgent ? esc(deliveryAgent.name) + (deliveryAgent.companyName ? ' — ' + esc(deliveryAgent.companyName) : '') : 'بدون مندوب مخصص';
+    const missingAgentForPricing = !m.ownDelivery && m.deliveryPriceSource === 'agent' && !deliveryAgent;
+    let priceSourceBadge;
+    if (m.ownDelivery) {
+      priceSourceBadge = `<span class="badge" style="background:#FEF3C7; color:#92400E;">سعر التاجر — ${(m.ownDeliveryPrice||0).toLocaleString()} د</span>`;
+    } else if (m.deliveryPriceSource === 'agent') {
+      priceSourceBadge = missingAgentForPricing
+        ? `<span class="badge" style="background:#FEE2E2; color:#B91C1C;">سعر المندوب — بلا مندوب! التوصيل معطّل</span>`
+        : `<span class="badge" style="background:#E0F2FE; color:#0369A1;">سعر المندوب — ${deliverySpeedLabel(m)}</span>`;
+    } else {
+      priceSourceBadge = `<span class="badge" style="background:#E0F2FE; color:#0369A1;">سعر المنصة — ${deliverySpeedLabel(m)}</span>`;
+    }
     return `
     <div class="list-item" style="align-items:flex-start;">
-      <span>${m.shop} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> <span class="badge" style="background:${m.type==='restaurant' ? '#FFF7ED' : '#EEF2FF'}; color:${m.type==='restaurant' ? '#9A3412' : '#3730A3'};">${m.type==='restaurant' ? '🍽️ مطعم' : '🛒 ماركت'}</span>${m.hiddenFromMarket ? ` <span class="badge disabled">مخفي من ${m.type==='restaurant' ? 'صفحة المطاعم' : 'السوق العام'}</span>` : ''}${!m.ownDelivery ? ` <span class="badge" style="background:#E0F2FE; color:#0369A1;">توصيل: ${deliverySpeedLabel(m)}</span>` : ''}${m.ownDelivery ? ` <span class="badge" style="background:#FEF3C7; color:#92400E;">توصيل خاص — ${(m.ownDeliveryPrice||0).toLocaleString()} د</span>` : ''}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
+      <span>${m.shop} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> <span class="badge" style="background:${m.type==='restaurant' ? '#FFF7ED' : '#EEF2FF'}; color:${m.type==='restaurant' ? '#9A3412' : '#3730A3'};">${m.type==='restaurant' ? '🍽️ مطعم' : '🛒 ماركت'}</span>${m.hiddenFromMarket ? ` <span class="badge disabled">مخفي من ${m.type==='restaurant' ? 'صفحة المطاعم' : 'السوق العام'}</span>` : ''} ${priceSourceBadge}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
       <span style="color:var(--text-mute); font-size:11px;">
         يوزر: ${usernameDisplay}
         ${m.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${key}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
@@ -652,7 +683,7 @@ function renderMerchantActions() {
         <button class="btn secondary small" onclick="exportMerchantAccountingExcel(${m.id})">تصدير حسابات</button>
         <button class="btn secondary small" onclick="openReassignMerchantAgentModal(${m.id})">نقل مندوب التوصيل</button>
         <button class="btn secondary small" onclick="openResetPasswordModal('merchant', ${m.id})">تصفير الباسورد</button>
-        <button class="btn ${m.ownDelivery ? 'secondary' : 'warn'} small" onclick="openOwnDeliveryModal(${m.id})">${m.ownDelivery ? 'تعديل التوصيل الخاص' : 'توصيل خاص بالمحل'}</button>
+        <button class="btn ${missingAgentForPricing ? 'danger' : 'secondary'} small" onclick="openOwnDeliveryModal(${m.id})">تعديل مصدر سعر التوصيل</button>
         <button class="btn ${m.customDomain ? 'secondary' : 'warn'} small" onclick="openCustomDomainModal(${m.id})">${m.customDomain ? 'تعديل الدومين' : 'إضافة دومين مخصص'}</button>
         <button class="btn ${m.hiddenFromMarket ? 'warn' : 'secondary'} small" onclick="toggleMerchantMarketVisibility(${m.id})" title="يتحكم بظهور منتجات هذا التاجر بالصفحة العامة (السوق العام أو صفحة المطاعم حسب نوعه) فقط — لا يأثر على متجره الخاص">${m.hiddenFromMarket ? `إظهار بـ ${m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام'}` : `إخفاء من ${m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام'}`}</button>
         <button class="btn warn small" onclick="toggleMerchantStatus(${m.id})">${m.status==='active'?'تعطيل':'تفعيل'}</button>
