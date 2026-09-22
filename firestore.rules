@@ -243,6 +243,17 @@ service cloud.firestore {
         request.resource.data.feeCustomer == resource.data.feeCustomer &&
         request.resource.data.feeMerchant == resource.data.feeMerchant &&
         request.resource.data.itemDeduction == resource.data.itemDeduction &&
+        // مصدر سعر التوصيل اللي يشوفه الزبون (سعر التاجر / سعر المنصة / سعر المندوب) وكل
+        // حقول "التوصيل الخاص" المرتبطة فيه — قرار أدمن حصراً (شوف openOwnDeliveryModal بـ
+        // js/15-admin-tools.js). بدون هذا القفل، تاجر أو موظفه بصلاحية store/products/
+        // appearance يقدر يغيّر مصدر السعر أو يرفع سعر توصيله الخاص بنفسه ويحمّل الزبون
+        // فرق ما هو مصرّح فيه من الإدارة.
+        request.resource.data.deliveryPriceSource == resource.data.deliveryPriceSource &&
+        request.resource.data.ownDelivery == resource.data.ownDelivery &&
+        request.resource.data.ownDeliveryPrice == resource.data.ownDeliveryPrice &&
+        request.resource.data.ownDeliveryDays == resource.data.ownDeliveryDays &&
+        request.resource.data.ownDeliveryGovernorates == resource.data.ownDeliveryGovernorates &&
+        request.resource.data.ownDeliveryAreaPrices == resource.data.ownDeliveryAreaPrices &&
         // ظهور/إخفاء منتجات التاجر بصفحة السوق العام قرار أدمن بس — التاجر أو موظفه ما
         // يقدر يفعّله لنفسه حتى لو كان معه صلاحية تعديل المتجر/المنتجات.
         request.resource.data.hiddenFromMarket == resource.data.hiddenFromMarket &&
@@ -272,29 +283,47 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------------------
-    // support_chats/{uid} — محادثة دعم بين تاجر واحد والإدارة ("دعم التاجر" بالكود).
-    // مفتاح الوثيقة = نفس authUid تبع التاجر (متل merchants/merchant_private). موظفي
-    // التاجر غير مشمولين عمداً — هذا خط تواصل التاجر نفسه مع الإدارة بس، غير قابل
-    // للتفويض حالياً (isMerchantSelf بس، مو isMerchantOrItsEmployee).
+    // support_chats/{uid} — محادثة دعم بين طرف واحد (تاجر أو مندوب توصيل) والإدارة
+    // ("دعم التاجر" / "دعم المندوب" بالكود). مفتاح الوثيقة = نفس authUid تبع الطرف
+    // (متل merchants/merchant_private، أو employees بالنسبة لمندوب توصيل). موظفي
+    // التاجر وموظفي المندوب غير مشمولين عمداً — هذا خط تواصل صاحب الحساب نفسه (تاجر
+    // أو مندوب) مع الإدارة بس، غير قابل للتفويض حالياً (isMerchantSelf/isDeliveryAgent
+    // بس، مو isMerchantOrItsEmployee/isAgentEmployeeWithAny).
     // صلاحية 'support' الإدارية مضافة تلقائياً لأي موظف إدارة (ADMIN_EMPLOYEE_PERMS
     // بالكود يشتق من ADMIN_VIEWS)، فموظف إدارة عنده هذي الصلاحية يقدر يرد بدل الأدمن.
     // إنهاء الجلسة بالكود = حذف الوثيقة كاملة (يمسح الرسائل من الطرفين) — نفس صلاحية
     // القراءة/الكتابة تكفي، ما نحتاج قاعدة delete منفصلة أشد.
     // ---------------------------------------------------------------------------------
-    match /support_chats/{merchantUid} {
-      // get على وثيقة محددة (يفتحها التاجر أو الأدمن بمعرّف واحد) مسموح بنفس شرط الكتابة.
-      allow get: if isAdmin() || isAdminEmployee('support') || isMerchantSelf(merchantUid);
+    match /support_chats/{ownerUid} {
+      // مندوب التوصيل صاحب هذي الوثيقة بالذات (نفس فكرة isMerchantSelf، بس عن طريق
+      // isDeliveryAgent() اللي أصلاً تتحقق إن employees/{request.auth.uid} = مندوب فعّال،
+      // فتأكيد request.auth.uid == ownerUid يثبّت إنها وثيقته هو تحديداً).
+      function isAgentSelf() { return isDeliveryAgent() && request.auth.uid == ownerUid; }
 
-      // list (شاشة "دعم التجار" بلوحة الأدمن تسرد كل المحادثات دفعة وحدة) — للأدمن/موظف
-      // الدعم بس. لو احتجنا مستقبلاً تاجر يسرد نفسه (list بدل get)، نضيف شرط يطابق
-      // resource.data.authUid == request.auth.uid متل تعليق الكود بالضبط.
+      // get على وثيقة محددة (يفتحها التاجر/المندوب أو الأدمن بمعرّف واحد) مسموح بنفس شرط الكتابة.
+      allow get: if isAdmin() || isAdminEmployee('support') || isMerchantSelf(ownerUid) || isAgentSelf();
+
+      // list (شاشة "دعم التجار والمندوبين" بلوحة الأدمن تسرد كل المحادثات دفعة وحدة) —
+      // للأدمن/موظف الدعم بس. لو احتجنا مستقبلاً تاجر/مندوب يسرد نفسه (list بدل get)،
+      // نضيف شرط يطابق resource.data.authUid == request.auth.uid متل تعليق الكود بالضبط.
       allow list: if isAdmin() || isAdminEmployee('support');
 
-      allow create, update: if (isAdmin() || isAdminEmployee('support') || isMerchantSelf(merchantUid)) &&
-        request.resource.data.authUid == merchantUid &&
-        exists(/databases/$(database)/documents/merchants/$(merchantUid)) &&
-        request.resource.data.merchantId ==
-          get(/databases/$(database)/documents/merchants/$(merchantUid)).data.id;
+      // نفس شرط الهوية فوق، بلوس تحقق تكامل البيانات حسب نوع الطرف (ownerType): تاجر
+      // (الافتراضي، ولحد الوثائق القديمة قبل إضافة الحقل) لازم merchantId يطابق وثيقة
+      // التاجر الحقيقية، ومندوب لازم agentId يطابق وثيقة الموظف/المندوب الحقيقية.
+      allow create, update: if (isAdmin() || isAdminEmployee('support') || isMerchantSelf(ownerUid) || isAgentSelf()) &&
+        request.resource.data.authUid == ownerUid &&
+        (
+          (request.resource.data.ownerType == 'agent' &&
+            exists(/databases/$(database)/documents/employees/$(ownerUid)) &&
+            get(/databases/$(database)/documents/employees/$(ownerUid)).data.ownerType == 'delivery_agent' &&
+            request.resource.data.agentId ==
+              get(/databases/$(database)/documents/employees/$(ownerUid)).data.id) ||
+          (request.resource.data.ownerType != 'agent' &&
+            exists(/databases/$(database)/documents/merchants/$(ownerUid)) &&
+            request.resource.data.merchantId ==
+              get(/databases/$(database)/documents/merchants/$(ownerUid)).data.id)
+        );
 
       allow delete: if isAdmin() || isAdminEmployee('support');
     }

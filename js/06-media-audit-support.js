@@ -267,17 +267,20 @@ function renderAuditLog() {
   el.innerHTML = rows + pager;
 }
 
-// ---------- MERCHANT SUPPORT CHAT ----------
-// One thread per merchant, stored as its own Firestore doc (collection 'support_chats',
-// doc id = the merchant's authUid — same key merchants/merchant_private already use). A
-// merchant sends from the floating button (support-fab); the admin replies from view-support.
+// ---------- MERCHANT / DELIVERY-AGENT SUPPORT CHAT ----------
+// One thread per merchant OR per delivery agent, stored as its own Firestore doc
+// (collection 'support_chats', doc id = that party's authUid — same key
+// merchants/merchant_private/employees already use). ownerType ('merchant' | 'agent')
+// tells the two apart; a merchant sends from the floating button same as an agent does —
+// both use the exact same button/modal/functions, just scoped to whichever role is logged
+// in. The admin replies from view-support, where BOTH kinds of threads are listed together.
 // Ending the session (admin-only) deletes the doc outright, wiping the thread for both sides.
 //
 // Firestore rule deployed for this — see match /support_chats/{uid} in firestore.rules:
-// merchant reads/creates/updates only their own doc (authUid must match), admin (or an
-// admin-team employee granted the 'support' permission) can read/update any doc, and only
-// admin/that employee can delete a doc at all (= "end session" in the UI).
-let supportChatOpenAuthUid = null; // which merchant's thread the modal is currently showing
+// the merchant/agent reads/creates/updates only their own doc (authUid must match), admin
+// (or an admin-team employee granted the 'support' permission) can read/update any doc, and
+// only admin/that employee can delete a doc at all (= "end session" in the UI).
+let supportChatOpenAuthUid = null; // which thread the modal is currently showing
 
 async function saveSupportChatDoc(chat) {
   if (!window.authApi || !chat || !chat.authUid) return;
@@ -295,42 +298,67 @@ function getOrCreateMerchantChat(merchantId) {
   if (!m || !m.authUid) return null;
   let chat = data.supportChats.find(c => c.authUid === m.authUid);
   if (!chat) {
-    chat = { authUid: m.authUid, merchantId: m.id, merchantShop: m.shop, messages: [], unreadForAdmin: false, unreadForMerchant: false, updatedAt: new Date().toISOString() };
+    chat = { authUid: m.authUid, ownerType: 'merchant', merchantId: m.id, merchantShop: m.shop, messages: [], unreadForAdmin: false, unreadForMerchant: false, updatedAt: new Date().toISOString() };
     data.supportChats.push(chat);
   } else {
+    chat.ownerType = 'merchant';
     chat.merchantShop = m.shop; // keep the cached name fresh if the merchant renamed their shop
   }
   return chat;
 }
 
-// Merchant side: opened from the floating button. Employees don't get this — it's the
-// merchant's own line to the admin, same scope as the request that asked for it.
+// Same idea as getOrCreateMerchantChat, for a delivery agent's own thread (ownerType
+// 'agent', agentId/agentName instead of merchantId/merchantShop, unreadForAgent instead of
+// unreadForMerchant). Only ever called for the real agent (ownerType 'delivery_agent'
+// employee doc) — an employee working FOR an agent (ownerType 'agent_employee') never gets
+// here, exact same restriction as a merchant's own employees not getting the merchant chat.
+function getOrCreateAgentChat(agentId) {
+  const a = data.employees.find(x => x.id === agentId && x.ownerType === 'delivery_agent');
+  if (!a || !a.authUid) return null;
+  const label = a.name + (a.companyName ? ' — ' + a.companyName : '');
+  let chat = data.supportChats.find(c => c.authUid === a.authUid);
+  if (!chat) {
+    chat = { authUid: a.authUid, ownerType: 'agent', agentId: a.id, agentName: label, messages: [], unreadForAdmin: false, unreadForAgent: false, updatedAt: new Date().toISOString() };
+    data.supportChats.push(chat);
+  } else {
+    chat.ownerType = 'agent';
+    chat.agentName = label; // keep the cached name fresh if the agent's name/company changed
+  }
+  return chat;
+}
+
+// Merchant OR delivery-agent side: opened from the floating button. Employees (of either
+// a merchant or an agent) don't get this — it's the account owner's own line to the admin,
+// same scope as the request that asked for it.
 async function openSupportChat() {
-  if (currentRole !== 'merchant' || !loggedInMerchantId) return;
-  const m = data.merchants.find(x => x.id === loggedInMerchantId);
-  // Pull the merchant's own thread fresh before rendering — the regular 5s poll can only
+  const isMerchant = currentRole === 'merchant' && !!loggedInMerchantId;
+  const emp = currentEmployee();
+  const isAgent = currentRole === 'employee' && emp && emp.ownerType === 'delivery_agent';
+  if (!isMerchant && !isAgent) return;
+  const ownAuthUid = isMerchant ? (data.merchants.find(x => x.id === loggedInMerchantId) || {}).authUid : emp.authUid;
+  // Pull the party's own thread fresh before rendering — the regular 5s poll can only
   // do this for whichever thread the modal already has open (see pollForUpdates), so a
   // brand new session (or one from another device) needs this explicit fetch here first.
-  if (m && m.authUid && window.authApi) {
+  if (ownAuthUid && window.authApi) {
     try {
-      const own = await window.authApi.getPrivateDoc('support_chats', m.authUid);
+      const own = await window.authApi.getPrivateDoc('support_chats', ownAuthUid);
       if (own) {
-        const idx = data.supportChats.findIndex(c => c.authUid === m.authUid);
-        if (idx >= 0) data.supportChats[idx] = { ...own, authUid: m.authUid };
-        else data.supportChats.push({ ...own, authUid: m.authUid });
+        const idx = data.supportChats.findIndex(c => c.authUid === ownAuthUid);
+        if (idx >= 0) data.supportChats[idx] = { ...own, authUid: ownAuthUid };
+        else data.supportChats.push({ ...own, authUid: ownAuthUid });
       } else {
         // Doc is really gone (e.g. the admin just ended the session) — drop any stale local
         // copy instead of leaving it in place, same fix as in fetchRemoteData() above.
         // Otherwise reopening the chat kept showing the old, already-ended conversation.
-        data.supportChats = data.supportChats.filter(c => c.authUid !== m.authUid);
+        data.supportChats = data.supportChats.filter(c => c.authUid !== ownAuthUid);
       }
-    } catch (e) { /* offline or a real error — getOrCreateMerchantChat below falls back to whatever's cached */ }
+    } catch (e) { /* offline or a real error — getOrCreate*Chat below falls back to whatever's cached */ }
   }
-  const chat = getOrCreateMerchantChat(loggedInMerchantId);
+  const chat = isMerchant ? getOrCreateMerchantChat(loggedInMerchantId) : getOrCreateAgentChat(emp.id);
   if (!chat) return;
   supportChatOpenAuthUid = chat.authUid;
-  chat.unreadForMerchant = false;
-  document.getElementById('support-chat-title').textContent = 'دعم التاجر';
+  if (isMerchant) chat.unreadForMerchant = false; else chat.unreadForAgent = false;
+  document.getElementById('support-chat-title').textContent = isMerchant ? 'دعم التاجر' : 'دعم المندوب';
   document.getElementById('support-chat-end-row').style.display = 'none';
   document.getElementById('support-chat-modal').classList.add('show');
   document.getElementById('support-chat-input').value = '';
@@ -339,14 +367,14 @@ async function openSupportChat() {
   saveSupportChatDoc(chat);
 }
 
-// Admin side: opened from a row in view-support.
+// Admin side: opened from a row in view-support (which mixes merchant and agent threads).
 function openAdminSupportChat(authUid) {
   if (currentRole !== 'admin') return;
   const chat = data.supportChats.find(c => c.authUid === authUid);
   if (!chat) return;
   supportChatOpenAuthUid = authUid;
   chat.unreadForAdmin = false;
-  document.getElementById('support-chat-title').textContent = `${chat.merchantShop || 'تاجر'}`;
+  document.getElementById('support-chat-title').textContent = chat.ownerType === 'agent' ? (chat.agentName || 'مندوب') : (chat.merchantShop || 'تاجر');
   document.getElementById('support-chat-end-row').style.display = 'block';
   document.getElementById('support-chat-modal').classList.add('show');
   document.getElementById('support-chat-input').value = '';
@@ -373,7 +401,7 @@ function renderSupportChatMessages(keepScrollIfNearBottom) {
     box.innerHTML = '<div class="empty">ما فيه رسائل بعد — اكتب مشكلتك وراح توصل للإدارة</div>';
     return;
   }
-  const mineFrom = currentRole === 'admin' ? 'admin' : 'merchant';
+  const mineFrom = currentRole === 'admin' ? 'admin' : (chat.ownerType === 'agent' ? 'agent' : 'merchant');
   box.innerHTML = chat.messages.map(msg => `
     <div class="support-msg ${msg.from === mineFrom ? 'mine' : 'theirs'}">
       ${esc(msg.text)}
@@ -389,18 +417,26 @@ async function sendSupportChatMessage() {
   if (!text) return;
   const chat = data.supportChats.find(c => c.authUid === supportChatOpenAuthUid);
   if (!chat) return;
-  const from = currentRole === 'admin' ? 'admin' : 'merchant';
+  const isAgentChat = chat.ownerType === 'agent';
+  const from = currentRole === 'admin' ? 'admin' : (isAgentChat ? 'agent' : 'merchant');
   chat.messages.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), from, text, ts: new Date().toISOString() });
   chat.updatedAt = new Date().toISOString();
-  if (from === 'merchant') { chat.unreadForAdmin = true; chat.unreadForMerchant = false; }
-  else { chat.unreadForMerchant = true; chat.unreadForAdmin = false; }
+  if (from === 'admin') {
+    if (isAgentChat) chat.unreadForAgent = true; else chat.unreadForMerchant = true;
+    chat.unreadForAdmin = false;
+  } else {
+    chat.unreadForAdmin = true;
+    if (isAgentChat) chat.unreadForAgent = false; else chat.unreadForMerchant = false;
+  }
   input.value = '';
   renderSupportChatMessages();
   await saveSupportChatDoc(chat);
   if (currentRole === 'admin') { renderAdminSupportList(); updateSupportNavBadge(); }
 }
 
-// Admin's list of every merchant thread — newest activity first, unread ones flagged.
+// Admin's list of every merchant AND delivery-agent thread — newest activity first,
+// unread ones flagged, each tagged with an icon so the admin can tell the two apart at a
+// glance without opening it.
 function renderAdminSupportList() {
   const el = document.getElementById('admin-support-list');
   if (!el || currentRole !== 'admin') return;
@@ -410,8 +446,10 @@ function renderAdminSupportList() {
   if (chats.length === 0) { el.innerHTML = '<div class="empty">ما فيه محادثات دعم حالياً</div>'; return; }
   el.innerHTML = chats.map(c => {
     const last = c.messages[c.messages.length - 1];
+    const isAgentChat = c.ownerType === 'agent';
+    const label = (isAgentChat ? '🚚 ' : '🏪 ') + esc(isAgentChat ? (c.agentName || 'مندوب') : (c.merchantShop || 'تاجر'));
     return `<div class="list-item support-chat-list-item" onclick="openAdminSupportChat('${esc(c.authUid)}')">
-      <span>${esc(c.merchantShop || 'تاجر')}<br><span style="color:var(--text-mute); font-size:11px;">${esc((last.text || '').slice(0, 40))}${(last.text || '').length > 40 ? '…' : ''}</span></span>
+      <span>${label}<br><span style="color:var(--text-mute); font-size:11px;">${esc((last.text || '').slice(0, 40))}${(last.text || '').length > 40 ? '…' : ''}</span></span>
       ${c.unreadForAdmin ? '<span class="support-unread-badge">جديد</span>' : ''}
     </div>`;
   }).join('');
@@ -421,7 +459,8 @@ function endSupportSession() {
   if (currentRole !== 'admin' || !supportChatOpenAuthUid) return;
   const authUid = supportChatOpenAuthUid;
   const chat = data.supportChats.find(c => c.authUid === authUid);
-  openConfirmModal('إنهاء الجلسة', `راح تنحذف كل رسائل هذه المحادثة مع ${chat ? chat.merchantShop : 'التاجر'} نهائياً. متأكد؟`, async () => {
+  const partyLabel = chat ? (chat.ownerType === 'agent' ? (chat.agentName || 'المندوب') : (chat.merchantShop || 'التاجر')) : 'الطرف';
+  openConfirmModal('إنهاء الجلسة', `راح تنحذف كل رسائل هذه المحادثة مع ${partyLabel} نهائياً. متأكد؟`, async () => {
     data.supportChats = data.supportChats.filter(c => c.authUid !== authUid);
     closeSupportChatModal();
     renderAdminSupportList();
@@ -433,22 +472,31 @@ function endSupportSession() {
   });
 }
 
-// Shows/hides the merchant's floating chat button + its unread dot. Merchants only — an
-// employee logged into a merchant's panel doesn't get this (see openSupportChat above).
+// Shows/hides the floating chat button + its unread dot, for a merchant OR a delivery
+// agent (whichever is logged in). An employee of either one doesn't get this (see
+// openSupportChat above) — same "account owner only" scope.
 function updateSupportFab() {
   const fab = document.getElementById('support-fab');
   if (!fab) return;
-  const show = currentRole === 'merchant' && !!loggedInMerchantId;
+  const isMerchant = currentRole === 'merchant' && !!loggedInMerchantId;
+  const emp = currentEmployee();
+  const isAgent = currentRole === 'employee' && emp && emp.ownerType === 'delivery_agent';
+  const show = isMerchant || isAgent;
   fab.classList.toggle('show', show);
   if (!show) return;
-  const m = data.merchants.find(x => x.id === loggedInMerchantId);
-  const chat = m && m.authUid ? data.supportChats.find(c => c.authUid === m.authUid) : null;
-  document.getElementById('support-fab-badge').style.display = (chat && chat.unreadForMerchant) ? 'flex' : 'none';
+  if (isMerchant) {
+    const m = data.merchants.find(x => x.id === loggedInMerchantId);
+    const chat = m && m.authUid ? data.supportChats.find(c => c.authUid === m.authUid) : null;
+    document.getElementById('support-fab-badge').style.display = (chat && chat.unreadForMerchant) ? 'flex' : 'none';
+  } else {
+    const chat = emp.authUid ? data.supportChats.find(c => c.authUid === emp.authUid) : null;
+    document.getElementById('support-fab-badge').style.display = (chat && chat.unreadForAgent) ? 'flex' : 'none';
+  }
 }
 
-// Small red dot on the admin's "دعم التجار" nav button when at least one thread has an
-// unread merchant message. Called after buildNav() rebuilds the nav and after anything that
-// can change unread state.
+// Small red dot on the admin's "دعم التجار والمندوبين" nav button when at least one
+// thread (merchant or agent) has an unread message. Called after buildNav() rebuilds the
+// nav and after anything that can change unread state.
 function updateSupportNavBadge() {
   const btn = document.querySelector('#nav button[data-view="support"]');
   if (!btn) return;

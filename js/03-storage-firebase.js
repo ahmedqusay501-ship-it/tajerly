@@ -442,12 +442,18 @@ let data = {
   // ('audit-log', shared/admin-write) so it never competes with the version-conflict logic
   // that guards 'platform-settings'.
   auditLog: [],
-  // Merchant <-> admin support chat threads. Each merchant has at most one thread, keyed by
-  // their Firebase Auth uid (see SUPPORT CHAT section below) — one Firestore doc per merchant
-  // in the 'support_chats' collection, fetched/merged the same way as 'employees'/'orders'.
-  // { authUid, merchantId, merchantShop, messages:[{id, from:'merchant'|'admin', text, ts}],
-  //   unreadForAdmin, unreadForMerchant, updatedAt }. Ending the session (admin action) deletes
-  // the doc entirely, wiping the conversation for both sides — see endSupportSession().
+  // Merchant/delivery-agent <-> admin support chat threads. Each merchant or agent has at
+  // most one thread, keyed by their Firebase Auth uid (see SUPPORT CHAT section below) —
+  // one Firestore doc per merchant/agent in the 'support_chats' collection, fetched/merged
+  // the same way as 'employees'/'orders'.
+  // Merchant doc:  { authUid, ownerType:'merchant', merchantId, merchantShop,
+  //                  messages:[{id, from:'merchant'|'admin', text, ts}],
+  //                  unreadForAdmin, unreadForMerchant, updatedAt }
+  // Agent doc:     { authUid, ownerType:'agent', agentId, agentName,
+  //                  messages:[{id, from:'agent'|'admin', text, ts}],
+  //                  unreadForAdmin, unreadForAgent, updatedAt }
+  // Ending the session (admin action) deletes the doc entirely, wiping the conversation for
+  // both sides — see endSupportSession().
   supportChats: [],
   // إدارة "عروض" السوق العام — كل عرض قسم إعلاني يجمع تحته مجموعة محلات تختارها الإدارة،
   // بعنوان وصورة وفترة زمنية اختيارية. مجموعة Firestore مستقلة (offers/{id}) عام بالقراءة،
@@ -916,6 +922,23 @@ async function fetchRemoteData() {
           }
         } catch (e) { /* offline or a real error — keep whatever's already in memory */ }
       }
+    } else if (currentRole === 'employee' && currentEmployee() && currentEmployee().ownerType === 'delivery_agent') {
+      // Same fallback fetch as the merchant branch above, for a delivery agent's own
+      // support thread (offers list is admin-only, so this else-if branch is where an
+      // agent session — exactly like a merchant session — actually reaches this code).
+      const emp = currentEmployee();
+      if (emp && emp.authUid) {
+        try {
+          const own = await window.authApi.getPrivateDoc('support_chats', emp.authUid);
+          if (own) {
+            const idx = data.supportChats.findIndex(c => c.authUid === emp.authUid);
+            if (idx >= 0) data.supportChats[idx] = { ...own, authUid: emp.authUid };
+            else data.supportChats.push({ ...own, authUid: emp.authUid });
+          } else {
+            data.supportChats = data.supportChats.filter(c => c.authUid !== emp.authUid);
+          }
+        } catch (e) { /* offline or a real error — keep whatever's already in memory */ }
+      }
     }
   }
   if (!Array.isArray(data.supportChats)) data.supportChats = [];
@@ -923,6 +946,7 @@ async function fetchRemoteData() {
     if (!Array.isArray(c.messages)) c.messages = [];
     if (typeof c.unreadForAdmin !== 'boolean') c.unreadForAdmin = false;
     if (typeof c.unreadForMerchant !== 'boolean') c.unreadForMerchant = false;
+    if (typeof c.unreadForAgent !== 'boolean') c.unreadForAgent = false;
   });
 
   if (!Array.isArray(data.employees)) data.employees = [];

@@ -627,10 +627,10 @@
   </div>
 </div>
 
-<!-- ============ MERCHANT SUPPORT (admin side — one thread per merchant) ============ -->
+<!-- ============ MERCHANT & AGENT SUPPORT (admin side — one thread per merchant/agent) ============ -->
 <div class="view" id="view-support">
-  <h2>دعم التجار</h2>
-  <div class="subtitle">رسائل ومشاكل وصلت من التجار — رد عليها وأنهِ الجلسة عند الانتهاء</div>
+  <h2>دعم التجار والمندوبين</h2>
+  <div class="subtitle">رسائل ومشاكل وصلت من التجار ومناديب التوصيل (🏪 تاجر / 🚚 مندوب) — رد عليها وأنهِ الجلسة عند الانتهاء</div>
   <div class="card">
     <div class="card-title">المحادثات</div>
     <div id="admin-support-list"><div class="empty">ما فيه محادثات دعم حالياً</div></div>
@@ -964,8 +964,9 @@
 
 </main><!-- /main-content -->
 </div><!-- /app-body -->
-<!-- Merchant-only floating button to open their support chat with the admin -->
-<button class="support-fab" id="support-fab" onclick="openSupportChat()" aria-label="دعم التاجر">
+<!-- Floating button (merchant's own account, or a delivery agent's own account — never
+     their employees) to open a support chat with the admin -->
+<button class="support-fab" id="support-fab" onclick="openSupportChat()" aria-label="الدعم الفني">
   <span class="support-fab-badge" id="support-fab-badge" style="display:none;"></span>
 </button>
 </div><!-- /app-shell -->
@@ -1013,13 +1014,15 @@
   </div>
 </div>
 
-<!-- Merchant support chat — shared by both the merchant (their own thread, opened from the
-     floating button) and the admin (opened from a row in view-support). Which side is
-     talking is decided at render time from currentRole, see renderSupportChatModal(). -->
+<!-- Merchant/agent support chat — shared by the merchant OR the delivery agent (their own
+     thread, opened from the floating button) and the admin (opened from a row in
+     view-support). Which side is talking, and whether the thread is a merchant's or an
+     agent's, is decided at render time from currentRole/chat.ownerType — see
+     openSupportChat()/openAdminSupportChat() in 06-media-audit-support.js. -->
 <div class="modal-overlay" id="support-chat-modal">
   <div class="support-chat-box">
     <div class="support-chat-header">
-      <div class="modal-title" id="support-chat-title" style="margin-bottom:0;">دعم التاجر</div>
+      <div class="modal-title" id="support-chat-title" style="margin-bottom:0;">الدعم الفني</div>
       <button class="btn secondary small" onclick="closeSupportChatModal()">✕</button>
     </div>
     <div id="support-chat-end-row" style="display:none; margin-bottom:8px;">

@@ -1,7 +1,7 @@
 // ---------- ADMIN ALERT CENTER ----------
 // A single, strict/loud notification system covering everything the admin needs to act on:
 // new merchant join requests, product-removal requests, delivery-ready orders, customer
-// cancellation requests, and unread merchant support messages. Mirrors the merchant-side
+// cancellation requests, and unread merchant/agent support messages. Mirrors the merchant/agent-side
 // new-order alarm pattern (see 05-alerts-inbox.js): we "seed" a snapshot of whatever is
 // already sitting in the queues the moment an admin session starts (so we never alarm for
 // old backlog), then any item that shows up AFTER that triggers a loud, looping sound +
@@ -89,7 +89,7 @@ function resetAdminAlertTracking() {
 
 const ADMIN_ALERT_SINGULAR = {
   join: 'طلب انضمام تاجر جديد', removal: 'طلب حذف قطعة من فاتورة', cancel: 'طلب إلغاء من زبون',
-  delivery: 'طلب جاهز للتوصيل', support: 'رسالة دعم جديدة من تاجر', agentDue: 'مندوب تجاوز حد المستحقات',
+  delivery: 'طلب جاهز للتوصيل', support: 'رسالة دعم جديدة من تاجر/مندوب', agentDue: 'مندوب تجاوز حد المستحقات',
   noAgentPricing: 'محل مصدر سعره "المندوب" وما عنده مندوب مخصص'
 };
 const ADMIN_ALERT_PLURAL = {
@@ -213,7 +213,7 @@ function renderAdminAlertUI() {
       { count: deliveryCount, view: 'shipping', label: 'طلبات جاهزة للتوصيل' },
       { count: agentDueCount, view: 'agent_accounts', label: 'مندوبين تجاوزوا حد المستحقات غير المسدَّدة' },
       { count: noAgentPricingCount, view: 'admin_tools', label: 'محلات مصدر سعرها "المندوب" وما عندها مندوب مخصص — التوصيل معطّل عندهم' },
-      { count: supportCount, view: 'support', label: 'رسائل دعم جديدة من التجار' }
+      { count: supportCount, view: 'support', label: 'رسائل دعم جديدة من التجار والمندوبين' }
     ];
     const summaryParent = summaryEl.closest('.card');
     if (summaryParent) summaryParent.classList.toggle('alert-pulse', grandTotal > 0);

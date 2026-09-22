@@ -158,7 +158,7 @@ function renderCartModal() {
   itemsEl.innerHTML = cart.map((item, idx) => `
     <div class="cart-item">
       <div class="cart-item-info">
-        <span class="cart-item-name">${item.productName}${item.size ? ' (مقاس ' + item.size + ')' : ''}${item.color ? ' — ' + item.color : ''}</span>
+        <span class="cart-item-name">${esc(item.productName)}${item.size ? ' (مقاس ' + esc(item.size) + ')' : ''}${item.color ? ' — ' + esc(item.color) : ''}</span>
         <span class="cart-item-price">${item.price.toLocaleString()} د × ${item.qty}</span>
       </div>
       <div class="cart-item-controls">
@@ -396,7 +396,7 @@ function updateCheckoutDelivery() {
   if (confirmBtn) confirmBtn.disabled = deliveryUnavailable;
 
   document.getElementById('checkout-summary').innerHTML = `
-    ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${i.productName}${i.size ? ' (مقاس ' + i.size + ')' : ''}${i.color ? ' — ' + i.color : ''} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()} د</span></div>`).join('')}
+    ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${esc(i.productName)}${i.size ? ' (مقاس ' + esc(i.size) + ')' : ''}${i.color ? ' — ' + esc(i.color) : ''} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()} د</span></div>`).join('')}
     ${couponDiscount > 0 ? `<div class="checkout-line"><span>خصم الكوبون ${esc(currentCheckout.couponCode || '')}</span><span>-${couponDiscount.toLocaleString()} د</span></div>` : ''}
     ${serviceFee > 0 ? `<div class="checkout-line"><span>رسوم خدمة</span><span>${serviceFee.toLocaleString()} د</span></div>` : ''}
     ${deliveryUnavailable
