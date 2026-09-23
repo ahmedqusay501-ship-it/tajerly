@@ -1,4 +1,5 @@
 // ---------- MERCHANT REQUESTS ----------
+const N8N_JOIN_WEBHOOK_URL = 'https://jrll849.app.n8n.cloud/webhook/16f42421-9ba4-4cc4-a6a7-daa5fce22a10';
 async function submitRequest() {
   const name = document.getElementById('req-name').value.trim();
   const shop = document.getElementById('req-shop').value.trim();
@@ -80,6 +81,21 @@ async function submitRequest() {
     showToast('صار خطأ ولم يتم إرسال الطلب — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
     return;
   }
+
+  // إشعار n8n (تيليجرام) — "أرسل وانسى": يصير بعد ما تأكد حفظ الطلب بـ Firestore، وأي فشل هنا
+  // (n8n واقف، انقطاع، CORS) ما يأثر على نجاح التسجيل ولا يظهر للتاجر.
+  try {
+    fetch(N8N_JOIN_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: String(newId), shopName: shop, ownerName: name, phone,
+        governorate, area, category, type, description,
+        expectedDailyOrders: Number(expectedDailyOrdersRaw)
+      }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) { /* تجاهل */ }
 
   document.getElementById('req-name').value = '';
   document.getElementById('req-shop').value = '';
