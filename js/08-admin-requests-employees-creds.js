@@ -273,12 +273,12 @@ async function confirmApprove() {
   // individually — separately from every other merchant's.
   if (window.authApi && m.authUid) {
     try {
-      const { password: _pw, ...publicFields } = m;
+      const { password: _pw, _docId: _dId, ...publicFields } = m;
       await window.authApi.saveDoc('merchants', m.authUid, publicFields);
       await window.authApi.saveDoc('merchant_private', m.authUid, { balance: m.balance || 0, salesCount: m.salesCount || 0 });
       // The old pending-request document (keyed by the local id, not the new uid) is now
       // fully superseded by the two documents above — remove it so it doesn't linger.
-      await window.authApi.deleteDoc('join_requests', String(m.id)).catch(() => {});
+      await window.authApi.deleteDoc('join_requests', m._docId || String(m.id)).catch(() => {});
     } catch (e) {
       console.error('Could not write the new secure merchant document (approval still saved to the main record):', e);
     }
@@ -295,11 +295,20 @@ async function confirmApprove() {
   renderAll();
 }
 
-function rejectMerchant(id) {
+async function rejectMerchant(id) {
   const m = data.merchants.find(x => x.id === id);
   const shopName = m ? m.shop : `#${id}`;
+  // نحذف بمعرّف الوثيقة الحقيقي (_docId) — وإذا فشل الحذف من قاعدة البيانات نوقف ونبلّغ
+  // بدل ما نخفي الطلب من الشاشة ويرجع بعد التحديث.
+  if (window.authApi) {
+    try { await window.authApi.deleteDoc('join_requests', (m && m._docId) || String(id)); }
+    catch (e) {
+      console.error('Reject/delete join request failed:', e);
+      showToast('ما انحذف الطلب من قاعدة البيانات — تأكد إنك داخل بحساب الأدمن وجرب مرة ثانية');
+      return;
+    }
+  }
   data.merchants = data.merchants.filter(x => x.id !== id);
-  if (window.authApi) window.authApi.deleteDoc('join_requests', String(id)).catch(() => {});
   saveData();
   logAudit('رفض طلب انضمام تاجر', shopName);
   showToast('تم رفض الطلب');

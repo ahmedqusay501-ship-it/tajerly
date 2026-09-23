@@ -355,7 +355,7 @@ function deleteMerchant(id) {
         window.authApi.deleteDoc('merchants', m.authUid).catch(() => {});
         window.authApi.deleteDoc('merchant_private', m.authUid).catch(() => {});
       } else {
-        window.authApi.deleteDoc('join_requests', String(id)).catch(() => {});
+        window.authApi.deleteDoc('join_requests', m._docId || String(id)).catch(() => {});
       }
     }
     const shopName = m ? m.shop : `#${id}`;

@@ -809,7 +809,20 @@ async function fetchRemoteData() {
       // without needing write access to anything else.
       let pendingMerchants = [];
       if (joinReqRes.status === 'fulfilled') {
-        pendingMerchants = joinReqRes.value.map(r => { const { _uid, ...rest } = r; return rest; });
+        // ملاحظة: طلبات الانضمام ممكن تنكتب من خارج الموقع (مثلاً n8n) بوثيقة معرّفها عشوائي
+        // من Firestore وبدون حقل id رقمي. نحفظ معرّف الوثيقة الحقيقي بـ _docId حتى الرفض/الحذف
+        // يستهدف الوثيقة الصحيحة، ونعطي id رقمي مؤقت للعرض وأزرار الواجهة.
+        pendingMerchants = joinReqRes.value.map((r, i) => {
+          const { _uid, ...rest } = r;
+          const okId = rest.id != null && rest.id !== '' && Number.isFinite(Number(rest.id));
+          return {
+            ...rest,
+            id: okId ? Number(rest.id) : Date.now() * 1000 + i,
+            _docId: _uid,
+            shop: rest.shop || rest.shopName || '',
+            name: rest.name || rest.ownerName || ''
+          };
+        });
       } else {
         // Couldn't list pending join requests (e.g. admin-only read rule and we're not the
         // admin) — keep whatever pending entries we already had locally instead of dropping them.
@@ -820,7 +833,7 @@ async function fetchRemoteData() {
       // saveData()'s diff (see lastSyncedMerchantSnapshots above) compares against reality —
       // not against whatever this admin's session happened to save last.
       approvedMerchants.forEach(m => {
-        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, ...publicFields } = m;
+        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, ...publicFields } = m;
         lastSyncedMerchantSnapshots.set(m.authUid, JSON.stringify(publicFields));
       });
     } else {

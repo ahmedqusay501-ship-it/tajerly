@@ -82,7 +82,7 @@ async function saveData() {
       // any concurrent edit another merchant had made on their own device (see
       // lastSyncedMerchantSnapshots above for the full story).
       data.merchants.filter(m => m.authUid).forEach(m => {
-        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, ...publicFields } = m;
+        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, ...publicFields } = m;
         const json = JSON.stringify(publicFields);
         if (lastSyncedMerchantSnapshots.get(m.authUid) !== json) {
           window.authApi.saveDoc('merchants', m.authUid, publicFields)
@@ -97,7 +97,8 @@ async function saveData() {
       // Pending (not-yet-approved) merchant requests have no login account/uid yet, so they
       // go to their own collection instead — anyone can create one, only the admin can read it.
       data.merchants.filter(m => !m.authUid && m.status === 'pending').forEach(m => {
-        window.authApi.saveDoc('join_requests', String(m.id), m).catch(() => {});
+        const { _docId, ...joinPayload } = m;
+        window.authApi.saveDoc('join_requests', _docId || String(m.id), joinPayload).catch(() => {});
       });
       // Employees follow the exact same active/pending split as merchants above.
       data.employees.filter(e => e.authUid).forEach(e => {
