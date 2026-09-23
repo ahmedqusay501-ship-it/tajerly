@@ -1,5 +1,5 @@
 // ---------- MERCHANT REQUESTS ----------
-const N8N_JOIN_WEBHOOK_URL = 'https://jrll849.app.n8n.cloud/webhook/16f42421-9ba4-4cc4-a6a7-daa5fce22a10';
+const N8N_JOIN_WEBHOOK_URL = 'https://jrii849.app.n8n.cloud/webhook/16f42421-9ba4-4cc4-a6a7-daa5fce22a10';
 async function submitRequest() {
   const name = document.getElementById('req-name').value.trim();
   const shop = document.getElementById('req-shop').value.trim();
