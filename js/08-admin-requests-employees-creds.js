@@ -1,5 +1,8 @@
 // ---------- MERCHANT REQUESTS ----------
 const N8N_JOIN_WEBHOOK_URL = 'https://jrii849.app.n8n.cloud/webhook/16f42421-9ba4-4cc4-a6a7-daa5fce22a10';
+// ---------- EMPLOYEE REQUESTS ----------
+const N8N_EMPLOYEE_WEBHOOK_URL = 'https://jrii849.app.n8n.cloud/webhook/d88f3471-b4ae-474b-8bf8-de05ae85bfb3';
+
 async function submitRequest() {
   const name = document.getElementById('req-name').value.trim();
   const shop = document.getElementById('req-shop').value.trim();
@@ -511,6 +514,25 @@ async function submitEmployeeModal() {
     showToast('صار خطأ ولم يتم إرسال الطلب — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
     return;
   }
+
+  // إشعار n8n (تيليجرام) لطلبات التوظيف — "أرسل وانسى": يصير بعد ما تأكد حفظ الطلب
+  try {
+    fetch(N8N_EMPLOYEE_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: String(newId), 
+        fullName: name, 
+        phone,
+        position: '', 
+        location: '', 
+        email: '', 
+        message: 'طلب توظيف من التاجر'
+      }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) { /* تجاهل */ }
+
   closeEmployeeModal();
   showToast('تم إرسال طلبك بنجاح راح يجهز الأدمن للموظف يوزر نيم وباسورد دخول');
   renderAll();
