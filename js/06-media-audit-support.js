@@ -94,12 +94,9 @@ async function saveData() {
         // product/category/coupon payload above.
         window.authApi.saveDoc('merchant_private', m.authUid, { balance: m.balance || 0, salesCount: m.salesCount || 0 }).catch(() => {});
       });
-      // Pending (not-yet-approved) merchant requests have no login account/uid yet, so they
-      // go to their own collection instead — anyone can create one, only the admin can read it.
-      data.merchants.filter(m => !m.authUid && m.status === 'pending').forEach(m => {
-        const { _docId, ...joinPayload } = m;
-        window.authApi.saveDoc('join_requests', _docId || String(m.id), joinPayload).catch(() => {});
-      });
+      // طلبات الانضمام المعلقة: ما نعيد كتابتها هنا عمداً. الطلب يُكتب مرة وحدة مباشرة وقت
+      // الإرسال (submitRequest)، والقواعد تمنع تعديله. لما كانت هذي الحلقة تعيد كتابتها مع
+      // كل saveData()، أي متصفح/تاب قديم فيه الطلب بذاكرته كان يرجّع طلب محذوف من الأدمن.
       // Employees follow the exact same active/pending split as merchants above.
       data.employees.filter(e => e.authUid).forEach(e => {
         window.authApi.saveDoc('employees', e.authUid, e).catch(() => {});
