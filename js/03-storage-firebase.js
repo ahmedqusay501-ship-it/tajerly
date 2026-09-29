@@ -188,6 +188,23 @@ async function initStorage() {
       async listEmployeesByMerchant(merchantId) {
         const snap = await getDocs(query(collection(db, 'employees'), where('merchantId', '==', merchantId)));
         return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
+      // Same all-or-nothing problem, for a DELIVERY AGENT (ownerType 'delivery_agent') and
+      // the staff working under them ('agent_employee'). firestore.rules' isAssignedAgentForOrder()
+      // depends on each order's deliveryAgentId, and isOwningAgentOfEmployee() depends on each
+      // employee doc's ownerType + agentId — so an unfiltered getDocs() on either collection is
+      // denied for the whole collection. Without this, an agent's own login (platformLogin ->
+      // fetchRemoteData) never gets their own employee doc back and fails with the generic
+      // "wrong username or password" error even though Firebase Auth accepted the password.
+      async listOrdersByAgent(agentLocalId) {
+        const snap = await getDocs(query(collection(db, 'orders'), where('deliveryAgentId', '==', agentLocalId)));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
+      async listEmployeesByAgent(agentLocalId) {
+        const snap = await getDocs(query(collection(db, 'employees'),
+          where('ownerType', '==', 'agent_employee'),
+          where('agentId', '==', agentLocalId)));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
       }
     };
 
@@ -720,6 +737,10 @@ async function fetchRemoteData() {
       let filterAuthUid = null;
       let employeeFilterMerchantId = null;
       let ownEmployeeDocOnly = null;
+      // Delivery agent / agent-employee: which agent's local id to filter orders (and, for a
+      // real agent, their own staff) by — see listOrdersByAgent/listEmployeesByAgent above.
+      let agentOrdersFilterId = null;
+      let agentStaffFilterId = null;
       if (uid) {
         const ownMerchant = data.merchants.find(m => m.authUid === uid);
         if (ownMerchant) {
@@ -754,14 +775,32 @@ async function fetchRemoteData() {
             // read their OWN doc. Wrap it as a single-item "list" so at least their own
             // login/session lookup (data.employees.find(...)) still works.
             ownEmployeeDocOnly = { _uid: uid, ...empDoc };
+          } else if (empDoc && empDoc.ownerType === 'delivery_agent' && empDoc.status === 'active') {
+            // مندوب توصيل: بدون هذا الفرع كان يسقط على listCollection('employees') غير المفلتر
+            // فيُرفض من الـ rules، وما ترجع وثيقة المندوب نفسه، فيفشل تسجيل دخوله.
+            ownEmployeeDocOnly = { _uid: uid, ...empDoc };
+            agentOrdersFilterId = empDoc.id;
+            agentStaffFilterId = empDoc.id;
+          } else if (empDoc && empDoc.ownerType === 'agent_employee' && empDoc.status === 'active') {
+            // موظف تابع لمندوب: وثيقته هو فقط + طلبات المندوب اللي يشتغل تحته.
+            ownEmployeeDocOnly = { _uid: uid, ...empDoc };
+            agentOrdersFilterId = empDoc.agentId;
           }
           // Otherwise: the real admin, or an anonymous/unmatched identity — the
           // unfiltered listCollection('orders'/'employees') below already covers those.
         }
       }
-      ordersPromise = filterAuthUid ? window.authApi.listOrdersByMerchant(filterAuthUid) : window.authApi.listCollection('orders');
+      ordersPromise = filterAuthUid
+        ? window.authApi.listOrdersByMerchant(filterAuthUid)
+        : (agentOrdersFilterId != null
+            ? window.authApi.listOrdersByAgent(agentOrdersFilterId)
+            : window.authApi.listCollection('orders'));
       employeesPromise = ownEmployeeDocOnly
-        ? Promise.resolve([ownEmployeeDocOnly])
+        ? (agentStaffFilterId != null
+            ? window.authApi.listEmployeesByAgent(agentStaffFilterId)
+                .catch(() => [])
+                .then(staff => [ownEmployeeDocOnly, ...staff])
+            : Promise.resolve([ownEmployeeDocOnly]))
         : (employeeFilterMerchantId != null
             ? window.authApi.listEmployeesByMerchant(employeeFilterMerchantId)
             : window.authApi.listCollection('employees'));
