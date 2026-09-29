@@ -1226,6 +1226,7 @@ function renderAgentSelfAccounts(agent) {
   if (!el) return;
   const rows = buildAgentSelfMerchantTotals(agent.id);
   const bal = agentBalance(agent.id);
+  const mbal = agentMerchantBalance(agent.id);
   const totalCount = rows.reduce((s, r) => s + r.count, 0);
   const totalShipping = rows.reduce((s, r) => s + r.shippingDue, 0);
   const totalCommission = rows.reduce((s, r) => s + r.platformCommission, 0);
@@ -1241,6 +1242,8 @@ function renderAgentSelfAccounts(agent) {
       <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
       <div class="stat"><div class="stat-num">${bal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد للمنصة (د)</div></div>
       <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${bal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي عليك (د)${bal.overpaid ? ' — زيادة ' + bal.overpaid.toLocaleString() : ''}</div></div>
+      <div class="stat"><div class="stat-num">${mbal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد للتجار (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${mbal.remaining > 0 ? '#B3261E' : '#065F46'};">${mbal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي للتجار عليك (د)${mbal.overpaid ? ' — زيادة ' + mbal.overpaid.toLocaleString() : ''}</div></div>
     </div>`;
 
   html += agentPaymentsSectionHtml(agent);

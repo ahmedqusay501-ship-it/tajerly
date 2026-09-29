@@ -615,13 +615,16 @@ service cloud.firestore {
     // يحمل where('agentId','==',...) — شوف listPaymentsByAgent). الأدمن أو موظف الحسابات:
     // يقرا الكل، ويغيّر الحالة (confirmed/rejected) بدون ما يغيّر المبلغ أو صاحب الدفعة.
     // ما تُحسب بالمسدَّد إلا بعد القبول (الكود ينسخها لـ agentCashLogs عند القبول).
-    // الشكل: { id, agentId, agentName, amount (عدد صحيح > 0), note, at, status }.
+    // الشكل: { id, agentId, agentName, amount (عدد صحيح > 0), note, at, status,
+    //          type: 'platform' (عمولة المنصة) | 'merchant' (تسديد لتاجر), merchantId: null | عدد }.
     // ---------------------------------------------------------------------------------
     match /agent_payments/{payId} {
       allow read: if isAdmin() || isAdminEmployee('accounting')
         || (isDeliveryAgent() && resource.data.agentId == employeeDoc().id);
       allow create: if isDeliveryAgent()
-        && request.resource.data.keys().hasOnly(['id', 'agentId', 'agentName', 'amount', 'note', 'at', 'status'])
+        && request.resource.data.keys().hasOnly(['id', 'agentId', 'agentName', 'amount', 'note', 'at', 'status', 'type', 'merchantId'])
+        && ((request.resource.data.type == 'platform' && request.resource.data.merchantId == null)
+            || (request.resource.data.type == 'merchant' && request.resource.data.merchantId is int))
         && request.resource.data.agentId == employeeDoc().id
         && request.resource.data.status == 'pending'
         && request.resource.data.amount is int
@@ -629,7 +632,9 @@ service cloud.firestore {
         && request.resource.data.amount <= 1000000000;
       allow update: if (isAdmin() || isAdminEmployee('accounting'))
         && request.resource.data.agentId == resource.data.agentId
-        && request.resource.data.amount == resource.data.amount;
+        && request.resource.data.amount == resource.data.amount
+        && request.resource.data.get('type', 'platform') == resource.data.get('type', 'platform')
+        && request.resource.data.get('merchantId', null) == resource.data.get('merchantId', null);
       allow delete: if isAdmin() || isAdminEmployee('accounting');
     }
 

@@ -1091,6 +1091,10 @@ function renderDeliveryAgentsList() {
           مسدَّد نقداً: <b>${totals.balance.paid.toLocaleString()} د</b>
           — المتبقي: <b style="color:${totals.balance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.balance.remaining.toLocaleString()} د</b>${totals.balance.overpaid ? ` <span style="color:#065F46;">(زيادة مسدَّدة ${totals.balance.overpaid.toLocaleString()} د)</span>` : ''}
         </span>
+        <br><span style="color:var(--text-mute); font-size:11px;">
+          للتجار — مستحق بحوزته: <b>${totals.merchantBalance.due.toLocaleString()} د</b> — مسدَّد: <b>${totals.merchantBalance.paid.toLocaleString()} د</b>
+          — المتبقي: <b style="color:${totals.merchantBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.merchantBalance.remaining.toLocaleString()} د</b>
+        </span>
         ${renderAgentPendingPayments(a.id)}
         <br><span style="color:var(--text-mute); font-size:11px;">
           يوزر: ${esc(usernameDisplay)}
