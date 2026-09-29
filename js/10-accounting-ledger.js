@@ -1282,6 +1282,7 @@ function renderAgentAccounts() {
     const totalNetDue = days.reduce((s, d) => s + d.totalMerchantNetDue, 0);
     const pendingCount = agentPendingCustodyOrders(agentId).length;
     const unsettled = agentUnsettledCommissionTotal(agentId);
+    const bal = agentBalance(agentId);
     summaryEl.innerHTML = `
       <div class="stat"><div class="stat-num">${pendingCount}</div><div class="stat-label">طلبات بعهدته حالياً</div></div>
       <div class="stat"><div class="stat-num">${totalDelivered}</div><div class="stat-label">طلبات موصلة</div></div>
@@ -1291,6 +1292,8 @@ function renderAgentAccounts() {
       <div class="stat"><div class="stat-num">${totalCommission.toLocaleString()}</div><div class="stat-label">مستحقات المنصة من المندوب (د)</div></div>
       <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
       <div class="stat"><div class="stat-num" style="color:${unsettled > 0 ? '#B3261E' : 'inherit'};">${unsettled.toLocaleString()}</div><div class="stat-label">غير مسدَّد بعد (د)</div></div>
+      <div class="stat"><div class="stat-num">${bal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد نقداً (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${bal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي (د)${bal.overpaid ? ' — زيادة مسدَّدة ' + bal.overpaid.toLocaleString() : ''}</div></div>
     `;
   }
   const actionsEl = document.getElementById('agent-accounts-actions');
@@ -1393,9 +1396,12 @@ function agentPendingCustodyOrders(agentId) {
 
 // ---------- 3) MANUAL CASH-HANDOVER LOG ----------
 let cashLogAgentId = null;
-function openAgentCashLogModal(agentId) {
+function openAgentCashLogModal(agentId, prefillRemaining) {
   cashLogAgentId = agentId;
-  document.getElementById('agent-cash-amount').value = '';
+  const bal = agentBalance(agentId);
+  document.getElementById('agent-cash-amount').value = prefillRemaining && bal.remaining > 0 ? bal.remaining : '';
+  const hint = document.getElementById('agent-cash-remaining-hint');
+  if (hint) hint.textContent = `المتبقي على المندوب حالياً: ${bal.remaining.toLocaleString()} د (المستحق ${bal.due.toLocaleString()} − المسدَّد ${bal.paid.toLocaleString()})`;
   document.getElementById('agent-cash-note').value = '';
   document.getElementById('agent-cash-log-modal').classList.add('show');
 }
@@ -1485,6 +1491,23 @@ function agentUnsettledCommissionTotal(agentId) {
 // commission that agent has generated in total from the merchants assigned to them, and how
 // much of that is still unpaid. Unlike agentUnsettledCommissionTotal above, this counts every
 // visible day regardless of settlement status. ----------
+// ---------- 6b) BALANCE — المستحق − المسدَّد نقداً = المتبقي ----------
+// المستحق = مجموع عمولة المنصة (+ التعديلات اليدوية) لكل الأيام الظاهرة (نفس أرقام buildAgentLedgerDays).
+// المسدَّد = مجموع سجل الاستلام النقدي بعد آخر "تصفير حسابات" للمندوب (بعد التصفير الأيام تختفي،
+// فلازم الدفعات القديمة تنحسب معها وإلا يطلع المتبقي بالسالب). المتبقي ما ينزل تحت الصفر؛
+// لو المسدَّد أكبر يطلع بند "زيادة" بدل رقم سالب.
+function agentBalance(agentId) {
+  const due = buildAgentLedgerDays(agentId).reduce((s, d) => s + d.totalPlatformCommission, 0);
+  const resets = (data.agentLedgerClosures || []).filter(c => c.agentId === agentId && c.scope === 'reset')
+    .map(c => new Date(c.closedAt).getTime()).filter(t => !isNaN(t));
+  const since = resets.length ? Math.max(...resets) : 0;
+  const paid = (data.agentCashLogs || [])
+    .filter(l => l.agentId === agentId && new Date(l.at).getTime() > since)
+    .reduce((s, l) => s + (l.amount || 0), 0);
+  const net = due - paid;
+  return { due, paid, remaining: Math.max(0, net), overpaid: Math.max(0, -net) };
+}
+
 function agentAllTimeTotals(agentId) {
   const days = buildAgentLedgerDays(agentId);
   return {
@@ -1493,7 +1516,8 @@ function agentAllTimeTotals(agentId) {
     totalShipping: days.reduce((s, d) => s + d.totalShipping, 0),
     totalCommission: days.reduce((s, d) => s + d.totalPlatformCommission, 0),
     totalMerchantNetDue: days.reduce((s, d) => s + d.totalMerchantNetDue, 0),
-    unsettled: agentUnsettledCommissionTotal(agentId)
+    unsettled: agentUnsettledCommissionTotal(agentId),
+    balance: agentBalance(agentId)
   };
 }
 

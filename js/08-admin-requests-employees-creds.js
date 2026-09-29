@@ -1088,6 +1088,10 @@ function renderDeliveryAgentsList() {
           — منها غير مسدَّد حالياً: <b style="color:${totals.unsettled > 0 ? '#B3261E' : 'inherit'};">${totals.unsettled.toLocaleString()} د</b>
         </span>
         <br><span style="color:var(--text-mute); font-size:11px;">
+          مسدَّد نقداً: <b>${totals.balance.paid.toLocaleString()} د</b>
+          — المتبقي: <b style="color:${totals.balance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.balance.remaining.toLocaleString()} د</b>${totals.balance.overpaid ? ` <span style="color:#065F46;">(زيادة مسدَّدة ${totals.balance.overpaid.toLocaleString()} د)</span>` : ''}
+        </span>
+        <br><span style="color:var(--text-mute); font-size:11px;">
           يوزر: ${esc(usernameDisplay)}
           ${a.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${ukey}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
         </span>
@@ -1096,6 +1100,7 @@ function renderDeliveryAgentsList() {
         <button class="btn small secondary" onclick="openAgentModal(${a.id})">تعديل</button>
         <button class="btn small secondary" onclick="toggleAgentStatus(${a.id})">${a.status === 'active' ? 'إيقاف مؤقت' : 'إعادة تفعيل'}</button>
         <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${a.id})">تصفير كلمة المرور</button>
+        <button class="btn small" onclick="openAgentCashLogModal(${a.id}, true)">+ تسجيل دفعة</button>
         <button class="btn small secondary" onclick="exportAgentAccountingExcel(${a.id})">تصدير حسابات هذا المندوب</button>
         ${pendingCount > 0 ? `<button class="btn small secondary" onclick="openReassignAgentOrdersModal(${a.id})">إعادة توجيه الطلبات المفتوحة (${pendingCount})</button>` : ''}
         <button class="btn danger small" onclick="deleteAgent(${a.id})">حذف</button>

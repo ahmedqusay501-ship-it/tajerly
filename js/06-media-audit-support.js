@@ -81,13 +81,32 @@ async function saveData() {
       // request — rewrote EVERY merchant's doc from this session's in-memory copy, clobbering
       // any concurrent edit another merchant had made on their own device (see
       // lastSyncedMerchantSnapshots above for the full story).
+      // كتابة وثيقة التاجر (منتجاته/متجره) تُنتظر الآن فعلاً وتُبلَّغ عند الفشل. قبل هذا كانت
+      // fire-and-forget مع catch فاضي: لو انرفضت (قاعدة أو وثيقة > 1MB) يظهر "تمت الإضافة"
+      // والمنتج يبقى بالذاكرة بس ويختفي بعد تحديث الصفحة.
+      const merchantWrites = [];
       data.merchants.filter(m => m.authUid).forEach(m => {
         const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, ...publicFields } = m;
         const json = JSON.stringify(publicFields);
         if (lastSyncedMerchantSnapshots.get(m.authUid) !== json) {
-          window.authApi.saveDoc('merchants', m.authUid, publicFields)
-            .then(() => lastSyncedMerchantSnapshots.set(m.authUid, json))
-            .catch(() => {});
+          pendingOrderWrites++; // نفس حارس الـ poller: ما يجلب نسخة قديمة فوق تعديل لسا ما وصل
+          merchantWrites.push(
+            window.authApi.saveDoc('merchants', m.authUid, publicFields)
+              .then(() => { lastSyncedMerchantSnapshots.set(m.authUid, json); return true; })
+              .catch(e => {
+                console.error('merchant save failed for', m.authUid, e);
+                const mine = currentRole === 'admin' || m.id === loggedInMerchantId;
+                if (mine) {
+                  const tooBig = e && (e.code === 'invalid-argument' || /exceeds|too large|size/i.test(e.message || ''));
+                  showToast(tooBig
+                    ? 'ما انحفظ التعديل: حجم بيانات المتجر (الصور) كبير — قلّل الصور أو احذف منتجات قديمة'
+                    : 'ما انحفظ التعديل بالسيرفر — راح يختفي بعد التحديث. تأكد من الاتصال أو راجع الأدمن', 6000);
+                  return false;
+                }
+                return true; // مو وثيقتي: فشلها متوقع (صلاحيات) وما يوقف حفظي
+              })
+              .finally(() => { pendingOrderWrites--; })
+          );
         }
         // Balance/salesCount are cheap, small, and only the earning merchant + admin can ever
         // write them (see merchant_private rules) — no diff needed here, unlike the full
@@ -148,6 +167,8 @@ async function saveData() {
             .catch(e => console.error('offer delete failed for', key, e));
         }
       });
+      const merchantResults = await Promise.all(merchantWrites);
+      if (merchantResults.includes(false)) return false;
     }
 
     return true;

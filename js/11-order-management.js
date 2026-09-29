@@ -622,13 +622,13 @@ async function addProduct(merchantId) {
   }
 
   m.products.push({id: genId(), name, price, image: images[0] || null, images, description, sizes, colors, stock, categoryId});
-  saveData();
+  const saved = await saveData();
   nameInput.value = ''; priceInput.value = ''; descInput.value = ''; stockInput.value = ''; imageInput.value = '';
   draftProductSizes[merchantId] = [];
   draftProductColors[merchantId] = [];
   if (categorySelect) categorySelect.value = '';
   renderMerchantPanel();
-  showToast('تمت إضافة المنتج');
+  if (saved) showToast('تمت إضافة المنتج');
 }
 
 // ---------- BULK PRODUCT IMPORT (Excel/CSV) ----------
@@ -1225,6 +1225,7 @@ function renderAgentSelfAccounts(agent) {
   const el = document.getElementById('agent-orders-list');
   if (!el) return;
   const rows = buildAgentSelfMerchantTotals(agent.id);
+  const bal = agentBalance(agent.id);
   const totalCount = rows.reduce((s, r) => s + r.count, 0);
   const totalShipping = rows.reduce((s, r) => s + r.shippingDue, 0);
   const totalCommission = rows.reduce((s, r) => s + r.platformCommission, 0);
@@ -1238,6 +1239,8 @@ function renderAgentSelfAccounts(agent) {
       <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">مجموع مستحقات التوصيل لك (د)</div></div>
       <div class="stat"><div class="stat-num">${totalCommission.toLocaleString()}</div><div class="stat-label">مجموع مستحقات المنصة منك (د)</div></div>
       <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
+      <div class="stat"><div class="stat-num">${bal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد للمنصة (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${bal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي عليك (د)${bal.overpaid ? ' — زيادة ' + bal.overpaid.toLocaleString() : ''}</div></div>
     </div>`;
 
   if (rows.length === 0) {

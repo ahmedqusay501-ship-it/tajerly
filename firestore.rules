@@ -235,32 +235,32 @@ service cloud.firestore {
           isMerchantOrItsEmployee(merchantUid, 'appearance')
         ) &&
         // التاجر/موظفه ما يقدر يغيّر حالته، هويته، ولا نسب العمولة المفروضة عليه من الإدارة
-        request.resource.data.status      == resource.data.status &&
-        request.resource.data.id          == resource.data.id &&
-        request.resource.data.feeSource   == resource.data.feeSource &&
-        request.resource.data.feeType     == resource.data.feeType &&
-        request.resource.data.feeAmount   == resource.data.feeAmount &&
-        request.resource.data.feeCustomer == resource.data.feeCustomer &&
-        request.resource.data.feeMerchant == resource.data.feeMerchant &&
-        request.resource.data.itemDeduction == resource.data.itemDeduction &&
+        request.resource.data.get('status', null)      == resource.data.get('status', null) &&
+        request.resource.data.get('id', null)          == resource.data.get('id', null) &&
+        request.resource.data.get('feeSource', null)   == resource.data.get('feeSource', null) &&
+        request.resource.data.get('feeType', null)     == resource.data.get('feeType', null) &&
+        request.resource.data.get('feeAmount', null)   == resource.data.get('feeAmount', null) &&
+        request.resource.data.get('feeCustomer', null) == resource.data.get('feeCustomer', null) &&
+        request.resource.data.get('feeMerchant', null) == resource.data.get('feeMerchant', null) &&
+        request.resource.data.get('itemDeduction', null) == resource.data.get('itemDeduction', null) &&
         // مصدر سعر التوصيل اللي يشوفه الزبون (سعر التاجر / سعر المنصة / سعر المندوب) وكل
         // حقول "التوصيل الخاص" المرتبطة فيه — قرار أدمن حصراً (شوف openOwnDeliveryModal بـ
         // js/15-admin-tools.js). بدون هذا القفل، تاجر أو موظفه بصلاحية store/products/
         // appearance يقدر يغيّر مصدر السعر أو يرفع سعر توصيله الخاص بنفسه ويحمّل الزبون
         // فرق ما هو مصرّح فيه من الإدارة.
-        request.resource.data.deliveryPriceSource == resource.data.deliveryPriceSource &&
-        request.resource.data.ownDelivery == resource.data.ownDelivery &&
-        request.resource.data.ownDeliveryPrice == resource.data.ownDeliveryPrice &&
-        request.resource.data.ownDeliveryDays == resource.data.ownDeliveryDays &&
-        request.resource.data.ownDeliveryGovernorates == resource.data.ownDeliveryGovernorates &&
-        request.resource.data.ownDeliveryAreaPrices == resource.data.ownDeliveryAreaPrices &&
+        request.resource.data.get('deliveryPriceSource', null) == resource.data.get('deliveryPriceSource', null) &&
+        request.resource.data.get('ownDelivery', null) == resource.data.get('ownDelivery', null) &&
+        request.resource.data.get('ownDeliveryPrice', null) == resource.data.get('ownDeliveryPrice', null) &&
+        request.resource.data.get('ownDeliveryDays', null) == resource.data.get('ownDeliveryDays', null) &&
+        request.resource.data.get('ownDeliveryGovernorates', null) == resource.data.get('ownDeliveryGovernorates', null) &&
+        request.resource.data.get('ownDeliveryAreaPrices', null) == resource.data.get('ownDeliveryAreaPrices', null) &&
         // ظهور/إخفاء منتجات التاجر بصفحة السوق العام قرار أدمن بس — التاجر أو موظفه ما
         // يقدر يفعّله لنفسه حتى لو كان معه صلاحية تعديل المتجر/المنتجات.
-        request.resource.data.hiddenFromMarket == resource.data.hiddenFromMarket &&
+        request.resource.data.get('hiddenFromMarket', false) == resource.data.get('hiddenFromMarket', false) &&
         // تصنيف "ماركت / مطعم" (type) يقرر أي صفحة سوق عام يظهر بها التاجر — نفس مستوى
         // حساسية hiddenFromMarket فوق، فقفلها أدمن بس بنفس المنطق (تاجر ما يقدر يحوّل
         // نفسه من ماركت لمطعم أو العكس بنفسه).
-        request.resource.data.type == resource.data.type;
+        request.resource.data.get('type', null) == resource.data.get('type', null);
 
       allow delete: if isAdmin() || isAdminEmployee('requests');
     }
