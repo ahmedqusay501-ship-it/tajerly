@@ -130,6 +130,14 @@ service cloud.firestore {
       return isMerchantSelf(merchantUid) || isMerchantEmployee(merchantUid, perm);
     }
 
+    // حقل مقفول على التاجر (ما يقدر يغيّره): القيمة الجديدة لازم تساوي القديمة. لو الحقل
+    // غير موجود بالوثيقة (تاجر قديم) نعامله بقيمته الافتراضية نفسها اللي يحطها الكود
+    // (ensureMerchantTheme) — هيچ أول حفظ يضيف الحقل بقيمته الافتراضية يعدّي، وأي تغيير
+    // فعلي يترفض. بدون .get() الحقل الناقص يسبب خطأ بالقاعدة = رفض كل الحفظ (منتجات تختفي).
+    function merchantFieldUnchanged(field, def) {
+      return request.resource.data.get(field, def) == resource.data.get(field, def);
+    }
+
     // نسخة تقبل أكثر من صلاحية ممكنة (مثلاً موظف عنده "الرسوم البيانية" بس، بدون
     // "الطلبات" نفسها، لازم يقدر يقرا الطلبات لأن الرسوم البيانية محسوبة منها).
     function isMerchantEmployeeWithAny(merchantUid, perms) {
@@ -235,32 +243,34 @@ service cloud.firestore {
           isMerchantOrItsEmployee(merchantUid, 'appearance')
         ) &&
         // التاجر/موظفه ما يقدر يغيّر حالته، هويته، ولا نسب العمولة المفروضة عليه من الإدارة
-        request.resource.data.get('status', null)      == resource.data.get('status', null) &&
-        request.resource.data.get('id', null)          == resource.data.get('id', null) &&
-        request.resource.data.get('feeSource', null)   == resource.data.get('feeSource', null) &&
-        request.resource.data.get('feeType', null)     == resource.data.get('feeType', null) &&
-        request.resource.data.get('feeAmount', null)   == resource.data.get('feeAmount', null) &&
-        request.resource.data.get('feeCustomer', null) == resource.data.get('feeCustomer', null) &&
-        request.resource.data.get('feeMerchant', null) == resource.data.get('feeMerchant', null) &&
-        request.resource.data.get('itemDeduction', null) == resource.data.get('itemDeduction', null) &&
+        merchantFieldUnchanged('status', null) &&
+        merchantFieldUnchanged('id', null) &&
+        merchantFieldUnchanged('feeSource', null) &&
+        merchantFieldUnchanged('feeType', 'fixed') &&
+        merchantFieldUnchanged('feeAmount', null) &&
+        merchantFieldUnchanged('feeCustomer', null) &&
+        merchantFieldUnchanged('feeMerchant', null) &&
+        merchantFieldUnchanged('itemDeduction', 0) &&
         // مصدر سعر التوصيل اللي يشوفه الزبون (سعر التاجر / سعر المنصة / سعر المندوب) وكل
         // حقول "التوصيل الخاص" المرتبطة فيه — قرار أدمن حصراً (شوف openOwnDeliveryModal بـ
         // js/15-admin-tools.js). بدون هذا القفل، تاجر أو موظفه بصلاحية store/products/
         // appearance يقدر يغيّر مصدر السعر أو يرفع سعر توصيله الخاص بنفسه ويحمّل الزبون
         // فرق ما هو مصرّح فيه من الإدارة.
-        request.resource.data.get('deliveryPriceSource', null) == resource.data.get('deliveryPriceSource', null) &&
-        request.resource.data.get('ownDelivery', null) == resource.data.get('ownDelivery', null) &&
-        request.resource.data.get('ownDeliveryPrice', null) == resource.data.get('ownDeliveryPrice', null) &&
-        request.resource.data.get('ownDeliveryDays', null) == resource.data.get('ownDeliveryDays', null) &&
-        request.resource.data.get('ownDeliveryGovernorates', null) == resource.data.get('ownDeliveryGovernorates', null) &&
-        request.resource.data.get('ownDeliveryAreaPrices', null) == resource.data.get('ownDeliveryAreaPrices', null) &&
+        (resource.data.get('deliveryPriceSource', null) == null
+          ? request.resource.data.get('deliveryPriceSource', null) == (resource.data.get('ownDelivery', false) ? 'merchant' : 'platform')
+          : request.resource.data.get('deliveryPriceSource', null) == resource.data.get('deliveryPriceSource', null)) &&
+        merchantFieldUnchanged('ownDelivery', false) &&
+        merchantFieldUnchanged('ownDeliveryPrice', 0) &&
+        merchantFieldUnchanged('ownDeliveryDays', '') &&
+        merchantFieldUnchanged('ownDeliveryGovernorates', []) &&
+        merchantFieldUnchanged('ownDeliveryAreaPrices', {}) &&
         // ظهور/إخفاء منتجات التاجر بصفحة السوق العام قرار أدمن بس — التاجر أو موظفه ما
         // يقدر يفعّله لنفسه حتى لو كان معه صلاحية تعديل المتجر/المنتجات.
-        request.resource.data.get('hiddenFromMarket', false) == resource.data.get('hiddenFromMarket', false) &&
+        merchantFieldUnchanged('hiddenFromMarket', false) &&
         // تصنيف "ماركت / مطعم" (type) يقرر أي صفحة سوق عام يظهر بها التاجر — نفس مستوى
         // حساسية hiddenFromMarket فوق، فقفلها أدمن بس بنفس المنطق (تاجر ما يقدر يحوّل
         // نفسه من ماركت لمطعم أو العكس بنفسه).
-        request.resource.data.get('type', null) == resource.data.get('type', null);
+        merchantFieldUnchanged('type', 'market');
 
       allow delete: if isAdmin() || isAdminEmployee('requests');
     }
@@ -314,12 +324,12 @@ service cloud.firestore {
       allow create, update: if (isAdmin() || isAdminEmployee('support') || isMerchantSelf(ownerUid) || isAgentSelf()) &&
         request.resource.data.authUid == ownerUid &&
         (
-          (request.resource.data.ownerType == 'agent' &&
+          (request.resource.data.get('ownerType', 'merchant') == 'agent' &&
             exists(/databases/$(database)/documents/employees/$(ownerUid)) &&
             get(/databases/$(database)/documents/employees/$(ownerUid)).data.ownerType == 'delivery_agent' &&
             request.resource.data.agentId ==
               get(/databases/$(database)/documents/employees/$(ownerUid)).data.id) ||
-          (request.resource.data.ownerType != 'agent' &&
+          (request.resource.data.get('ownerType', 'merchant') != 'agent' &&
             exists(/databases/$(database)/documents/merchants/$(ownerUid)) &&
             request.resource.data.merchantId ==
               get(/databases/$(database)/documents/merchants/$(ownerUid)).data.id)

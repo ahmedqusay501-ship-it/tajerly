@@ -773,3 +773,60 @@
   @media (min-width: 1024px) {
     .public-store-view { max-width: 1100px; }
   }
+
+
+  /* =====================================================================================
+     Professional dashboard shell (override) — موحّد لكل اللوحات: أدمن / تاجر / مندوب.
+     محتوى بعرض كامل مرتب، قائمة جانبية ثابتة، تبويبات بصف واحد، كروت إحصائيات متساوية،
+     وأزرار التنبيه الصوتي صغيرة بدل ما تتوسط الشاشة.
+     ===================================================================================== */
+  .topbar { height: 56px; padding: 0 24px; }
+  .app-body { min-height: calc(100dvh - 56px); }
+  .sidebar {
+    position: sticky; top: 56px; align-self: flex-start; width: 240px;
+    height: calc(100dvh - 56px); padding: 16px 12px 24px;
+  }
+  .sidebar-section-label { margin-top: 12px; padding: 8px 12px 6px; }
+  .sidebar button { padding: 10px 12px; font-size: 13px; }
+  .sidebar button.active { box-shadow: inset -3px 0 0 var(--accent); }
+
+  .main-content { background: var(--bg); }
+  .view { max-width: 1180px; padding: 28px 32px 56px; }
+  .page-head { align-items: center; padding-bottom: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .page-head h2 { font-size: 21px; }
+
+  /* تبويبات فرعية: صف واحد بتمرير أفقي، بخط سفلي للتبويب النشط */
+  .toggle-group[id$="subnav"]:not(#shipping-speed-subnav) {
+    flex-wrap: nowrap; overflow-x: auto; gap: 2px; margin-bottom: 20px;
+    border-bottom: 1px solid var(--border); scrollbar-width: none;
+  }
+  .toggle-group[id$="subnav"]:not(#shipping-speed-subnav)::-webkit-scrollbar { display: none; }
+  .toggle-group[id$="subnav"]:not(#shipping-speed-subnav) .toggle {
+    flex-shrink: 0; white-space: nowrap; background: transparent; border: none; border-radius: 0;
+    border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 11px 18px; font-size: 13px;
+  }
+  .toggle-group[id$="subnav"]:not(#shipping-speed-subnav) .toggle:hover { color: var(--ink); }
+  .toggle-group[id$="subnav"]:not(#shipping-speed-subnav) .toggle.selected {
+    background: transparent; color: var(--accent-dark); border-bottom-color: var(--accent);
+  }
+
+  /* كروت الإحصائيات: شبكة متجاوبة بأعمدة متساوية بدل 3 ثابتة تترك كروت يتيمة */
+  .grid3 { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .stat { min-height: 96px; display: flex; flex-direction: column; justify-content: center; }
+  .stat-label { font-size: 12px; }
+
+  /* زر التنبيه الصوتي (أدمن/تاجر/مندوب): صغير ومحاذي للطرف بدل ما ياخذ مساحة بالنص */
+  button[onclick*="toggleNewOrderSound"], button[onclick*="toggleAgentAlertSound"], button[onclick*="toggleAdminAlertSound"]:not(.logout-btn) {
+    padding: 5px 12px; font-size: 11.5px; border-radius: 20px; width: auto;
+  }
+  div:has(> button[onclick*="toggleNewOrderSound"]), div:has(> button[onclick*="toggleAgentAlertSound"]) {
+    display: flex; justify-content: flex-start !important; margin-bottom: 14px !important;
+  }
+
+  @media (max-width: 900px) {
+    .topbar { padding: 0 14px; }
+    .sidebar { position: fixed; top: 0; height: auto; }
+    .view { padding: 16px 14px 40px; }
+    #topbar-name, .topbar-user > span:not(.role-chip):not(#admin-alert-bell-btn) { display: none; }
+    .grid3 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  }
