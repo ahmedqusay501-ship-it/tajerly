@@ -610,32 +610,51 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------------------
-    // agent_payments/{payId} — دفعة يرسلها مندوب التوصيل للمنصة وتنتظر قبول/رفض الأدمن.
-    // المندوب: ينشئ دفعة جديدة لنفسه فقط وبحالة pending، ويقرا دفعاته هو بس (الاستعلام لازم
-    // يحمل where('agentId','==',...) — شوف listPaymentsByAgent). الأدمن أو موظف الحسابات:
-    // يقرا الكل، ويغيّر الحالة (confirmed/rejected) بدون ما يغيّر المبلغ أو صاحب الدفعة.
-    // ما تُحسب بالمسدَّد إلا بعد القبول (الكود ينسخها لـ agentCashLogs عند القبول).
-    // الشكل: { id, agentId, agentName, amount (عدد صحيح > 0), note, at, status,
-    //          type: 'platform' (عمولة المنصة) | 'merchant' (تسديد لتاجر), merchantId: null | عدد }.
+    // agent_payments/{payId} — دفعات مندوب التوصيل، ثلاثة أنواع (الحقل type):
+    //   'platform' = استقطاع المنصة من الطلبات، 'delivery' = عمولة التوصيل  → المندوب للأدمن (سرّية: التاجر ما يقراها)
+    //   'merchant' = تسديد المندوب لتاجر معيّن (merchantAuthUid = uid وثيقة التاجر) → التاجر يأكد الاستلام
+    // الإنشاء: المندوب لنفسه وبحالة pending، أو الأدمن/موظف الحسابات كتسجيل يدوي بحالة confirmed (لأنواع
+    // platform/delivery فقط). القراءة: الأدمن/الحسابات الكل، المندوب دفعاته (استعلام بـ agentId)،
+    // والتاجر دفعات type=merchant المخصصة له فقط (استعلام بـ type + merchantAuthUid).
+    // التحديث: تغيير الحالة فقط (status/decidedAt/decidedBy/rejectReason) وهي معلّقة —
+    // الأدمن يقرر platform/delivery، والتاجر يقرر دفعات تسديده هو. الأدمن يشوف دفعات التجار بلا ما يقرر.
     // ---------------------------------------------------------------------------------
     match /agent_payments/{payId} {
+      function payShapeOk() {
+        let d = request.resource.data;
+        return d.amount is int && d.amount > 0 && d.amount <= 1000000000
+          && ((d.type in ['platform', 'delivery'] && (d.merchantId == null || d.merchantId is int) && d.merchantAuthUid == null)
+              || (d.type == 'merchant' && d.merchantId is int && d.merchantAuthUid is string));
+      }
+      allow read: if isAdmin() || isAdminEmployee('accounting')
+        || (isDeliveryAgent() && resource.data.agentId == employeeDoc().id)
+        || (signedIn() && resource.data.type == 'merchant' && resource.data.merchantAuthUid == request.auth.uid);
+      allow create: if request.resource.data.keys().hasOnly(['id', 'agentId', 'agentName', 'amount', 'note', 'at', 'status',
+                         'type', 'merchantId', 'merchantAuthUid', 'requestId', 'decidedAt', 'decidedBy'])
+        && payShapeOk()
+        && ((isDeliveryAgent()
+              && request.resource.data.agentId == employeeDoc().id
+              && request.resource.data.status == 'pending')
+            || ((isAdmin() || isAdminEmployee('accounting'))
+              && request.resource.data.status == 'confirmed'
+              && request.resource.data.type in ['platform', 'delivery']));
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy', 'rejectReason'])
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['confirmed', 'rejected']
+        && (((isAdmin() || isAdminEmployee('accounting')) && resource.data.type in ['platform', 'delivery'])
+            || (signedIn() && resource.data.type == 'merchant' && resource.data.merchantAuthUid == request.auth.uid));
+      allow delete: if isAdmin() || isAdminEmployee('accounting');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // agent_payment_requests/{reqId} — طلب من الأدمن للمندوب بتسديد مبلغ معيّن (يظهر للمندوب كتنبيه
+    // مع زر "دفع الآن"). الأدمن/موظف الحسابات ينشئ ويعدّل (يعلّمه done) ويحذف؛ المندوب يقرا طلباته فقط.
+    // الشكل: { id, agentId, type: 'platform'|'delivery', amount, note, at, by, status: 'open'|'done' }.
+    // ---------------------------------------------------------------------------------
+    match /agent_payment_requests/{reqId} {
       allow read: if isAdmin() || isAdminEmployee('accounting')
         || (isDeliveryAgent() && resource.data.agentId == employeeDoc().id);
-      allow create: if isDeliveryAgent()
-        && request.resource.data.keys().hasOnly(['id', 'agentId', 'agentName', 'amount', 'note', 'at', 'status', 'type', 'merchantId'])
-        && ((request.resource.data.type == 'platform' && request.resource.data.merchantId == null)
-            || (request.resource.data.type == 'merchant' && request.resource.data.merchantId is int))
-        && request.resource.data.agentId == employeeDoc().id
-        && request.resource.data.status == 'pending'
-        && request.resource.data.amount is int
-        && request.resource.data.amount > 0
-        && request.resource.data.amount <= 1000000000;
-      allow update: if (isAdmin() || isAdminEmployee('accounting'))
-        && request.resource.data.agentId == resource.data.agentId
-        && request.resource.data.amount == resource.data.amount
-        && request.resource.data.get('type', 'platform') == resource.data.get('type', 'platform')
-        && request.resource.data.get('merchantId', null) == resource.data.get('merchantId', null);
-      allow delete: if isAdmin() || isAdminEmployee('accounting');
+      allow create, update, delete: if isAdmin() || isAdminEmployee('accounting');
     }
 
     // ---------------------------------------------------------------------------------

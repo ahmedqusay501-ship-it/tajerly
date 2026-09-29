@@ -206,6 +206,17 @@ async function initStorage() {
         const snap = await getDocs(query(collection(db, 'agent_payments'), where('agentId', '==', agentLocalId)));
         return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
       },
+      // التاجر يقرا فقط دفعات المندوب المخصصة له (type=merchant + merchantAuthUid=uid) — الاستعلام لازم
+      // يحمل نفس الشرطين حتى تقبله القواعد. دفعات عمولة المنصة/التوصيل سرية وما تنقرا منه.
+      async listPaymentsByMerchant(merchantAuthUid) {
+        const snap = await getDocs(query(collection(db, 'agent_payments'),
+          where('type', '==', 'merchant'), where('merchantAuthUid', '==', merchantAuthUid)));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
+      async listPaymentRequestsByAgent(agentLocalId) {
+        const snap = await getDocs(query(collection(db, 'agent_payment_requests'), where('agentId', '==', agentLocalId)));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
       async listEmployeesByAgent(agentLocalId) {
         const snap = await getDocs(query(collection(db, 'employees'),
           where('ownerType', '==', 'agent_employee'),
@@ -460,6 +471,8 @@ let data = {
   // { id, agentId, agentName, amount, note, at, status: 'pending'|'confirmed'|'rejected',
   //   decidedAt, decidedBy, rejectReason }.
   agentPayments: [],
+  // ---- طلبات الأدمن من المندوب بتسديد مبلغ (مجموعة agent_payment_requests): { id, agentId, type, amount, note, at, by, status: 'open'|'done' }
+  agentPaymentRequests: [],
   // ---- Manual per-day adjustment: a +/- correction to what an agent owes the platform for
   // one specific day, with a mandatory reason — for the rare case where the admin and agent
   // (or admin and merchant) agree on a manual discount/extra charge that isn't just "another
@@ -1068,16 +1081,25 @@ async function fetchRemoteData() {
   if (!Array.isArray(data.agentSettlements)) data.agentSettlements = [];
   if (!Array.isArray(data.agentCashLogs)) data.agentCashLogs = [];
   if (!Array.isArray(data.agentPayments)) data.agentPayments = [];
-  // دفعات المندوب: المندوب يقرا دفعاته هو بس (فلتر agentId)، والأدمن/موظف الحسابات يقرا الكل.
-  // فشل القراءة (صلاحيات، تاجر، زائر) متوقع — نبقي اللي بالذاكرة وما نوقف التحميل.
+  if (!Array.isArray(data.agentPaymentRequests)) data.agentPaymentRequests = [];
+  // دفعات المندوب وطلبات الأدمن: كل هوية تقرا اللي تسمح به القواعد فقط —
+  // المندوب دفعاته وطلباته (فلتر agentId)، التاجر دفعات المندوب المخصصة له، الأدمن/موظف الحسابات الكل.
+  // فشل القراءة (صلاحيات) متوقع لأي هوية ثانية — نبقي اللي بالذاكرة وما نوقف التحميل.
   try {
     const payUid = window.authApi && window.authApi.currentUid();
-    if (payUid && !data.merchants.some(m => m.authUid === payUid)) {
+    if (payUid) {
+      const ownMerchant = data.merchants.find(m => m.authUid === payUid);
       const me = data.employees.find(e => e.authUid === payUid);
-      let pays = null;
-      if (me && me.ownerType === 'delivery_agent') pays = await window.authApi.listPaymentsByAgent(me.id);
-      else if (!me || me.ownerType === 'admin') pays = await window.authApi.listCollection('agent_payments');
-      if (pays) data.agentPayments = pays.map(({ _uid, ...p }) => ({ ...p, id: p.id || _uid }));
+      const mapPays = list => list.map(({ _uid, ...p }) => ({ ...p, id: p.id || _uid }));
+      if (ownMerchant) {
+        data.agentPayments = mapPays(await window.authApi.listPaymentsByMerchant(payUid));
+      } else if (me && me.ownerType === 'delivery_agent') {
+        data.agentPayments = mapPays(await window.authApi.listPaymentsByAgent(me.id));
+        data.agentPaymentRequests = mapPays(await window.authApi.listPaymentRequestsByAgent(me.id));
+      } else if (!me || me.ownerType === 'admin') {
+        data.agentPayments = mapPays(await window.authApi.listCollection('agent_payments'));
+        data.agentPaymentRequests = mapPays(await window.authApi.listCollection('agent_payment_requests'));
+      }
     }
   } catch (e) { /* permission-denied متوقع لأي هوية ما لها صلاحية */ }
   if (!Array.isArray(data.agentAdjustments)) data.agentAdjustments = [];

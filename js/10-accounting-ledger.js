@@ -1283,7 +1283,6 @@ function renderAgentAccounts() {
     const pendingCount = agentPendingCustodyOrders(agentId).length;
     const unsettled = agentUnsettledCommissionTotal(agentId);
     const bal = agentBalance(agentId);
-    const mbal = agentMerchantBalance(agentId);
     summaryEl.innerHTML = `
       <div class="stat"><div class="stat-num">${pendingCount}</div><div class="stat-label">طلبات بعهدته حالياً</div></div>
       <div class="stat"><div class="stat-num">${totalDelivered}</div><div class="stat-label">طلبات موصلة</div></div>
@@ -1295,9 +1294,6 @@ function renderAgentAccounts() {
       <div class="stat"><div class="stat-num" style="color:${unsettled > 0 ? '#B3261E' : 'inherit'};">${unsettled.toLocaleString()}</div><div class="stat-label">غير مسدَّد بعد (د)</div></div>
       <div class="stat"><div class="stat-num">${bal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد نقداً (د)</div></div>
       <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${bal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي (د)${bal.overpaid ? ' — زيادة مسدَّدة ' + bal.overpaid.toLocaleString() : ''}</div></div>
-      <div class="stat"><div class="stat-num">${mbal.due.toLocaleString()}</div><div class="stat-label">مستحق للتجار بحوزته (د)</div></div>
-      <div class="stat"><div class="stat-num">${mbal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد للتجار (د)</div></div>
-      <div class="stat"><div class="stat-num" style="color:${mbal.remaining > 0 ? '#B3261E' : '#065F46'};">${mbal.remaining.toLocaleString()}</div><div class="stat-label">متبقي للتجار (د)${mbal.overpaid ? ' — زيادة ' + mbal.overpaid.toLocaleString() : ''}</div></div>
     `;
   }
   const actionsEl = document.getElementById('agent-accounts-actions');
@@ -1305,11 +1301,14 @@ function renderAgentAccounts() {
     actionsEl.innerHTML = `
       <button class="btn secondary small" onclick="copyAgentStatement(${agentId})">نسخ كشف الحساب</button>
       <button class="btn secondary small" onclick="openAgentCashLogModal(${agentId})">+ تسجيل استلام نقدي</button>
+      <button class="btn small" onclick="openPayRequestModal(${agentId})">📨 طلب دفعة من المندوب</button>
       <button class="btn danger small" onclick="resetAgentAccount(${agentId})">تصفير حسابات هذا المندوب</button>
     `;
   }
   const cashLogEl = document.getElementById('agent-cash-log-list');
-  if (cashLogEl) cashLogEl.innerHTML = renderAgentPendingPayments(agentId) + renderAgentCashLogs(agentId);
+  if (cashLogEl) cashLogEl.innerHTML = renderAgentPendingPayments(agentId, true) + renderAgentCashLogs(agentId);
+  const cardsEl = document.getElementById('agent-settlement-cards');
+  if (cardsEl) cardsEl.innerHTML = agentSettlementCardsHtml(data.employees.find(x => x.id === agentId), 'admin');
 
   if (days.length === 0) { el.innerHTML = '<div class="empty">ما فيه عمليات مسجلة لهذا المندوب</div>'; return; }
 
@@ -1398,179 +1397,7 @@ function agentPendingCustodyOrders(agentId) {
     (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping'));
 }
 
-// ---------- 3) MANUAL CASH-HANDOVER LOG ----------
-let cashLogAgentId = null;
-function openAgentCashLogModal(agentId, prefillRemaining) {
-  cashLogAgentId = agentId;
-  payModalFill('agent-cash', agentId);
-  if (!prefillRemaining) document.getElementById('agent-cash-amount').value = '';
-  document.getElementById('agent-cash-note').value = '';
-  document.getElementById('agent-cash-log-modal').classList.add('show');
-}
-function closeAgentCashLogModal() {
-  cashLogAgentId = null;
-  document.getElementById('agent-cash-log-modal').classList.remove('show');
-}
-async function submitAgentCashLog() {
-  if (cashLogAgentId == null) return;
-  const amount = parseInt(document.getElementById('agent-cash-amount').value, 10);
-  const note = document.getElementById('agent-cash-note').value.trim();
-  if (isNaN(amount) || amount <= 0) { showToast('عبي مبلغ صحيح'); return; }
-  const kind = payModalRead('agent-cash');
-  if (!kind) return;
-  data.agentCashLogs.push({
-    id: Date.now() + '-' + cashLogAgentId + '-' + Math.random().toString(36).slice(2, 6),
-    agentId: cashLogAgentId, amount, note, at: new Date().toISOString(), by: currentActorLabel(),
-    type: kind.type, merchantId: kind.merchantId
-  });
-  await saveData();
-  const a = data.employees.find(x => x.id === cashLogAgentId);
-  await logAudit('تسجيل استلام نقدي من مندوب', `${a ? a.name : cashLogAgentId} — ${amount.toLocaleString()} د — ${payKindLabel(kind)}`);
-  showToast('تم تسجيل الاستلام');
-  closeAgentCashLogModal();
-  renderAll();
-}
-// ---------- 3b) دفعات المندوب بانتظار موافقة الأدمن (قبول / رفض) ----------
-// المندوب يرسل دفعة (agent_payments) وما تنحسب بالمسدَّد لحد ما الأدمن يأكد وصولها. عند القبول
-// تنضاف لـ agentCashLogs (نفس السجل اللي يقرا منه agentBalance) وتنعلّم confirmed؛ الرفض يعلّمها
-// rejected مع سبب اختياري ويبين للمندوب، ولا يأثر على الرصيد.
-function renderAgentPendingPayments(agentId) {
-  const all = (data.agentPayments || []).filter(p => p.agentId === agentId);
-  const pending = all.filter(p => p.status === 'pending').sort((a, b) => new Date(b.at) - new Date(a.at));
-  const rejected = all.filter(p => p.status === 'rejected').sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 3);
-  if (pending.length === 0 && rejected.length === 0) return '';
-  const pendingHtml = pending.map(p => `<div class="list-item" style="border:1px solid #FDE68A; background:#FFFBEB; border-radius:8px; padding:8px; margin-top:6px;">
-    <span>⏳ ${new Date(p.at).toLocaleString('ar-IQ')} — <b>${p.amount.toLocaleString()} د</b> — <span style="color:#1D4ED8;">${esc(payKindLabel(p))}</span>${p.note ? ' — ' + esc(p.note) : ''}
-      <span style="color:var(--text-mute); font-size:11px;">(دفعة بانتظار تأكيدك — هل وصلتك؟)</span></span>
-    <span style="display:flex; gap:6px;">
-      <button class="btn small" onclick="approveAgentPayment('${esc(p.id)}')">✓ قبول (وصلت)</button>
-      <button class="btn danger small" onclick="rejectAgentPayment('${esc(p.id)}')">✕ رفض (ما وصلت)</button>
-    </span>
-  </div>`).join('');
-  const rejectedHtml = rejected.map(p => `<div style="font-size:11.5px; color:var(--text-mute); padding:4px 0;">
-    ✕ مرفوضة: ${new Date(p.at).toLocaleString('ar-IQ')} — ${p.amount.toLocaleString()} د — ${esc(payKindLabel(p))}${p.rejectReason ? ' — ' + esc(p.rejectReason) : ''}
-  </div>`).join('');
-  return `<div style="margin-bottom:10px;"><b style="font-size:12.5px;">دفعات بانتظار الموافقة${pending.length ? ' (' + pending.length + ')' : ''}</b>${pendingHtml}${rejectedHtml}</div>`;
-}
-async function approveAgentPayment(id) {
-  const p = (data.agentPayments || []).find(x => x.id === id);
-  if (!p || p.status !== 'pending') return;
-  let addedLog = null;
-  if (!(data.agentCashLogs || []).some(l => l.paymentId === id)) {
-    addedLog = {
-      id: Date.now() + '-' + p.agentId + '-' + Math.random().toString(36).slice(2, 6),
-      agentId: p.agentId, amount: p.amount,
-      note: p.note ? 'دفعة من المندوب: ' + p.note : 'دفعة من المندوب (تأكيد الأدمن)',
-      at: new Date().toISOString(), by: currentActorLabel(), paymentId: id,
-      type: p.type === 'merchant' ? 'merchant' : 'platform', merchantId: p.type === 'merchant' ? p.merchantId : null
-    };
-    data.agentCashLogs.push(addedLog);
-  }
-  const ok = await saveData();
-  if (ok === false) {
-    if (addedLog) data.agentCashLogs = data.agentCashLogs.filter(l => l !== addedLog);
-    showToast('ما انحفظ القبول — جرّب مرة ثانية');
-    return;
-  }
-  try {
-    await window.authApi.saveDoc('agent_payments', id, { status: 'confirmed', decidedAt: new Date().toISOString(), decidedBy: currentActorLabel() });
-  } catch (e) {
-    console.error('agent payment confirm failed', e);
-    showToast('انحسبت الدفعة، بس تعذّر تحديث حالتها — اضغط قبول مرة ثانية');
-    renderAll();
-    return;
-  }
-  p.status = 'confirmed';
-  const a = data.employees.find(x => x.id === p.agentId);
-  await logAudit('قبول دفعة مندوب', `${a ? a.name : p.agentId} — ${p.amount.toLocaleString()} د — ${payKindLabel(p)}`);
-  showToast('تم قبول الدفعة وانحسبت بالمسدَّد');
-  renderAll();
-}
-async function rejectAgentPayment(id) {
-  const p = (data.agentPayments || []).find(x => x.id === id);
-  if (!p || p.status !== 'pending') return;
-  const reason = prompt('سبب الرفض (اختياري) — يبين للمندوب:');
-  if (reason === null) return; // ألغى
-  try {
-    await window.authApi.saveDoc('agent_payments', id, { status: 'rejected', rejectReason: (reason || '').trim(), decidedAt: new Date().toISOString(), decidedBy: currentActorLabel() });
-  } catch (e) {
-    console.error('agent payment reject failed', e);
-    showToast('ما انحفظ الرفض — جرّب مرة ثانية');
-    return;
-  }
-  p.status = 'rejected';
-  p.rejectReason = (reason || '').trim();
-  const a = data.employees.find(x => x.id === p.agentId);
-  await logAudit('رفض دفعة مندوب', `${a ? a.name : p.agentId} — ${p.amount.toLocaleString()} د — ${payKindLabel(p)}`);
-  showToast('تم رفض الدفعة');
-  renderAll();
-}
-
-// ---------- 3c) جهة المندوب: إرسال دفعة + عرض حالة دفعاته ----------
-function agentPaymentsSectionHtml(agent) {
-  if (!agent || agent.ownerType !== 'delivery_agent') return '';
-  const mine = (data.agentPayments || []).filter(p => p.agentId === agent.id).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 10);
-  const label = { pending: '⏳ بانتظار موافقة الأدمن', confirmed: '✓ مقبولة', rejected: '✕ مرفوضة' };
-  const color = { pending: '#92400E', confirmed: '#065F46', rejected: '#B3261E' };
-  const rows = mine.map(p => `<div class="list-item"><span>${new Date(p.at).toLocaleString('ar-IQ')} — <b>${p.amount.toLocaleString()} د</b> — ${esc(payKindLabel(p))}${p.note ? ' — ' + esc(p.note) : ''}${p.status === 'rejected' && p.rejectReason ? ' — سبب الرفض: ' + esc(p.rejectReason) : ''}</span>
-    <span style="font-size:11.5px; color:${color[p.status] || 'inherit'};">${label[p.status] || esc(p.status)}</span></div>`).join('');
-  return `<div class="card" style="margin-top:10px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
-      <b style="font-size:13px;">دفعاتك للمنصة</b>
-      <button class="btn small" onclick="openAgentPayModal()">+ إرسال دفعة</button>
-    </div>
-    ${rows || '<div class="empty" style="margin-top:6px;">ما أرسلت أي دفعة بعد</div>'}
-  </div>`;
-}
-function openAgentPayModal() {
-  const emp = currentEmployee();
-  if (!emp || emp.ownerType !== 'delivery_agent') return;
-  payModalFill('agent-pay', emp.id);
-  document.getElementById('agent-pay-note').value = '';
-  document.getElementById('agent-pay-modal').classList.add('show');
-}
-function closeAgentPayModal() {
-  document.getElementById('agent-pay-modal').classList.remove('show');
-}
-async function submitAgentPay() {
-  const emp = currentEmployee();
-  if (!emp || emp.ownerType !== 'delivery_agent') return;
-  const amount = parseInt(document.getElementById('agent-pay-amount').value, 10);
-  const note = document.getElementById('agent-pay-note').value.trim();
-  if (isNaN(amount) || amount <= 0) { showToast('عبي مبلغ صحيح'); return; }
-  const kind = payModalRead('agent-pay');
-  if (!kind) return;
-  const id = 'pay-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-  const payload = { id, agentId: emp.id, agentName: emp.name || '', amount, note, at: new Date().toISOString(), status: 'pending', type: kind.type, merchantId: kind.merchantId };
-  try {
-    await window.authApi.saveDoc('agent_payments', id, payload);
-  } catch (e) {
-    console.error('agent payment submit failed', e);
-    showToast('ما انرسلت الدفعة — تأكد من الاتصال أو انشر قواعد Firestore الجديدة', 6000);
-    return;
-  }
-  data.agentPayments.push(payload);
-  showToast('انرسلت الدفعة — بانتظار موافقة الأدمن');
-  closeAgentPayModal();
-  renderAll();
-}
-
-function deleteAgentCashLog(id) {
-  openConfirmModal('حذف سجل استلام نقدي', 'متأكد تريد تحذف هذا السجل؟ هذا الإجراء يخص الأدمن بس.', async () => {
-    data.agentCashLogs = (data.agentCashLogs || []).filter(l => l.id !== id);
-    await saveData();
-    showToast('تم حذف السجل');
-    renderAll();
-  });
-}
-function renderAgentCashLogs(agentId) {
-  const logs = (data.agentCashLogs || []).filter(l => l.agentId === agentId).slice().sort((a, b) => new Date(b.at) - new Date(a.at));
-  if (logs.length === 0) return '<div class="empty">ما فيه أي استلام نقدي مسجل يدوياً لهذا المندوب</div>';
-  return logs.map(l => `<div class="list-item">
-    <span>${new Date(l.at).toLocaleString('ar-IQ')} — <b>${l.amount.toLocaleString()} د</b> — <span style="color:#1D4ED8;">${esc(payKindLabel(l))}</span>${l.note ? ' — ' + esc(l.note) : ''} <span style="color:var(--text-mute); font-size:11px;">(${esc(l.by)})</span></span>
-    <button class="btn danger small" onclick="deleteAgentCashLog('${l.id}')">حذف</button>
-  </div>`).join('');
-}
+// (المنطق الكامل لدفعات المندوب/التجار/الأدمن انتقل لـ js/21-agent-settlements.js)
 
 // ---------- 4) SHAREABLE STATEMENT — copies a plain-text summary to the clipboard ----------
 // Covers every VISIBLE unsettled day for this agent (settled or hidden days are left out —
@@ -1621,104 +1448,6 @@ function agentUnsettledCommissionTotal(agentId) {
 // commission that agent has generated in total from the merchants assigned to them, and how
 // much of that is still unpaid. Unlike agentUnsettledCommissionTotal above, this counts every
 // visible day regardless of settlement status. ----------
-// ---------- 6b) BALANCE — المستحق − المسدَّد نقداً = المتبقي ----------
-// المستحق = مجموع عمولة المنصة (+ التعديلات اليدوية) لكل الأيام الظاهرة (نفس أرقام buildAgentLedgerDays).
-// المسدَّد = مجموع سجل الاستلام النقدي بعد آخر "تصفير حسابات" للمندوب (بعد التصفير الأيام تختفي،
-// فلازم الدفعات القديمة تنحسب معها وإلا يطلع المتبقي بالسالب). المتبقي ما ينزل تحت الصفر؛
-// لو المسدَّد أكبر يطلع بند "زيادة" بدل رقم سالب.
-function agentBalance(agentId) {
-  const due = buildAgentLedgerDays(agentId).reduce((s, d) => s + d.totalPlatformCommission, 0);
-  const since = agentResetSince(agentId);
-  // فقط دفعات "عمولة المنصة" (الدفعات القديمة بدون type تُعتبر عمولة منصة). تسديد التجار له حساب منفصل تحت.
-  const paid = (data.agentCashLogs || [])
-    .filter(l => l.agentId === agentId && (l.type || 'platform') === 'platform' && new Date(l.at).getTime() > since)
-    .reduce((s, l) => s + (l.amount || 0), 0);
-  const net = due - paid;
-  return { due, paid, remaining: Math.max(0, net), overpaid: Math.max(0, -net) };
-}
-function agentResetSince(agentId) {
-  const resets = (data.agentLedgerClosures || []).filter(c => c.agentId === agentId && c.scope === 'reset')
-    .map(c => new Date(c.closedAt).getTime()).filter(t => !isNaN(t));
-  return resets.length ? Math.max(...resets) : 0;
-}
-// ---------- 6c) حساب التجار عند المندوب ----------
-// المندوب يستلم المبلغ من الزبون فيصير بحوزته حق التاجر (سعر الطلب − عمولة المنصة). المستحق للتاجر =
-// صافي مستحق التجار لكل طلب موصَّل، والمسدَّد = دفعات type:'merchant' لنفس التاجر (بعد آخر تصفير).
-// كل تاجر بحسابه (زيادة تاجر ما تغطي نقص تاجر ثاني)، والمجموع = جمع الباقي لكل تاجر.
-function agentMerchantBalance(agentId) {
-  const dueBy = {};
-  buildAgentLedgerDays(agentId).forEach(d => Object.values(d.byMerchant).forEach(mb => {
-    dueBy[mb.merchantId] = (dueBy[mb.merchantId] || 0) + mb.merchantNetDue;
-  }));
-  const since = agentResetSince(agentId);
-  const paidBy = {};
-  (data.agentCashLogs || []).filter(l => l.agentId === agentId && l.type === 'merchant' && new Date(l.at).getTime() > since)
-    .forEach(l => { paidBy[l.merchantId] = (paidBy[l.merchantId] || 0) + (l.amount || 0); });
-  const ids = Array.from(new Set([...Object.keys(dueBy), ...Object.keys(paidBy)])).map(Number);
-  const rows = ids.map(id => {
-    const due = dueBy[id] || 0, paid = paidBy[id] || 0, net = due - paid;
-    return { merchantId: id, due, paid, remaining: Math.max(0, net), overpaid: Math.max(0, -net) };
-  });
-  return {
-    rows,
-    due: rows.reduce((s, r) => s + r.due, 0),
-    paid: rows.reduce((s, r) => s + r.paid, 0),
-    remaining: rows.reduce((s, r) => s + r.remaining, 0),
-    overpaid: rows.reduce((s, r) => s + r.overpaid, 0)
-  };
-}
-// وصف نوع الدفعة/السجل بالواجهة.
-function payKindLabel(l) {
-  if (l && l.type === 'merchant') {
-    const m = data.merchants.find(x => x.id === l.merchantId);
-    return 'تسديد للتاجر: ' + (m ? m.shop : 'تاجر محذوف');
-  }
-  return 'عمولة المنصة';
-}
-// ---- واجهة اختيار النوع/التاجر المشتركة بين نافذة الأدمن (agent-cash) ونافذة المندوب (agent-pay) ----
-function payModalFill(prefix, agentId) {
-  const bal = agentMerchantBalance(agentId);
-  const sel = document.getElementById(prefix + '-merchant');
-  if (sel) {
-    sel.innerHTML = bal.rows.length
-      ? bal.rows.map(r => {
-          const m = data.merchants.find(x => x.id === r.merchantId);
-          return `<option value="${r.merchantId}">${esc(m ? m.shop : 'تاجر محذوف')} — متبقي ${r.remaining.toLocaleString()} د</option>`;
-        }).join('')
-      : '<option value="">ما فيه تجار بحسابه بعد</option>';
-  }
-  const typeEl = document.getElementById(prefix + '-type');
-  if (typeEl) typeEl.value = 'platform';
-  payModalSync(prefix, agentId, true);
-}
-function payModalSync(prefix, agentId, prefill) {
-  const type = document.getElementById(prefix + '-type').value;
-  const wrap = document.getElementById(prefix + '-merchant-wrap');
-  if (wrap) wrap.style.display = type === 'merchant' ? '' : 'none';
-  let remaining, text;
-  if (type === 'merchant') {
-    const mid = parseInt(document.getElementById(prefix + '-merchant').value, 10);
-    const r = agentMerchantBalance(agentId).rows.find(x => x.merchantId === mid);
-    remaining = r ? r.remaining : 0;
-    text = r ? `المتبقي للتاجر عند المندوب: ${remaining.toLocaleString()} د (المستحق ${r.due.toLocaleString()} − المسدَّد ${r.paid.toLocaleString()})` : 'اختار تاجر';
-  } else {
-    const b = agentBalance(agentId);
-    remaining = b.remaining;
-    text = `المتبقي من عمولة المنصة: ${remaining.toLocaleString()} د (المستحق ${b.due.toLocaleString()} − المسدَّد ${b.paid.toLocaleString()})`;
-  }
-  const hint = document.getElementById(prefix === 'agent-cash' ? 'agent-cash-remaining-hint' : 'agent-pay-hint');
-  if (hint) hint.textContent = text;
-  if (prefill) document.getElementById(prefix + '-amount').value = remaining > 0 ? remaining : '';
-}
-// يقرا النوع/التاجر من نافذة، ويرجع null لو ناقص (مع رسالة).
-function payModalRead(prefix) {
-  const type = document.getElementById(prefix + '-type').value === 'merchant' ? 'merchant' : 'platform';
-  if (type === 'platform') return { type, merchantId: null };
-  const merchantId = parseInt(document.getElementById(prefix + '-merchant').value, 10);
-  if (isNaN(merchantId)) { showToast('اختار التاجر'); return null; }
-  return { type, merchantId };
-}
-
 function agentAllTimeTotals(agentId) {
   const days = buildAgentLedgerDays(agentId);
   return {
@@ -1729,6 +1458,7 @@ function agentAllTimeTotals(agentId) {
     totalMerchantNetDue: days.reduce((s, d) => s + d.totalMerchantNetDue, 0),
     unsettled: agentUnsettledCommissionTotal(agentId),
     balance: agentBalance(agentId),
+    deliveryBalance: agentDeliveryBalance(agentId),
     merchantBalance: agentMerchantBalance(agentId)
   };
 }
@@ -1835,13 +1565,7 @@ function exportAgentAccountingExcel(agentId) {
     'التاريخ': new Date(adj.at).toLocaleString('ar-IQ')
   }));
 
-  const cashLogRows = (data.agentCashLogs || []).filter(l => l.agentId === agentId).map(l => ({
-    'المبلغ المستلم (د)': l.amount,
-    'النوع': payKindLabel(l),
-    'ملاحظة': l.note || '—',
-    'بواسطة': l.by,
-    'التاريخ': new Date(l.at).toLocaleString('ar-IQ')
-  }));
+  const cashLogRows = agentPaymentExportRows(agentId);
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'ملخص عام');
@@ -1849,7 +1573,7 @@ function exportAgentAccountingExcel(agentId) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderRows), 'تفصيل كل طلب');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dayRows), 'حسب اليوم');
   if (adjustmentRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(adjustmentRows), 'تعديلات يدوية');
-  if (cashLogRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cashLogRows), 'استلام نقدي يدوي');
+  if (cashLogRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cashLogRows), 'دفعات المندوب');
 
   const stamp = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `حسابات-مندوب-${a.name}-${stamp}.xlsx`);

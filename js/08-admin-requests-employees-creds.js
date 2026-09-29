@@ -1092,10 +1092,10 @@ function renderDeliveryAgentsList() {
           — المتبقي: <b style="color:${totals.balance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.balance.remaining.toLocaleString()} د</b>${totals.balance.overpaid ? ` <span style="color:#065F46;">(زيادة مسدَّدة ${totals.balance.overpaid.toLocaleString()} د)</span>` : ''}
         </span>
         <br><span style="color:var(--text-mute); font-size:11px;">
-          للتجار — مستحق بحوزته: <b>${totals.merchantBalance.due.toLocaleString()} د</b> — مسدَّد: <b>${totals.merchantBalance.paid.toLocaleString()} د</b>
-          — المتبقي: <b style="color:${totals.merchantBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.merchantBalance.remaining.toLocaleString()} د</b>
+          عمولة التوصيل — مسدَّد: <b>${totals.deliveryBalance.paid.toLocaleString()} د</b> — المتبقي: <b style="color:${totals.deliveryBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.deliveryBalance.remaining.toLocaleString()} د</b>
+          — حق التجار عنده (متبقي): <b style="color:${totals.merchantBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.merchantBalance.remaining.toLocaleString()} د</b>
         </span>
-        ${renderAgentPendingPayments(a.id)}
+        ${renderAgentPendingPayments(a.id, false)}
         <br><span style="color:var(--text-mute); font-size:11px;">
           يوزر: ${esc(usernameDisplay)}
           ${a.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${ukey}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
@@ -1106,6 +1106,7 @@ function renderDeliveryAgentsList() {
         <button class="btn small secondary" onclick="toggleAgentStatus(${a.id})">${a.status === 'active' ? 'إيقاف مؤقت' : 'إعادة تفعيل'}</button>
         <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${a.id})">تصفير كلمة المرور</button>
         <button class="btn small" onclick="openAgentCashLogModal(${a.id}, true)">+ تسجيل دفعة</button>
+        <button class="btn small secondary" onclick="openPayRequestModal(${a.id})">📨 طلب دفعة</button>
         <button class="btn small secondary" onclick="exportAgentAccountingExcel(${a.id})">تصدير حسابات هذا المندوب</button>
         ${pendingCount > 0 ? `<button class="btn small secondary" onclick="openReassignAgentOrdersModal(${a.id})">إعادة توجيه الطلبات المفتوحة (${pendingCount})</button>` : ''}
         <button class="btn danger small" onclick="deleteAgent(${a.id})">حذف</button>
@@ -1893,6 +1894,7 @@ function renderMerchantPanel() {
         </div>
         ${m.feeExemptMaxPrice > 0 ? `<div class="subtitle" style="margin-top:8px;">أي قطعة سعرها ${m.feeExemptMaxPrice.toLocaleString()} د أو أقل — الأدمن أعفاها من عمولة المنصة بالكامل</div>` : ''}
       </div>
+      ${merchantAgentStatementHtml(m.id)}
       <div class="card">
         <div class="card-title">سجل حساباتي اليومي</div>
         <div class="subtitle" style="margin-bottom:8px;">كل يوم صفحة لحاله — تصفحها بالأسهم من غير ما تحدد أي تاريخ، وبآخر كل صفحة تلاقي المبلغ المستحق لك والمستحق للمنصة من هذا اليوم بالضبط</div>

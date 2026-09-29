@@ -905,9 +905,10 @@
     <div id="agent-accounts-summary" class="grid3"></div>
     <div id="agent-accounts-actions" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;"></div>
   </div>
+  <div id="agent-settlement-cards"></div>
   <div class="card" style="margin-top:12px;">
-    <div class="card-title">سجل الاستلام النقدي اليدوي</div>
-    <div class="subtitle" style="margin-bottom:8px;">سجل حر يدوي — يخليك تقارن الفلوس اللي فعلاً استلمتها من المندوب مع الأرقام اللي يحسبها النظام تلقائياً.</div>
+    <div class="card-title">دفعات المندوب (استلام وتسديد)</div>
+    <div class="subtitle" style="margin-bottom:8px;">الدفعات اللي يرسلها المندوب وتنتظر قرارك (تم/لم يتم الاستلام)، وسجل ما استلمته فعلاً. كله سري بينك وبين المندوب.</div>
     <div id="agent-cash-log-list"><div class="empty">جاري التحميل...</div></div>
   </div>
   <div id="agent-accounts-days"></div>
@@ -1546,26 +1547,50 @@
   </div>
 </div>
 
-<!-- Agent: send a payment to the platform, pending admin approval (see openAgentPayModal) -->
+<!-- Agent: send a payment (platform commission / delivery commission / merchant settlement) — see openAgentPayModal -->
 <div class="modal-overlay" id="agent-pay-modal">
   <div class="modal-box">
-    <div class="modal-title">إرسال دفعة للمنصة</div>
+    <div class="modal-title">إرسال دفعة</div>
     <div id="agent-pay-hint" style="font-size:12px; color:var(--text-mute); margin-bottom:6px;"></div>
     <label>الدفعة عن</label>
-    <select id="agent-pay-type" onchange="payModalSync('agent-pay', currentEmployee().id, true)">
-      <option value="platform">عمولة المنصة</option>
-      <option value="merchant">تسديد لتاجر</option>
-    </select>
+    <select id="agent-pay-type" onchange="payModalSync('agent-pay', currentEmployee().id, true)"></select>
+    <div id="agent-pay-scope-wrap">
+      <label>التسديد</label>
+      <select id="agent-pay-scope" onchange="payModalSync('agent-pay', currentEmployee().id, true)">
+        <option value="total">إجمالي</option>
+        <option value="merchant">لتاجر محدد</option>
+      </select>
+    </div>
     <div id="agent-pay-merchant-wrap" style="display:none;">
       <label>التاجر</label>
       <select id="agent-pay-merchant" onchange="payModalSync('agent-pay', currentEmployee().id, true)"></select>
     </div>
     <label>المبلغ المدفوع (د)</label><input type="number" id="agent-pay-amount" placeholder="مثلاً: 150000">
     <label>ملاحظة (اختياري)</label><input id="agent-pay-note" placeholder="مثلاً: سلمتها باليد / تحويل">
-    <div class="subtitle" style="margin-top:6px;">ما تنحسب الدفعة بحسابك إلا بعد ما الأدمن يأكد وصولها.</div>
+    <div class="subtitle" style="margin-top:6px;">ما تنحسب الدفعة بحسابك إلا بعد ما المستلم (الأدمن أو التاجر) يأكد وصولها.</div>
     <div class="modal-actions">
       <button class="btn secondary small" onclick="closeAgentPayModal()">إلغاء</button>
-      <button class="btn small" onclick="submitAgentPay()">إرسال للأدمن</button>
+      <button class="btn small" onclick="submitAgentPay()">إرسال</button>
+    </div>
+  </div>
+</div>
+
+<!-- Admin: request a payment from an agent — see openPayRequestModal -->
+<div class="modal-overlay" id="pay-request-modal">
+  <div class="modal-box">
+    <div class="modal-title">طلب دفعة من المندوب</div>
+    <div id="pay-request-hint" style="font-size:12px; color:var(--text-mute); margin-bottom:6px;"></div>
+    <label>نوع المبلغ</label>
+    <select id="pay-request-type" onchange="payRequestSyncAmount()">
+      <option value="platform">عمولة المنصة (استقطاع الطلبات)</option>
+      <option value="delivery">عمولة التوصيل</option>
+    </select>
+    <label>المبلغ المطلوب (د)</label><input type="number" id="pay-request-amount" placeholder="مثلاً: 500000">
+    <label>ملاحظة (اختياري)</label><input id="pay-request-note" placeholder="مثلاً: أحتاجه اليوم بالمكتب">
+    <div class="subtitle" style="margin-top:6px;">يظهر للمندوب تنبيه بالمبلغ المطلوب وزر "دفع الآن".</div>
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closePayRequestModal()">إلغاء</button>
+      <button class="btn small" onclick="submitPayRequest()">إرسال الطلب</button>
     </div>
   </div>
 </div>
@@ -1574,12 +1599,16 @@
 <div class="modal-overlay" id="agent-cash-log-modal">
   <div class="modal-box">
     <div class="modal-title">تسجيل استلام نقدي من المندوب</div>
-    <div id="agent-cash-remaining-hint" style="font-size:12px; color:var(--text-mute); margin-bottom:6px;"></div>
+    <div id="agent-cash-hint" style="font-size:12px; color:var(--text-mute); margin-bottom:6px;"></div>
     <label>الدفعة عن</label>
-    <select id="agent-cash-type" onchange="payModalSync('agent-cash', cashLogAgentId, true)">
-      <option value="platform">عمولة المنصة</option>
-      <option value="merchant">تسديد لتاجر</option>
-    </select>
+    <select id="agent-cash-type" onchange="payModalSync('agent-cash', cashLogAgentId, true)"></select>
+    <div id="agent-cash-scope-wrap">
+      <label>التسديد</label>
+      <select id="agent-cash-scope" onchange="payModalSync('agent-cash', cashLogAgentId, true)">
+        <option value="total">إجمالي</option>
+        <option value="merchant">لتاجر محدد</option>
+      </select>
+    </div>
     <div id="agent-cash-merchant-wrap" style="display:none;">
       <label>التاجر</label>
       <select id="agent-cash-merchant" onchange="payModalSync('agent-cash', cashLogAgentId, true)"></select>
@@ -1775,6 +1804,7 @@
 <script src="js/18-admin-alerts.js"></script>
 <script src="js/19-general-market.js"></script>
 <script src="js/20-restaurants-market.js"></script>
+<script src="js/21-agent-settlements.js"></script>
 <script src="js/17-live-refresh-boot.js"></script>
 </body>
 </html>
