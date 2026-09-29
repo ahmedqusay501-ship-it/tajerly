@@ -200,6 +200,12 @@ async function initStorage() {
         const snap = await getDocs(query(collection(db, 'orders'), where('deliveryAgentId', '==', agentLocalId)));
         return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
       },
+      // دفعات المندوب (بانتظار موافقة الأدمن) — نفس مشكلة all-or-nothing: المندوب لازم
+      // يفلتر بـ agentId اللي تتحقق منه القاعدة حتى يقدر يقرا دفعاته هو بس.
+      async listPaymentsByAgent(agentLocalId) {
+        const snap = await getDocs(query(collection(db, 'agent_payments'), where('agentId', '==', agentLocalId)));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
       async listEmployeesByAgent(agentLocalId) {
         const snap = await getDocs(query(collection(db, 'employees'),
           where('ownerType', '==', 'agent_employee'),
@@ -449,6 +455,11 @@ let data = {
   // system SAYS an agent owes against what physically changed hands, and catch a mismatch.
   // { id, agentId, amount, note, at, by }.
   agentCashLogs: [],
+  // ---- دفعات يرسلها المندوب بنفسه وتنتظر قبول/رفض الأدمن (مجموعة agent_payments).
+  // عند القبول تنضاف تلقائياً لـ agentCashLogs فتنحسب بالمسدَّد؛ الرفض ما يأثر على الرصيد.
+  // { id, agentId, agentName, amount, note, at, status: 'pending'|'confirmed'|'rejected',
+  //   decidedAt, decidedBy, rejectReason }.
+  agentPayments: [],
   // ---- Manual per-day adjustment: a +/- correction to what an agent owes the platform for
   // one specific day, with a mandatory reason — for the rare case where the admin and agent
   // (or admin and merchant) agree on a manual discount/extra charge that isn't just "another
@@ -1056,6 +1067,19 @@ async function fetchRemoteData() {
   if (!Array.isArray(data.agentLedgerClosures)) data.agentLedgerClosures = [];
   if (!Array.isArray(data.agentSettlements)) data.agentSettlements = [];
   if (!Array.isArray(data.agentCashLogs)) data.agentCashLogs = [];
+  if (!Array.isArray(data.agentPayments)) data.agentPayments = [];
+  // دفعات المندوب: المندوب يقرا دفعاته هو بس (فلتر agentId)، والأدمن/موظف الحسابات يقرا الكل.
+  // فشل القراءة (صلاحيات، تاجر، زائر) متوقع — نبقي اللي بالذاكرة وما نوقف التحميل.
+  try {
+    const payUid = window.authApi && window.authApi.currentUid();
+    if (payUid && !data.merchants.some(m => m.authUid === payUid)) {
+      const me = data.employees.find(e => e.authUid === payUid);
+      let pays = null;
+      if (me && me.ownerType === 'delivery_agent') pays = await window.authApi.listPaymentsByAgent(me.id);
+      else if (!me || me.ownerType === 'admin') pays = await window.authApi.listCollection('agent_payments');
+      if (pays) data.agentPayments = pays.map(({ _uid, ...p }) => ({ ...p, id: p.id || _uid }));
+    }
+  } catch (e) { /* permission-denied متوقع لأي هوية ما لها صلاحية */ }
   if (!Array.isArray(data.agentAdjustments)) data.agentAdjustments = [];
   if (typeof data.settings.agentDueAlertThreshold !== 'number') data.settings.agentDueAlertThreshold = 0; // 0 = التنبيه معطّل
 }

@@ -31,7 +31,8 @@ function dataFingerprint() {
   const agentSettlements = (data.agentSettlements || []).map(c => `${c.id}`).join(',');
   const agentCashLogs = (data.agentCashLogs || []).map(c => `${c.id}`).join(',');
   const agentAdjustments = (data.agentAdjustments || []).map(c => `${c.id}`).join(',');
-  return `${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}|${agentLedgerClosures}|${agentSettlements}|${agentCashLogs}|${agentAdjustments}`;
+  const agentPayments = (data.agentPayments || []).map(c => `${c.id}:${c.status}`).join(',');
+  return `${agentPayments}|${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}|${agentLedgerClosures}|${agentSettlements}|${agentCashLogs}|${agentAdjustments}`;
 }
 
 let pollInFlight = false;

@@ -610,6 +610,30 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------------------------
+    // agent_payments/{payId} — دفعة يرسلها مندوب التوصيل للمنصة وتنتظر قبول/رفض الأدمن.
+    // المندوب: ينشئ دفعة جديدة لنفسه فقط وبحالة pending، ويقرا دفعاته هو بس (الاستعلام لازم
+    // يحمل where('agentId','==',...) — شوف listPaymentsByAgent). الأدمن أو موظف الحسابات:
+    // يقرا الكل، ويغيّر الحالة (confirmed/rejected) بدون ما يغيّر المبلغ أو صاحب الدفعة.
+    // ما تُحسب بالمسدَّد إلا بعد القبول (الكود ينسخها لـ agentCashLogs عند القبول).
+    // الشكل: { id, agentId, agentName, amount (عدد صحيح > 0), note, at, status }.
+    // ---------------------------------------------------------------------------------
+    match /agent_payments/{payId} {
+      allow read: if isAdmin() || isAdminEmployee('accounting')
+        || (isDeliveryAgent() && resource.data.agentId == employeeDoc().id);
+      allow create: if isDeliveryAgent()
+        && request.resource.data.keys().hasOnly(['id', 'agentId', 'agentName', 'amount', 'note', 'at', 'status'])
+        && request.resource.data.agentId == employeeDoc().id
+        && request.resource.data.status == 'pending'
+        && request.resource.data.amount is int
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 1000000000;
+      allow update: if (isAdmin() || isAdminEmployee('accounting'))
+        && request.resource.data.agentId == resource.data.agentId
+        && request.resource.data.amount == resource.data.amount;
+      allow delete: if isAdmin() || isAdminEmployee('accounting');
+    }
+
+    // ---------------------------------------------------------------------------------
     // product_reviews/{reviewId} — تقييمات الزبائن على منتج معيّن (نجوم 1-5 + تعليق
     // اختياري). في وثيقة منفصلة عمداً، مو مضمّنة داخل مصفوفة products بوثيقة التاجر:
     // زائر غير مسجل دخول (أي زبون بصفحة المتجر) ما يملك صلاحية الكتابة على وثيقة التاجر

@@ -1243,6 +1243,8 @@ function renderAgentSelfAccounts(agent) {
       <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${bal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي عليك (د)${bal.overpaid ? ' — زيادة ' + bal.overpaid.toLocaleString() : ''}</div></div>
     </div>`;
 
+  html += agentPaymentsSectionHtml(agent);
+
   if (rows.length === 0) {
     html += '<div class="empty" style="margin-top:10px;">ما فيه طلبات موصلة مسجلة بحسابك بعد</div>';
     el.innerHTML = html;

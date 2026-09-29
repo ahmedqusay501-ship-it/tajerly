@@ -1305,7 +1305,7 @@ function renderAgentAccounts() {
     `;
   }
   const cashLogEl = document.getElementById('agent-cash-log-list');
-  if (cashLogEl) cashLogEl.innerHTML = renderAgentCashLogs(agentId);
+  if (cashLogEl) cashLogEl.innerHTML = renderAgentPendingPayments(agentId) + renderAgentCashLogs(agentId);
 
   if (days.length === 0) { el.innerHTML = '<div class="empty">ما فيه عمليات مسجلة لهذا المندوب</div>'; return; }
 
@@ -1425,6 +1425,130 @@ async function submitAgentCashLog() {
   closeAgentCashLogModal();
   renderAll();
 }
+// ---------- 3b) دفعات المندوب بانتظار موافقة الأدمن (قبول / رفض) ----------
+// المندوب يرسل دفعة (agent_payments) وما تنحسب بالمسدَّد لحد ما الأدمن يأكد وصولها. عند القبول
+// تنضاف لـ agentCashLogs (نفس السجل اللي يقرا منه agentBalance) وتنعلّم confirmed؛ الرفض يعلّمها
+// rejected مع سبب اختياري ويبين للمندوب، ولا يأثر على الرصيد.
+function renderAgentPendingPayments(agentId) {
+  const all = (data.agentPayments || []).filter(p => p.agentId === agentId);
+  const pending = all.filter(p => p.status === 'pending').sort((a, b) => new Date(b.at) - new Date(a.at));
+  const rejected = all.filter(p => p.status === 'rejected').sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 3);
+  if (pending.length === 0 && rejected.length === 0) return '';
+  const pendingHtml = pending.map(p => `<div class="list-item" style="border:1px solid #FDE68A; background:#FFFBEB; border-radius:8px; padding:8px; margin-top:6px;">
+    <span>⏳ ${new Date(p.at).toLocaleString('ar-IQ')} — <b>${p.amount.toLocaleString()} د</b>${p.note ? ' — ' + esc(p.note) : ''}
+      <span style="color:var(--text-mute); font-size:11px;">(دفعة بانتظار تأكيدك — هل وصلتك؟)</span></span>
+    <span style="display:flex; gap:6px;">
+      <button class="btn small" onclick="approveAgentPayment('${esc(p.id)}')">✓ قبول (وصلت)</button>
+      <button class="btn danger small" onclick="rejectAgentPayment('${esc(p.id)}')">✕ رفض (ما وصلت)</button>
+    </span>
+  </div>`).join('');
+  const rejectedHtml = rejected.map(p => `<div style="font-size:11.5px; color:var(--text-mute); padding:4px 0;">
+    ✕ مرفوضة: ${new Date(p.at).toLocaleString('ar-IQ')} — ${p.amount.toLocaleString()} د${p.rejectReason ? ' — ' + esc(p.rejectReason) : ''}
+  </div>`).join('');
+  return `<div style="margin-bottom:10px;"><b style="font-size:12.5px;">دفعات بانتظار الموافقة${pending.length ? ' (' + pending.length + ')' : ''}</b>${pendingHtml}${rejectedHtml}</div>`;
+}
+async function approveAgentPayment(id) {
+  const p = (data.agentPayments || []).find(x => x.id === id);
+  if (!p || p.status !== 'pending') return;
+  let addedLog = null;
+  if (!(data.agentCashLogs || []).some(l => l.paymentId === id)) {
+    addedLog = {
+      id: Date.now() + '-' + p.agentId + '-' + Math.random().toString(36).slice(2, 6),
+      agentId: p.agentId, amount: p.amount,
+      note: p.note ? 'دفعة من المندوب: ' + p.note : 'دفعة من المندوب (تأكيد الأدمن)',
+      at: new Date().toISOString(), by: currentActorLabel(), paymentId: id
+    };
+    data.agentCashLogs.push(addedLog);
+  }
+  const ok = await saveData();
+  if (ok === false) {
+    if (addedLog) data.agentCashLogs = data.agentCashLogs.filter(l => l !== addedLog);
+    showToast('ما انحفظ القبول — جرّب مرة ثانية');
+    return;
+  }
+  try {
+    await window.authApi.saveDoc('agent_payments', id, { status: 'confirmed', decidedAt: new Date().toISOString(), decidedBy: currentActorLabel() });
+  } catch (e) {
+    console.error('agent payment confirm failed', e);
+    showToast('انحسبت الدفعة، بس تعذّر تحديث حالتها — اضغط قبول مرة ثانية');
+    renderAll();
+    return;
+  }
+  p.status = 'confirmed';
+  const a = data.employees.find(x => x.id === p.agentId);
+  await logAudit('قبول دفعة مندوب', `${a ? a.name : p.agentId} — ${p.amount.toLocaleString()} د`);
+  showToast('تم قبول الدفعة وانحسبت بالمسدَّد');
+  renderAll();
+}
+async function rejectAgentPayment(id) {
+  const p = (data.agentPayments || []).find(x => x.id === id);
+  if (!p || p.status !== 'pending') return;
+  const reason = prompt('سبب الرفض (اختياري) — يبين للمندوب:');
+  if (reason === null) return; // ألغى
+  try {
+    await window.authApi.saveDoc('agent_payments', id, { status: 'rejected', rejectReason: (reason || '').trim(), decidedAt: new Date().toISOString(), decidedBy: currentActorLabel() });
+  } catch (e) {
+    console.error('agent payment reject failed', e);
+    showToast('ما انحفظ الرفض — جرّب مرة ثانية');
+    return;
+  }
+  p.status = 'rejected';
+  p.rejectReason = (reason || '').trim();
+  const a = data.employees.find(x => x.id === p.agentId);
+  await logAudit('رفض دفعة مندوب', `${a ? a.name : p.agentId} — ${p.amount.toLocaleString()} د`);
+  showToast('تم رفض الدفعة');
+  renderAll();
+}
+
+// ---------- 3c) جهة المندوب: إرسال دفعة + عرض حالة دفعاته ----------
+function agentPaymentsSectionHtml(agent) {
+  if (!agent || agent.ownerType !== 'delivery_agent') return '';
+  const mine = (data.agentPayments || []).filter(p => p.agentId === agent.id).sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 10);
+  const label = { pending: '⏳ بانتظار موافقة الأدمن', confirmed: '✓ مقبولة', rejected: '✕ مرفوضة' };
+  const color = { pending: '#92400E', confirmed: '#065F46', rejected: '#B3261E' };
+  const rows = mine.map(p => `<div class="list-item"><span>${new Date(p.at).toLocaleString('ar-IQ')} — <b>${p.amount.toLocaleString()} د</b>${p.note ? ' — ' + esc(p.note) : ''}${p.status === 'rejected' && p.rejectReason ? ' — سبب الرفض: ' + esc(p.rejectReason) : ''}</span>
+    <span style="font-size:11.5px; color:${color[p.status] || 'inherit'};">${label[p.status] || esc(p.status)}</span></div>`).join('');
+  return `<div class="card" style="margin-top:10px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+      <b style="font-size:13px;">دفعاتك للمنصة</b>
+      <button class="btn small" onclick="openAgentPayModal()">+ إرسال دفعة</button>
+    </div>
+    ${rows || '<div class="empty" style="margin-top:6px;">ما أرسلت أي دفعة بعد</div>'}
+  </div>`;
+}
+function openAgentPayModal() {
+  const emp = currentEmployee();
+  if (!emp || emp.ownerType !== 'delivery_agent') return;
+  const bal = agentBalance(emp.id);
+  document.getElementById('agent-pay-amount').value = bal.remaining > 0 ? bal.remaining : '';
+  document.getElementById('agent-pay-note').value = '';
+  document.getElementById('agent-pay-hint').textContent = `المتبقي عليك حالياً: ${bal.remaining.toLocaleString()} د`;
+  document.getElementById('agent-pay-modal').classList.add('show');
+}
+function closeAgentPayModal() {
+  document.getElementById('agent-pay-modal').classList.remove('show');
+}
+async function submitAgentPay() {
+  const emp = currentEmployee();
+  if (!emp || emp.ownerType !== 'delivery_agent') return;
+  const amount = parseInt(document.getElementById('agent-pay-amount').value, 10);
+  const note = document.getElementById('agent-pay-note').value.trim();
+  if (isNaN(amount) || amount <= 0) { showToast('عبي مبلغ صحيح'); return; }
+  const id = 'pay-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  const payload = { id, agentId: emp.id, agentName: emp.name || '', amount, note, at: new Date().toISOString(), status: 'pending' };
+  try {
+    await window.authApi.saveDoc('agent_payments', id, payload);
+  } catch (e) {
+    console.error('agent payment submit failed', e);
+    showToast('ما انرسلت الدفعة — تأكد من الاتصال أو انشر قواعد Firestore الجديدة', 6000);
+    return;
+  }
+  data.agentPayments.push(payload);
+  showToast('انرسلت الدفعة — بانتظار موافقة الأدمن');
+  closeAgentPayModal();
+  renderAll();
+}
+
 function deleteAgentCashLog(id) {
   openConfirmModal('حذف سجل استلام نقدي', 'متأكد تريد تحذف هذا السجل؟ هذا الإجراء يخص الأدمن بس.', async () => {
     data.agentCashLogs = (data.agentCashLogs || []).filter(l => l.id !== id);
