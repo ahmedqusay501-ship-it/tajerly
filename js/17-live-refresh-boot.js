@@ -34,7 +34,24 @@ function dataFingerprint() {
   return `${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}|${agentLedgerClosures}|${agentSettlements}|${agentCashLogs}|${agentAdjustments}`;
 }
 
+let pollInFlight = false;
 async function pollForUpdates() {
+  // Performance: skip when the tab is hidden, when nothing data-driven is on screen
+  // (login page), or when the previous poll hasn't finished (avoids piling up requests).
+  if (document.hidden || pollInFlight) return;
+  const appShell = document.getElementById('app-shell');
+  const pubStore = document.getElementById('public-store-screen');
+  const appVisible = appShell && appShell.style.display !== 'none';
+  const storeVisible = pubStore && pubStore.style.display !== 'none';
+  if (!appVisible && !storeVisible) return;
+  pollInFlight = true;
+  try {
+    await pollForUpdatesInner();
+  } finally {
+    pollInFlight = false;
+  }
+}
+async function pollForUpdatesInner() {
   try {
     // The support chat modal is deliberately excluded from this check — a chat needs to
     // keep refreshing while it's open (see pollSupportChat below), unlike every other modal
@@ -87,7 +104,7 @@ async function pollForUpdates() {
     console.error('Live refresh error:', e);
   }
 }
-setInterval(pollForUpdates, 5000);
+setInterval(pollForUpdates, 15000);
 
 // App boot: set up storage (Firebase, or the local fallback if that fails) first,
 // THEN load saved data. routeOnLoad() (called at the end of loadData) decides whether

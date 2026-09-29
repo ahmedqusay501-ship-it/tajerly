@@ -24,11 +24,13 @@ window.__usingLocalFallback = false;
 async function initStorage() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-    const { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
     const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut: authSignOut, updatePassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
     const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js");
     const firebaseApp = initializeApp(firebaseConfig);
-    const db = getFirestore(firebaseApp);
+    // Auto-detect long-polling: some Iraqi ISPs/networks stall Firestore's WebChannel streams,
+    // leaving dozens of "pending" channel requests. This falls back to long-polling when needed.
+    const db = initializeFirestore(firebaseApp, { experimentalAutoDetectLongPolling: true });
     const auth = getAuth(firebaseApp);
     const functionsApi = getFunctions(firebaseApp);
 
