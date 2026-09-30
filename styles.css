@@ -830,3 +830,7 @@
     #topbar-name, .topbar-user > span:not(.role-chip):not(#admin-alert-bell-btn) { display: none; }
     .grid3 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   }
+
+  /* التاجر والمندوب: التبويبات انتقلت للقائمة الجانبية، فنخفي الشريط الأفقي الأصلي (يبقى بالـ DOM لأن القائمة تضغطه) */
+  body.role-sidebar #merchant-dash-subnav,
+  body.role-sidebar #agent-dashboard-tabs { display: none !important; }
