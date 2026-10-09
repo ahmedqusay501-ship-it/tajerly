@@ -44,6 +44,7 @@ async function submitRequest() {
     feeCustomer: s.feeCustomer,
     feeMerchant: s.feeMerchant,
     itemDeduction: s.itemDeduction || 0,
+    itemDeductionPercent: s.itemDeductionPercent || 0,
     shippingAmount: s.shippingAmount,
     deliverySpeeds: ['fast', 'slow'], // default حتى يحددها الأدمن وقت القبول — يتحكم بيها فقط من نافذة القبول
     // كل تاجر جديد ينضم من الآن يشحن بنفسه افتراضياً (توصيل خاص بالمحل) بدل توصيل المنصة العام —
@@ -113,7 +114,7 @@ async function submitRequest() {
 
 let pendingApproveId = null;
 let approveModalMode = 'approve'; // 'approve' (new merchant, needs username/password) | 'editFees' (existing merchant, fees only)
-let approveFeeState = { feeSource: 'customer', feeType: 'fixed', feeAmount: 0, feeCustomer: 0, feeMerchant: 0, itemDeduction: 0, feeExemptMaxPrice: 0 };
+let approveFeeState = { feeSource: 'customer', feeType: 'fixed', feeAmount: 0, feeCustomer: 0, feeMerchant: 0, itemDeduction: 0, itemDeductionPercent: 0, feeExemptMaxPrice: 0 };
 
 // Opens the modal in "approve" mode: admin sets username/password AND the fee settings for this merchant in one step
 function approveMerchant(id) {
@@ -132,6 +133,7 @@ function approveMerchant(id) {
     feeCustomer: (m && m.feeCustomer != null) ? m.feeCustomer : (data.settings.feeCustomer || 0),
     feeMerchant: (m && m.feeMerchant != null) ? m.feeMerchant : (data.settings.feeMerchant || 0),
     itemDeduction: (m && m.itemDeduction != null) ? m.itemDeduction : (data.settings.itemDeduction || 0),
+    itemDeductionPercent: (m && m.itemDeductionPercent != null) ? m.itemDeductionPercent : (data.settings.itemDeductionPercent || 0),
     feeExemptMaxPrice: (m && m.feeExemptMaxPrice) || 0,
     deliverySpeeds: (m && Array.isArray(m.deliverySpeeds) && m.deliverySpeeds.length) ? m.deliverySpeeds.slice() : ['fast', 'slow']
   };
@@ -155,6 +157,7 @@ function editMerchantFees(id) {
     feeCustomer: m.feeCustomer || 0,
     feeMerchant: m.feeMerchant || 0,
     itemDeduction: m.itemDeduction || 0,
+    itemDeductionPercent: m.itemDeductionPercent || 0,
     feeExemptMaxPrice: m.feeExemptMaxPrice || 0,
     deliverySpeeds: (Array.isArray(m.deliverySpeeds) && m.deliverySpeeds.length) ? m.deliverySpeeds.slice() : ['fast', 'slow']
   };
@@ -177,6 +180,9 @@ function setApproveFeeAmount(field, value) {
 }
 function setApproveItemDeduction(value) {
   approveFeeState.itemDeduction = Math.max(0, parseFloat(value) || 0);
+}
+function setApproveItemDeductionPercent(value) {
+  approveFeeState.itemDeductionPercent = Math.min(100, Math.max(0, parseFloat(value) || 0));
 }
 function setApproveFeeExemptMax(value) {
   approveFeeState.feeExemptMaxPrice = Math.max(0, parseFloat(value) || 0);
@@ -210,6 +216,8 @@ function renderApproveFeeFields() {
   }
   const itemDeductionEl = document.getElementById('approve-item-deduction');
   if (itemDeductionEl) itemDeductionEl.value = approveFeeState.itemDeduction;
+  const itemDeductionPctEl = document.getElementById('approve-item-deduction-percent');
+  if (itemDeductionPctEl) itemDeductionPctEl.value = approveFeeState.itemDeductionPercent || 0;
   const feeExemptMaxEl = document.getElementById('approve-fee-exempt-max');
   if (feeExemptMaxEl) feeExemptMaxEl.value = approveFeeState.feeExemptMaxPrice;
 
@@ -268,6 +276,7 @@ async function confirmApprove() {
   m.feeCustomer = approveFeeState.feeCustomer;
   m.feeMerchant = approveFeeState.feeMerchant;
   m.itemDeduction = approveFeeState.itemDeduction;
+  m.itemDeductionPercent = approveFeeState.itemDeductionPercent || 0;
   m.feeExemptMaxPrice = approveFeeState.feeExemptMaxPrice;
   m.deliverySpeeds = approveFeeState.deliverySpeeds;
 
@@ -891,6 +900,20 @@ function renderAgentZonesList() {
       </span>
     </div>
   `).join('');
+}
+// إضافة منطقة جديدة (غير موجودة بالقائمة) للمحافظة المختارة، تنحفظ بقائمة المناطق العامة وتنختار تلقائياً
+function addNewAreaForAgentZone() {
+  const gov = document.getElementById('agent-zone-governorate').value;
+  const input = document.getElementById('agent-zone-new-area');
+  const name = (input.value || '').trim();
+  if (!gov) { showToast('اختر المحافظة أول'); return; }
+  if (!name) { showToast('اكتب اسم المنطقة'); return; }
+  const added = registerCustomArea(gov, name);
+  if (added) { saveData(); showToast(`تمت إضافة منطقة "${name}" لمحافظة ${gov}`); }
+  else showToast('هذي المنطقة موجودة أصلاً — تم اختيارها');
+  input.value = '';
+  renderAgentZoneAreaSelect();
+  document.getElementById('agent-zone-area').value = name;
 }
 function addAgentZone() {
   const a = currentEditingAgent();

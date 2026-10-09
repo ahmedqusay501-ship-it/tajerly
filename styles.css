@@ -834,3 +834,64 @@
   /* التاجر والمندوب: التبويبات انتقلت للقائمة الجانبية، فنخفي الشريط الأفقي الأصلي (يبقى بالـ DOM لأن القائمة تضغطه) */
   body.role-sidebar #merchant-dash-subnav,
   body.role-sidebar #agent-dashboard-tabs { display: none !important; }
+
+
+  /* =====================================================================================
+     Responsive system (آخر طبقة — تتغلب على كل اللي قبلها) — مقاسات متناسقة لكل الأجهزة:
+     موبايل < 640 · تابلت 640–1023 · لابتوب 1024–1439 · شاشة كبيرة ≥ 1440 (+ دعم الـ notch).
+     ===================================================================================== */
+  *, *::before, *::after { box-sizing: border-box; }
+  img, video, canvas, svg, iframe { max-width: 100%; }
+  .main-content, .view, .card { min-width: 0; }
+  .topbar { padding-inline: max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-left)); }
+  .support-fab { bottom: max(16px, env(safe-area-inset-bottom)); inset-inline-start: max(16px, env(safe-area-inset-left)); }
+  .modal-box { width: min(92vw, 380px); max-height: 90dvh; overflow-y: auto; }
+
+  /* الحاوية والمسافات: تكبر تدريجياً مع الشاشة بدل قفزات مفاجئة */
+  .view { max-width: 100%; padding: 16px 14px 40px; }
+  .page-head h2 { font-size: clamp(18px, 1.6vw + 12px, 22px); }
+  .grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stat .stat-num, .stat-value { font-size: clamp(18px, 1.2vw + 14px, 24px); }
+  .chart-wrap { height: 200px; }
+  .view table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* تابلت */
+  @media (min-width: 640px) {
+    .view { padding: 22px 24px 48px; }
+    .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .chart-wrap { height: 240px; }
+    .modal-box { max-width: 460px; }
+  }
+  /* لابتوب */
+  @media (min-width: 1024px) {
+    .view { max-width: 1180px; padding: 28px 32px 56px; }
+    .grid3 { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+    .chart-wrap { height: 270px; }
+  }
+  /* شاشة كبيرة */
+  @media (min-width: 1440px) {
+    .view { max-width: 1320px; }
+    .sidebar { width: 260px; }
+  }
+
+  /* قائمة جانبية: عرض مناسب لكل مقاس، وبالموبايل تنسحب فوق المحتوى */
+  @media (min-width: 901px) and (max-width: 1100px) { .sidebar { width: 210px; } }
+  @media (max-width: 900px) {
+    .sidebar { width: min(280px, 86vw); padding: 64px 12px 24px; height: 100dvh; overflow-y: auto; }
+    .view { padding: 16px 14px 40px; }
+  }
+  @media (max-width: 480px) {
+    .page-head { flex-wrap: wrap; gap: 8px; }
+    .modal-actions { flex-wrap: wrap; }
+    .modal-actions > button { flex: 1 1 120px; }
+  }
+  /* موبايل بالوضع الأفقي: ما يمتد المحتوى تحت الـ notch ولا يضيع الارتفاع */
+  @media (max-height: 480px) and (orientation: landscape) {
+    .topbar { height: 48px; }
+    .modal-box { max-height: 94dvh; }
+  }
+  /* شاشات اللمس: أزرار بحجم يتضغط بالإصبع بدون تكبير */
+  @media (pointer: coarse) {
+    button, .toggle, .sidebar button { min-height: 40px; }
+    input, select, textarea { min-height: 42px; }
+  }

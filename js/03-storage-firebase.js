@@ -390,6 +390,13 @@ function agentCoversLocation(agent, governorate, area) {
   const zone = findAgentZone(agent, governorate, area);
   return !!zone && (zone.fastEnabled !== false || zone.slowEnabled !== false);
 }
+// استقطاع القطعة الواحدة = مبلغ ثابت + نسبة مئوية من سعر القطعة (الاثنين اختياريين ويجتمعون).
+// يُحسب مرة وحدة وقت إنشاء الطلب ويُخزَّن برقم itemDeduction، فكل الحسابات والدفاتر تبقى تشتغل بدون تغيير.
+function calcItemDeduction(m, price) {
+  const fixed = Math.max(0, (m && m.itemDeduction) || 0);
+  const pct = Math.min(100, Math.max(0, (m && m.itemDeductionPercent) || 0));
+  return Math.round(fixed + (parseFloat(price) || 0) * pct / 100);
+}
 function registerCustomArea(governorate, areaName) {
   const name = (areaName || '').trim();
   if (!governorate || !name) return false;
@@ -1061,6 +1068,7 @@ async function fetchRemoteData() {
     if (typeof o.area !== 'string') o.area = '';
   });
   if (typeof data.settings.itemDeduction !== 'number') data.settings.itemDeduction = 0;
+  if (typeof data.settings.itemDeductionPercent !== 'number') data.settings.itemDeductionPercent = 0;
   if (!Array.isArray(data.settings.shippingZones) || data.settings.shippingZones.length === 0) {
     data.settings.shippingZones = [
       { id: 'z1', name: 'بغداد', fastPrice: 4000, slowPrice: 2000 },

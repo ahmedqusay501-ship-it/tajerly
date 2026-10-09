@@ -542,7 +542,7 @@ document.getElementById('checkout-confirm-btn').addEventListener('click', async 
         id: genId(), merchantId: c.merchantId, merchantAuthUid: m.authUid || null, productId: item.productId, productName: item.productName, price: item.price, size: item.size, color: item.color,
         customerName: name, customerPhone: phone, customerAddress: address,
         governorate: c.governorate, area: c.area || '', shippingSpeed: c.shippingSpeed,
-        feeFromCustomer: fee.customer, feeFromMerchant: fee.merchant, itemDeduction: fee.exempt ? 0 : (m.itemDeduction || 0),
+        feeFromCustomer: fee.customer, feeFromMerchant: fee.merchant, itemDeduction: fee.exempt ? 0 : calcItemDeduction(m, item.price),
         shippingFee: (idx === 0 && n === 0) ? c.deliveryFee : 0,
         couponCode: couponCode, couponDiscount: unitDiscount,
         status: 'pending',

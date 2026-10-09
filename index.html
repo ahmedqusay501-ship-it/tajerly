@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>تاجرلي — افتح متجرك الإلكتروني مجاناً في العراق</title>
 <meta name="description" content="تاجرلي منصة عراقية تتيح لك فتح متجرك الإلكتروني مجاناً وخلال دقائق بدون اشتراك شهري. أدر منتجاتك وطلباتك وحساباتك والشحن من مكان واحد.">
 <link rel="canonical" href="https://tajerly.shop/">
@@ -792,10 +792,12 @@
   </div>
 
   <div class="card">
-    <div class="card-title">١ب. استقطاع ثابت من كل قطعة (اختياري)</div>
+    <div class="card-title">١ب. استقطاع من كل قطعة — مبلغ ثابت و/أو نسبة مئوية (اختياري)</div>
     <div class="subtitle" style="margin-bottom:4px;">قيمة إضافية بجانب رسم المنصة أعلاه — تُخصم من رصيد التاجر فقط عند قبول كل طلب، ولا تُضاف على سعر القطعة ولا تظهر للزبون إطلاقاً. هذي القيمة الافتراضية لأي تاجر جديد، وتقدر تعدلها لكل تاجر لحاله من "قبول التاجر" أو "تعديل رسوم المنصة"</div>
     <label>الاستقطاع (دينار لكل قطعة)</label>
     <input type="number" id="item-deduction" onchange="saveSettings()">
+    <label style="margin-top:8px;">أو نسبة مئوية من سعر كل قطعة (%) — تجتمع مع المبلغ الثابت</label>
+    <input type="number" id="item-deduction-percent" min="0" max="100" step="0.1" placeholder="مثلاً: 5" onchange="saveSettings()">
   </div>
 
   <div class="card">
@@ -1111,10 +1113,12 @@
     <label style="margin-top:8px;">طريقة حساب الرسم</label>
     <div class="toggle-group" id="approve-fee-type-toggles"></div>
     <div id="approve-fee-amount-fields"></div>
-    <div class="card-title" style="margin-top:14px;">استقطاع ثابت من كل قطعة (اختياري)</div>
+    <div class="card-title" style="margin-top:14px;">استقطاع من كل قطعة — مبلغ ثابت و/أو نسبة مئوية (اختياري)</div>
     <div class="subtitle" style="margin-bottom:4px;">مبلغ إضافي يُخصم من رصيد التاجر عن كل قطعة تُباع، بجانب رسم المنصة أعلاه — ما يُضاف على سعر القطعة ولا يظهر للزبون إطلاقاً</div>
     <label>الاستقطاع (دينار لكل قطعة)</label>
     <input type="number" id="approve-item-deduction" onchange="setApproveItemDeduction(this.value)">
+    <label style="margin-top:8px;">أو نسبة مئوية من سعر كل قطعة (%) — تجتمع مع المبلغ الثابت</label>
+    <input type="number" id="approve-item-deduction-percent" min="0" max="100" step="0.1" placeholder="مثلاً: 5" onchange="setApproveItemDeductionPercent(this.value)">
     <div class="card-title" style="margin-top:14px;">إعفاء القطع الرخيصة من العمولة (اختياري)</div>
     <div class="subtitle" style="margin-bottom:4px;">أي قطعة سعرها يساوي أو أقل من هذا المبلغ ما يُؤخذ منها أي عمولة إطلاقاً (لا رسم منصة ولا استقطاع القطعة أعلاه) — مفيد إذا عند هذا التاجر منتجات رخيصة جداً وما تريد الرسم ياكل من ربحه فيها. اتركه صفر لتعطيل الإعفاء.</div>
     <label>إعفاء أي قطعة سعرها ≤ (دينار)</label>
@@ -1466,6 +1470,10 @@
         <div><label>المحافظة</label><select id="agent-zone-governorate" onchange="renderAgentZoneAreaSelect()"></select></div>
         <div><label>منطقة محددة (اختياري)</label><select id="agent-zone-area"></select></div>
       </div>
+    <div class="row2" style="align-items:flex-end;">
+      <div><label>منطقة غير موجودة؟ أضفها</label><input id="agent-zone-new-area" placeholder="اسم المنطقة الجديدة"></div>
+      <div><button class="btn secondary small" type="button" onclick="addNewAreaForAgentZone()">+ إضافة المنطقة</button></div>
+    </div>
       <div class="row2">
         <div>
           <label><input type="checkbox" id="agent-zone-fast-enabled" checked style="width:auto;"> توصيل سريع</label>

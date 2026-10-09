@@ -179,6 +179,7 @@ function ensureMerchantTheme(m) {
   }
   if (!m.feeType) m.feeType = 'fixed';
   if (typeof m.itemDeduction !== 'number') m.itemDeduction = data.settings.itemDeduction || 0;
+  if (typeof m.itemDeductionPercent !== 'number') m.itemDeductionPercent = data.settings.itemDeductionPercent || 0;
   // Admin-set exemption: items priced at or below this amount pay zero platform fee (and
   // zero fixed item deduction) for this merchant specifically — see calcFee(). 0 = no exemption.
   if (typeof m.feeExemptMaxPrice !== 'number') m.feeExemptMaxPrice = 0;

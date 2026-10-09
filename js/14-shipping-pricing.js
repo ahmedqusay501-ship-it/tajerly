@@ -26,6 +26,8 @@ function renderSettings() {
   `;
   document.getElementById('shipping-amount').value = s.shippingAmount;
   document.getElementById('item-deduction').value = s.itemDeduction || 0;
+  const itemDedPctEl = document.getElementById('item-deduction-percent');
+  if (itemDedPctEl) itemDedPctEl.value = s.itemDeductionPercent || 0;
   const agentThresholdEl = document.getElementById('agent-due-alert-threshold');
   if (agentThresholdEl) agentThresholdEl.value = s.agentDueAlertThreshold || 0;
 
@@ -55,6 +57,8 @@ function saveSettings() {
   data.settings.feeCustomer = clamp(parseFloat(document.getElementById('fee-customer').value) || 0);
   data.settings.feeMerchant = clamp(parseFloat(document.getElementById('fee-merchant').value) || 0);
   data.settings.itemDeduction = Math.max(0, parseFloat(document.getElementById('item-deduction').value) || 0);
+  const itemDedPctInput = document.getElementById('item-deduction-percent');
+  if (itemDedPctInput) data.settings.itemDeductionPercent = Math.min(100, Math.max(0, parseFloat(itemDedPctInput.value) || 0));
   data.settings.shippingAmount = parseFloat(document.getElementById('shipping-amount').value) || 0;
   const agentThresholdEl = document.getElementById('agent-due-alert-threshold');
   if (agentThresholdEl) data.settings.agentDueAlertThreshold = Math.max(0, parseFloat(agentThresholdEl.value) || 0);
