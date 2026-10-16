@@ -487,6 +487,9 @@ let data = {
   // and folded into the unsettled/threshold totals. { id, agentId, dateKey, amount, reason,
   // at, by } — amount can be negative (discount) or positive (extra charge).
   agentAdjustments: [],
+  // سجل دفعات الاشتراكات الشهرية (نموذج الربح الثالث) — شوف js/22-subscriptions.js. يعيش بنفس
+  // وثيقة platform-settings فما يحتاج collection/rule جديد. { id, merchantId, shop, amount, days, kind:'activate'|'renew', at }
+  subscriptionPayments: [],
   // Audit trail of sensitive admin-level actions (approve/reject/delete a merchant, reset a
   // password, change admin credentials, ...). See logAudit() below. Lives in its own doc
   // ('audit-log', shared/admin-write) so it never competes with the version-conflict logic
@@ -701,6 +704,7 @@ async function fetchRemoteData() {
       data.agentLedgerClosures = Array.isArray(loaded.agentLedgerClosures) ? loaded.agentLedgerClosures : (data.agentLedgerClosures || []);
       data.agentSettlements = Array.isArray(loaded.agentSettlements) ? loaded.agentSettlements : (data.agentSettlements || []);
       data.agentCashLogs = Array.isArray(loaded.agentCashLogs) ? loaded.agentCashLogs : (data.agentCashLogs || []);
+      data.subscriptionPayments = Array.isArray(loaded.subscriptionPayments) ? loaded.subscriptionPayments : (data.subscriptionPayments || []);
       data.agentAdjustments = Array.isArray(loaded.agentAdjustments) ? loaded.agentAdjustments : (data.agentAdjustments || []);
     }
   } catch (e) {
@@ -1088,6 +1092,7 @@ async function fetchRemoteData() {
   if (!Array.isArray(data.agentLedgerClosures)) data.agentLedgerClosures = [];
   if (!Array.isArray(data.agentSettlements)) data.agentSettlements = [];
   if (!Array.isArray(data.agentCashLogs)) data.agentCashLogs = [];
+  if (!Array.isArray(data.subscriptionPayments)) data.subscriptionPayments = [];
   if (!Array.isArray(data.agentPayments)) data.agentPayments = [];
   if (!Array.isArray(data.agentPaymentRequests)) data.agentPaymentRequests = [];
   // دفعات المندوب وطلبات الأدمن: كل هوية تقرا اللي تسمح به القواعد فقط —

@@ -1649,6 +1649,7 @@ function renderMerchantPanel() {
   if (newOrderTrackedMerchantId !== m.id) seedNewOrderTracking(m);
 
   panel.innerHTML = `
+    <div id="merchant-subscription-banner">${currentRole === 'merchant' ? renderMerchantSubscriptionBanner(m) : ''}</div>
     <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
       <button class="btn small ${newOrderSoundEnabled ? '' : 'secondary'}" onclick="toggleNewOrderSound()">${newOrderSoundEnabled ? '🔔 التنبيه الصوتي مفعّل' : '🔕 فعّل تنبيه الطلبات الصوتي'}</button>
     </div>

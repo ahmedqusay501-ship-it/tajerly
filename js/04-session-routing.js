@@ -183,6 +183,11 @@ function ensureMerchantTheme(m) {
   // Admin-set exemption: items priced at or below this amount pay zero platform fee (and
   // zero fixed item deduction) for this merchant specifically — see calcFee(). 0 = no exemption.
   if (typeof m.feeExemptMaxPrice !== 'number') m.feeExemptMaxPrice = 0;
+  // الاشتراك الشهري (نموذج الربح الثالث) — أدمن حصراً، شوف js/22-subscriptions.js. تاجر قديم = غير مشترك.
+  if (typeof m.subscriptionEnabled !== 'boolean') m.subscriptionEnabled = false;
+  if (typeof m.subscriptionPrice !== 'number') m.subscriptionPrice = 0;
+  if (typeof m.subscriptionDays !== 'number' || m.subscriptionDays < 1) m.subscriptionDays = 30;
+  if (typeof m.subscriptionEndsAt !== 'number') m.subscriptionEndsAt = 0;
   // Custom domain the admin bought/assigned to this merchant as an official gift (see
   // assignCustomDomain). Purely additive — the merchant keeps their normal platform link
   // working too (see storeLinkUrl), so removing/changing this can never orphan their store,

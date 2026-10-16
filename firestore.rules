@@ -266,6 +266,12 @@ service cloud.firestore {
         merchantFieldUnchanged('ownDeliveryAreaPrices', {}) &&
         // ظهور/إخفاء منتجات التاجر بصفحة السوق العام قرار أدمن بس — التاجر أو موظفه ما
         // يقدر يفعّله لنفسه حتى لو كان معه صلاحية تعديل المتجر/المنتجات.
+        // الاشتراك الشهري (مبلغ/مدة/تاريخ الانتهاء/التفعيل) قرار أدمن حصراً — بدون هذا القفل تاجر
+        // يقدر يمدّد اشتراكه أو يصفّر مبلغه بنفسه عبر الـ SDK. شوف js/22-subscriptions.js.
+        merchantFieldUnchanged('subscriptionEnabled', false) &&
+        merchantFieldUnchanged('subscriptionPrice', 0) &&
+        merchantFieldUnchanged('subscriptionDays', 30) &&
+        merchantFieldUnchanged('subscriptionEndsAt', 0) &&
         merchantFieldUnchanged('hiddenFromMarket', false) &&
         // تصنيف "ماركت / مطعم" (type) يقرر أي صفحة سوق عام يظهر بها التاجر — نفس مستوى
         // حساسية hiddenFromMarket فوق، فقفلها أدمن بس بنفس المنطق (تاجر ما يقدر يحوّل

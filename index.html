@@ -753,6 +753,55 @@
   </div>
 </div>
 
+<!-- ============ SUBSCRIPTIONS (admin-only: monthly subscription model, countdown + profits) ============ -->
+<div class="view" id="view-subscriptions">
+  <h2>الاشتراكات</h2>
+  <div class="subtitle">نموذج الاشتراك الشهري: تفعّل لأي تاجر اشتراك بمبلغ ومدة (بالأيام) تحددها، والعدّاد ينزل تنازلياً ويبين للتاجر. هذا ربح مستقل عن العمولات والاستقطاعات الثابتة ورسوم الخدمة على الزبون — ما يتأثرون أبداً. التجار الأقرب لانتهاء اشتراكهم يطلعون بأول القائمة.</div>
+
+  <div class="grid3" id="sub-stats"></div>
+
+  <div class="card">
+    <div class="card-title">التجار المشتركين</div>
+    <div id="sub-list"><div class="empty">ما فيه تجار مفعّل عليهم اشتراك</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">تفعيل اشتراك لتاجر</div>
+    <label>التاجر</label>
+    <select id="sub-new-merchant"><option value="">اختر التاجر</option></select>
+    <div class="row2">
+      <div><label>مدة الاشتراك (أيام)</label><input type="number" id="sub-new-days" value="30" min="1"></div>
+      <div><label>مبلغ الاشتراك (د)</label><input type="number" id="sub-new-price" placeholder="مثلاً: 25000" min="0"></div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:10px; cursor:pointer;">
+      <input type="checkbox" id="sub-new-paid" checked style="width:auto;">
+      <span>سجّل مبلغ الاشتراك كمدفوع الآن (يدخل ضمن أرباحي)</span>
+    </label>
+    <button class="btn small" style="margin-top:10px;" onclick="subActivate()">تفعيل الاشتراك وبدء العدّ التنازلي</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">سجل الدفعات (آخر ٣٠)</div>
+    <div id="sub-payments"><div class="empty">ما فيه دفعات مسجلة بعد</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="sub-edit-modal">
+  <div class="modal-box">
+    <div class="modal-title" id="sub-edit-title">تعديل اشتراك</div>
+    <div class="row2">
+      <div><label>مبلغ الاشتراك (د)</label><input type="number" id="sub-edit-price" min="0"></div>
+      <div><label>مدة الدورة (أيام)</label><input type="number" id="sub-edit-days" min="1"></div>
+    </div>
+    <label>الأيام المتبقية (اختياري — تعديل العدّاد يدوياً)</label>
+    <input type="number" id="sub-edit-remaining" placeholder="اتركه فارغ لعدم تغيير العدّاد" min="0">
+    <div class="modal-actions">
+      <button class="btn secondary small" onclick="closeSubEdit()">إلغاء</button>
+      <button class="btn small" onclick="confirmSubEdit()">حفظ</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MERCHANT DASHBOARD ============ -->
 <div class="view" id="view-merchant">
   <h2>لوحة التاجر</h2>
@@ -1814,6 +1863,7 @@
 <script src="js/19-general-market.js"></script>
 <script src="js/20-restaurants-market.js"></script>
 <script src="js/21-agent-settlements.js"></script>
+<script src="js/22-subscriptions.js"></script>
 <script src="js/17-live-refresh-boot.js"></script>
 </body>
 </html>

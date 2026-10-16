@@ -22,7 +22,7 @@
 // and doesn't flicker the UI.
 function dataFingerprint() {
   const orders = data.orders.map(o => `${o.id}:${o.status}:${o.deliveryStatus || ''}:${o.cancelled ? 1 : 0}:${o.cancelStage || ''}:${o.removalStatus || ''}`).join(',');
-  const merchants = data.merchants.map(m => `${m.id}:${m.status}:${m.customDomain || ''}:${(m.commissionRequests || []).map(r => r.id + '-' + r.status).join('.')}`).join(',');
+  const merchants = data.merchants.map(m => `${m.id}:${m.status}:${m.customDomain || ''}:${m.subscriptionEnabled ? 1 : 0}.${m.subscriptionEndsAt || 0}.${m.subscriptionPrice || 0}:${(m.commissionRequests || []).map(r => r.id + '-' + r.status).join('.')}`).join(',');
   const employees = data.employees.map(e => `${e.id}:${e.status}`).join(',');
   const announcements = (data.announcements || []).map(a => `${a.id}:${(a.readBy || []).length}`).join(',');
   const supportChats = (data.supportChats || []).map(c => `${c.authUid}:${c.messages.length}:${c.unreadForAdmin ? 1 : 0}:${c.unreadForMerchant ? 1 : 0}:${c.unreadForAgent ? 1 : 0}`).join(',');
@@ -32,7 +32,8 @@ function dataFingerprint() {
   const agentCashLogs = (data.agentCashLogs || []).map(c => `${c.id}`).join(',');
   const agentAdjustments = (data.agentAdjustments || []).map(c => `${c.id}`).join(',');
   const agentPayments = (data.agentPayments || []).map(c => `${c.id}:${c.status}`).join(',') + '/' + (data.agentPaymentRequests || []).map(c => `${c.id}:${c.status}`).join(',');
-  return `${agentPayments}|${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}|${agentLedgerClosures}|${agentSettlements}|${agentCashLogs}|${agentAdjustments}`;
+  const subPayments = (data.subscriptionPayments || []).map(c => `${c.id}`).join(',');
+  return `${subPayments}|${agentPayments}|${orders}|${merchants}|${employees}|${announcements}|${supportChats}|${ledgerClosures}|${agentLedgerClosures}|${agentSettlements}|${agentCashLogs}|${agentAdjustments}`;
 }
 
 let pollInFlight = false;

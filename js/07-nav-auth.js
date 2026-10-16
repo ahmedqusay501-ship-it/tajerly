@@ -10,6 +10,7 @@ const ADMIN_VIEWS = [
   {id: 'employees', labelKey: 'nav_employees'},
   {id: 'accounting', labelKey: 'nav_accounting'},
   {id: 'dues', labelKey: 'nav_dues'},
+  {id: 'subscriptions', labelKey: 'nav_subscriptions'},
   {id: 'announcements', labelKey: 'nav_announcements'},
   {id: 'support', labelKey: 'nav_support'},
   {id: 'settings', labelKey: 'nav_settings'},
@@ -27,7 +28,7 @@ const MERCHANT_VIEWS = [{id: 'merchant', labelKey: 'nav_merchant'}];
 const ADMIN_NAV_GROUPS = [
   { label: 'الرئيسية', ids: ['dashboard'] },
   { label: 'التجار والموظفين', ids: ['requests', 'employees'] },
-  { label: 'الحسابات والمالية', ids: ['accounting', 'dues'] },
+  { label: 'الحسابات والمالية', ids: ['accounting', 'dues', 'subscriptions'] },
   { label: 'التواصل والدعم', ids: ['announcements', 'support'] },
   { label: 'مندوبين التوصيل', ids: ['delivery_agents', 'agent_accounts'] },
   { label: 'الإعدادات والنظام', ids: ['settings', 'shipping', 'admin_tools'] },
@@ -54,7 +55,7 @@ const MERCHANT_EMPLOYEE_PERMS = [
 // admin_tools above: managing agents means creating login credentials and setting/resetting
 // money the platform takes from every delivery — an admin-team employee is never handed that,
 // even if given every other permission.
-const ADMIN_EMPLOYEE_PERMS = ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && v.id !== 'delivery_agents' && v.id !== 'agent_accounts');
+const ADMIN_EMPLOYEE_PERMS = ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && v.id !== 'delivery_agents' && v.id !== 'agent_accounts' && v.id !== 'subscriptions'); // 'subscriptions' = أرباح المنصة من الاشتراكات، للأدمن الحقيقي فقط
 
 // What a delivery agent can hand to their own employee — each maps to one sub-tab inside the
 // agent's own dashboard (see agentPanelAllowedTabs()/applyAgentEmployeeGating() in
@@ -81,7 +82,7 @@ function viewsForRole(role) {
       // employee's permissions array were ever corrupted/tampered with to include it,
       // this view still wouldn't be offered, and the underlying Firestore writes it
       // triggers are separately blocked at the rules level regardless.
-      return ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && emp.permissions.includes(v.id));
+      return ADMIN_VIEWS.filter(v => v.id !== 'employees' && v.id !== 'admin_tools' && v.id !== 'subscriptions' && emp.permissions.includes(v.id));
     }
     if (emp.ownerType === 'delivery_agent' || emp.ownerType === 'agent_employee') {
       // مندوب توصيل (أو موظف تابع له): تبويب وحيد يشوف فيه بس طلبات المندوب المسؤول عنه

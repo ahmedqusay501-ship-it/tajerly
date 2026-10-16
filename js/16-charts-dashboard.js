@@ -212,6 +212,7 @@ function renderAll() {
   renderEmployees();
   renderAccounting();
   renderMerchantPeriodDues();
+  renderSubscriptions();
   if (loggedInMerchantId) renderMerchantPanel();
   renderStoreSelect();
   renderSettings();
