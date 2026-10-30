@@ -144,7 +144,7 @@ function payModalSync(prefix, agentId, prefill, presetAmount) {
     const prev = payPresetMerchantId != null ? String(payPresetMerchantId) : sel.value;
     payPresetMerchantId = null;
     sel.innerHTML = bal.rows.length
-      ? bal.rows.map(r => `<option value="${r.merchantId}">${esc(merchantShopName(r.merchantId))} — متبقي ${r.remaining.toLocaleString()} د</option>`).join('')
+      ? bal.rows.map(r => `<option value="${r.merchantId}">${esc(merchantShopName(r.merchantId))} — متبقي ${fmtNum(r.remaining)} د</option>`).join('')
       : '<option value="">ما فيه تجار بحسابه بعد</option>';
     if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
   }
@@ -154,10 +154,10 @@ function payModalSync(prefix, agentId, prefill, presetAmount) {
     const mid = parseInt(sel.value, 10);
     const r = bal.rows.find(x => x.merchantId === mid);
     remaining = r ? r.remaining : 0;
-    text = r ? `المتبقي ${noun} (${merchantShopName(mid)}): ${remaining.toLocaleString()} د — المستحق ${r.due.toLocaleString()} − المسدَّد ${r.paid.toLocaleString()}` : 'اختار تاجر';
+    text = r ? `المتبقي ${noun} (${merchantShopName(mid)}): ${fmtNum(remaining)} د — المستحق ${fmtNum(r.due)} − المسدَّد ${fmtNum(r.paid)}` : 'اختار تاجر';
   } else {
     remaining = bal.remaining;
-    text = `المتبقي ${noun} (إجمالي): ${remaining.toLocaleString()} د — المستحق ${bal.due.toLocaleString()} − المسدَّد ${bal.paid.toLocaleString()}`;
+    text = `المتبقي ${noun} (إجمالي): ${fmtNum(remaining)} د — المستحق ${fmtNum(bal.due)} − المسدَّد ${fmtNum(bal.paid)}`;
   }
   document.getElementById(prefix === 'agent-cash' ? 'agent-cash-hint' : 'agent-pay-hint').textContent = text;
   if (prefill) document.getElementById(prefix + '-amount').value = presetAmount != null ? presetAmount : (remaining > 0 ? remaining : '');
@@ -206,7 +206,7 @@ async function submitAgentCashLog() {
     return;
   }
   data.agentPayments.push(payload);
-  await logAudit('تسجيل استلام نقدي من مندوب', `${a ? a.name : cashLogAgentId} — ${amount.toLocaleString()} د — ${payKindLabel(payload)}`);
+  await logAudit('تسجيل استلام نقدي من مندوب', `${a ? a.name : cashLogAgentId} — ${fmtNum(amount)} د — ${payKindLabel(payload)}`);
   showToast('تم تسجيل الاستلام');
   closeAgentCashLogModal();
   renderAll();
@@ -303,7 +303,7 @@ async function decideAgentPayment(id, decision) {
     } catch (e) { /* اختياري */ }
   }
   if (isAdminSide()) {
-    try { await logAudit(decision === 'confirmed' ? 'قبول دفعة مندوب' : 'رفض دفعة مندوب', `${p.agentName || p.agentId} — ${p.amount.toLocaleString()} د — ${payKindLabel(p)}`); } catch (e) { /* اختياري */ }
+    try { await logAudit(decision === 'confirmed' ? 'قبول دفعة مندوب' : 'رفض دفعة مندوب', `${p.agentName || p.agentId} — ${fmtNum(p.amount)} د — ${payKindLabel(p)}`); } catch (e) { /* اختياري */ }
   }
   showToast(decision === 'confirmed' ? 'تم تأكيد الاستلام' : 'تم تسجيل "لم يتم الاستلام"');
   renderAll();
@@ -326,7 +326,7 @@ function payRequestSyncAmount() {
   if (payRequestAgentId == null) return;
   const type = document.getElementById('pay-request-type').value;
   const bal = settlementBalanceFor(payRequestAgentId, type);
-  document.getElementById('pay-request-hint').textContent = `المتبقي حالياً على المندوب: ${bal.remaining.toLocaleString()} د`;
+  document.getElementById('pay-request-hint').textContent = `المتبقي حالياً على المندوب: ${fmtNum(bal.remaining)} د`;
   document.getElementById('pay-request-amount').value = bal.remaining > 0 ? bal.remaining : '';
 }
 async function submitPayRequest() {
@@ -346,7 +346,7 @@ async function submitPayRequest() {
   }
   data.agentPaymentRequests.push(payload);
   const a = data.employees.find(x => x.id === payRequestAgentId);
-  await logAudit('طلب دفعة من مندوب', `${a ? a.name : payRequestAgentId} — ${amount.toLocaleString()} د — ${SETTLE_LABELS[type]}`);
+  await logAudit('طلب دفعة من مندوب', `${a ? a.name : payRequestAgentId} — ${fmtNum(amount)} د — ${SETTLE_LABELS[type]}`);
   showToast('انرسل الطلب للمندوب');
   closePayRequestModal();
   renderAll();
@@ -368,7 +368,7 @@ function payStatusLabel(p) {
   if (p.status === 'rejected') return '✕ لم يتم الاستلام';
   return payTypeOf(p) === 'merchant' ? '⏳ بانتظار تأكيد التاجر' : '⏳ بانتظار تأكيد الأدمن';
 }
-function money(n) { return (n || 0).toLocaleString() + ' د'; }
+function money(n) { return fmtNum((n || 0)) + ' د'; }
 
 // بطاقات الحساب الثلاثة. mode: 'agent' (أزرار تسديد) أو 'admin' (عرض فقط).
 function agentSettlementCardsHtml(agent, mode) {
@@ -393,9 +393,9 @@ function agentSettlementCardsHtml(agent, mode) {
         ${mode === 'agent' && b.remaining > 0 ? `<button class="btn small" onclick="openAgentPayModal({type:'${c.type}'})">تسديد إجمالي</button>` : ''}
       </div>
       <div class="grid3" style="margin-top:8px;">
-        <div class="stat"><div class="stat-num">${b.due.toLocaleString()}</div><div class="stat-label">الإجمالي المستحق (د)</div></div>
-        <div class="stat"><div class="stat-num">${b.paid.toLocaleString()}</div><div class="stat-label">مسدَّد (د)${b.pending ? ' — معلّق ' + b.pending.toLocaleString() : ''}</div></div>
-        <div class="stat"><div class="stat-num" style="color:${b.remaining > 0 ? '#B3261E' : '#065F46'};">${b.remaining.toLocaleString()}</div><div class="stat-label">المتبقي (د)${b.overpaid ? ' — زيادة ' + b.overpaid.toLocaleString() : ''}</div></div>
+        <div class="stat"><div class="stat-num">${fmtNum(b.due)}</div><div class="stat-label">الإجمالي المستحق (د)</div></div>
+        <div class="stat"><div class="stat-num">${fmtNum(b.paid)}</div><div class="stat-label">مسدَّد (د)${b.pending ? ' — معلّق ' + fmtNum(b.pending) : ''}</div></div>
+        <div class="stat"><div class="stat-num" style="color:${b.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(b.remaining)}</div><div class="stat-label">المتبقي (د)${b.overpaid ? ' — زيادة ' + fmtNum(b.overpaid) : ''}</div></div>
       </div>
       <div class="subtitle" style="margin-top:6px;">${c.type === 'merchant'
         ? 'كل دفعة للتاجر يأكد استلامها التاجر نفسه. الأدمن يشوفها للمتابعة.'
@@ -517,15 +517,15 @@ function merchantAgentStatementHtml(merchantId) {
     <span style="font-size:11.5px; color:${PAY_STATUS_COLOR[p.status]};">${payStatusLabel(p)}</span></div>`).join('');
   const orderRows = splits.slice(0, 60).map(({ o, s }) => `<tr>
     <td>${new Date(o.date).toLocaleDateString('ar-IQ')}</td><td>${esc(o.productName || '')}</td>
-    <td>${(o.price || 0).toLocaleString()}</td><td>${(o.shippingFee || 0).toLocaleString()}</td>
-    <td style="color:#B3261E;">${s.platformCommission.toLocaleString()}</td><td><b>${s.merchantNetDue.toLocaleString()}</b></td></tr>`).join('');
+    <td>${fmtNum((o.price || 0))}</td><td>${fmtNum((o.shippingFee || 0))}</td>
+    <td style="color:#B3261E;">${fmtNum(s.platformCommission)}</td><td><b>${fmtNum(s.merchantNetDue)}</b></td></tr>`).join('');
   return `<div class="card">
     <div class="card-title">حسابي مع المندوب</div>
     <div class="subtitle" style="margin-bottom:8px;">المندوب يستلم المبلغ من الزبون ويسدد لك صافيك (سعر الطلب − استقطاع المنصة). كل دفعة يرسلها تظهر هنا وتأكد استلامها.</div>
     <div class="grid3">
-      <div class="stat"><div class="stat-num">${totalNet.toLocaleString()}</div><div class="stat-label">صافي مستحق لي (د)</div></div>
-      <div class="stat"><div class="stat-num">${received.toLocaleString()}</div><div class="stat-label">مستلم (د)${pendingSum ? ' — بانتظار تأكيدي ' + pendingSum.toLocaleString() : ''}</div></div>
-      <div class="stat"><div class="stat-num" style="color:${remaining > 0 ? '#B3261E' : '#065F46'};">${remaining.toLocaleString()}</div><div class="stat-label">المتبقي عند المندوب (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalNet)}</div><div class="stat-label">صافي مستحق لي (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(received)}</div><div class="stat-label">مستلم (د)${pendingSum ? ' — بانتظار تأكيدي ' + fmtNum(pendingSum) : ''}</div></div>
+      <div class="stat"><div class="stat-num" style="color:${remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(remaining)}</div><div class="stat-label">المتبقي عند المندوب (د)</div></div>
     </div>
     ${pendingRows}
     ${history ? `<div style="margin-top:10px;"><b style="font-size:12.5px;">سجل الدفعات</b>${history}</div>` : ''}

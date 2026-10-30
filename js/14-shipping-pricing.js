@@ -38,13 +38,13 @@ function renderSettings() {
   const fee = calcFee(null, previewPrice);
   const shipping = s.shippingEnabled ? s.shippingAmount : 0;
   document.getElementById('preview-note').textContent = isPercent
-    ? `المعاينة محسوبة على قطعة سعرها ${previewPrice.toLocaleString()} د كمثال — الرسم يتغير تلقائياً حسب سعر كل قطعة فعلياً`
+    ? `المعاينة محسوبة على قطعة سعرها ${fmtNum(previewPrice)} د كمثال — الرسم يتغير تلقائياً حسب سعر كل قطعة فعلياً`
     : 'المعاينة أدناه ثابتة لأي قطعة، بغض النظر عن سعرها';
   document.getElementById('preview-grid').innerHTML = `
-    <div class="stat"><div class="stat-num">${fee.customer.toLocaleString()}</div><div class="stat-label">من الزبون</div></div>
-    <div class="stat"><div class="stat-num">${fee.merchant.toLocaleString()}</div><div class="stat-label">من التاجر</div></div>
-    <div class="stat"><div class="stat-num">${(s.itemDeduction || 0).toLocaleString()}</div><div class="stat-label">استقطاع القطعة</div></div>
-    <div class="stat"><div class="stat-num">${(fee.customer + fee.merchant + (s.itemDeduction || 0) + shipping).toLocaleString()}</div><div class="stat-label">إجمالي ربحك</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(fee.customer)}</div><div class="stat-label">من الزبون</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(fee.merchant)}</div><div class="stat-label">من التاجر</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum((s.itemDeduction || 0))}</div><div class="stat-label">استقطاع القطعة</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum((fee.customer + fee.merchant + (s.itemDeduction || 0) + shipping))}</div><div class="stat-label">إجمالي ربحك</div></div>
   `;
 }
 function setFeeSource(src) { data.settings.feeSource = src; saveData(); renderSettings(); }
@@ -79,7 +79,7 @@ function renderZonesList() {
   if (zones.length === 0) { list.innerHTML = '<div class="empty">ما فيه مناطق محددة بعد</div>'; return; }
   list.innerHTML = zones.map(z => `
     <div class="list-item">
-      <span>${z.name} — سريع: ${zoneOffersSpeed(z,'fast') ? z.fastPrice.toLocaleString() + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${zoneOffersSpeed(z,'slow') ? z.slowPrice.toLocaleString() + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
+      <span>${esc(z.name)} — سريع: ${zoneOffersSpeed(z,'fast') ? fmtNum(z.fastPrice) + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${zoneOffersSpeed(z,'slow') ? fmtNum(z.slowPrice) + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
       <span>
         <button class="btn secondary small" onclick="editShippingZone('${z.id}')">تعديل</button>
         <button class="btn danger small" onclick="deleteShippingZone('${z.id}')">حذف</button>

@@ -190,6 +190,7 @@ function openPublicStore(slug) {
 function ensureMerchantTheme(m) {
   shortSlugFor(m); // backfill short store code for merchants created before short links
   if (!m.theme) m.theme = { primaryColor: '#C77B4A', logo: null, banner: null };
+  if (typeof safeColor === 'function') m.theme.primaryColor = safeColor(m.theme.primaryColor); // blocks CSS/attribute injection via a crafted color value
   if (!m.theme.themeId) m.theme.themeId = 'classic'; // ثيم المتجر — شوف js/12b-store-themes.js
   if (typeof m.shippingAmount !== 'number') m.shippingAmount = data.settings.shippingAmount;
   // Merchants the admin has flagged as handling their own delivery (their own driver/service)

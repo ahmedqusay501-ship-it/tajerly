@@ -159,7 +159,7 @@ function renderCartModal() {
     <div class="cart-item">
       <div class="cart-item-info">
         <span class="cart-item-name">${esc(item.productName)}${item.size ? ' (مقاس ' + esc(item.size) + ')' : ''}${item.color ? ' — ' + esc(item.color) : ''}</span>
-        <span class="cart-item-price">${item.price.toLocaleString()} د × ${item.qty}</span>
+        <span class="cart-item-price">${fmtNum(item.price)} د × ${item.qty}</span>
       </div>
       <div class="cart-item-controls">
         <button class="qty-btn" onclick="changeCartQty(${idx}, -1)">−</button>
@@ -179,7 +179,7 @@ function renderCartModal() {
   if (couponBox) {
     couponBox.innerHTML = couponForThisStore ? `
       <div class="coupon-applied-box">
-        <span>${esc(couponForThisStore.code)} ${belowMin ? `— يفعّل عند طلب ≥ ${couponForThisStore.minOrder.toLocaleString()} د` : `— خصم ${discount.toLocaleString()} د`}</span>
+        <span>${esc(couponForThisStore.code)} ${belowMin ? `— يفعّل عند طلب ≥ ${fmtNum(couponForThisStore.minOrder)} د` : `— خصم ${fmtNum(discount)} د`}</span>
         <span class="link-chip" style="padding:2px 8px;" onclick="removeAppliedCoupon()">إزالة</span>
       </div>
     ` : `
@@ -191,8 +191,8 @@ function renderCartModal() {
   }
 
   totalEl.innerHTML = `
-    ${discount > 0 ? `<div class="checkout-line"><span>خصم الكوبون </span><span>-${discount.toLocaleString()} د</span></div>` : ''}
-    <div class="checkout-line total"><span>مجموع القطع (${cartCount()})</span><span>${(subtotal - discount).toLocaleString()} د</span></div>
+    ${discount > 0 ? `<div class="checkout-line"><span>خصم الكوبون </span><span>-${fmtNum(discount)} د</span></div>` : ''}
+    <div class="checkout-line total"><span>مجموع القطع (${cartCount()})</span><span>${fmtNum((subtotal - discount))} د</span></div>
   `;
 }
 
@@ -378,12 +378,12 @@ function updateCheckoutDelivery() {
     if (canFast) {
       const fastPrice = useAgentPricing ? agentQuote.fast.fee : (zone ? zone.fastPrice : null);
       const fastDays = useAgentPricing ? agentQuote.fast.days : (zone ? zone.fastDays : '');
-      speedToggles += `<span class="toggle ${checkoutSpeed==='fast'?'selected':''}" onclick="setCheckoutSpeed('fast')">سريع${fastPrice != null ? ' — ' + fastPrice.toLocaleString() + ' د' : ''}${fastDays ? ' (' + esc(fastDays) + ')' : ''}</span>`;
+      speedToggles += `<span class="toggle ${checkoutSpeed==='fast'?'selected':''}" onclick="setCheckoutSpeed('fast')">سريع${fastPrice != null ? ' — ' + fmtNum(fastPrice) + ' د' : ''}${fastDays ? ' (' + esc(fastDays) + ')' : ''}</span>`;
     }
     if (canSlow) {
       const slowPrice = useAgentPricing ? agentQuote.slow.fee : (zone ? zone.slowPrice : null);
       const slowDays = useAgentPricing ? agentQuote.slow.days : (zone ? zone.slowDays : '');
-      speedToggles += `<span class="toggle ${checkoutSpeed==='slow'?'selected':''}" onclick="setCheckoutSpeed('slow')">بطيء${slowPrice != null ? ' — ' + slowPrice.toLocaleString() + ' د' : ''}${slowDays ? ' (' + esc(slowDays) + ')' : ''}</span>`;
+      speedToggles += `<span class="toggle ${checkoutSpeed==='slow'?'selected':''}" onclick="setCheckoutSpeed('slow')">بطيء${slowPrice != null ? ' — ' + fmtNum(slowPrice) + ' د' : ''}${slowDays ? ' (' + esc(slowDays) + ')' : ''}</span>`;
     }
   }
   document.getElementById('co-speed-toggles').innerHTML = speedToggles;
@@ -396,14 +396,14 @@ function updateCheckoutDelivery() {
   if (confirmBtn) confirmBtn.disabled = deliveryUnavailable;
 
   document.getElementById('checkout-summary').innerHTML = `
-    ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${esc(i.productName)}${i.size ? ' (مقاس ' + esc(i.size) + ')' : ''}${i.color ? ' — ' + esc(i.color) : ''} × ${i.qty}</span><span>${(i.price * i.qty).toLocaleString()} د</span></div>`).join('')}
-    ${couponDiscount > 0 ? `<div class="checkout-line"><span>خصم الكوبون ${esc(currentCheckout.couponCode || '')}</span><span>-${couponDiscount.toLocaleString()} د</span></div>` : ''}
-    ${serviceFee > 0 ? `<div class="checkout-line"><span>رسوم خدمة</span><span>${serviceFee.toLocaleString()} د</span></div>` : ''}
+    ${currentCheckout.items.map(i => `<div class="checkout-line"><span>${esc(i.productName)}${i.size ? ' (مقاس ' + esc(i.size) + ')' : ''}${i.color ? ' — ' + esc(i.color) : ''} × ${i.qty}</span><span>${fmtNum((i.price * i.qty))} د</span></div>`).join('')}
+    ${couponDiscount > 0 ? `<div class="checkout-line"><span>خصم الكوبون ${esc(currentCheckout.couponCode || '')}</span><span>-${fmtNum(couponDiscount)} د</span></div>` : ''}
+    ${serviceFee > 0 ? `<div class="checkout-line"><span>رسوم خدمة</span><span>${fmtNum(serviceFee)} د</span></div>` : ''}
     ${deliveryUnavailable
       ? `<div class="checkout-line"><span>التوصيل</span><span style="color:var(--danger, #DC2626);">غير متوفر</span></div>
          <div style="font-size:12px; color:var(--danger, #DC2626); background:#FEF2F2; padding:8px 10px; border-radius:8px; margin-top:4px;">${esc(deliveryUnavailableReason)}</div>`
-      : `<div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' + (ownDeliveryDaysText ? ' — ' + esc(ownDeliveryDaysText) : '') : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? deliveryFee.toLocaleString() + ' د' : 'مجاني'}</span></div>`}
-    <div class="checkout-line total"><span>الإجمالي</span><span>${total.toLocaleString()} د</span></div>
+      : `<div class="checkout-line"><span>${m.ownDelivery ? 'التوصيل (يتكفّل بيه المحل مباشرة)' + (ownDeliveryDaysText ? ' — ' + esc(ownDeliveryDaysText) : '') : 'التوصيل (' + (checkoutSpeed === 'fast' ? 'سريع' : 'بطيء') + (speedDaysText ? ' — ' + esc(speedDaysText) : '') + ')'}</span><span>${deliveryFee > 0 ? fmtNum(deliveryFee) + ' د' : 'مجاني'}</span></div>`}
+    <div class="checkout-line total"><span>الإجمالي</span><span>${fmtNum(total)} د</span></div>
     <div style="font-size:12px; color:var(--accent-dark); background:#F1F5F9; padding:8px 10px; border-radius:8px; margin-top:8px;">
       <b>الدفع عند الاستلام</b> — تدفع المبلغ نقداً لمندوب التوصيل عند وصول طلبك، ما فيه دفع إلكتروني حالياً
     </div>
@@ -1040,7 +1040,7 @@ function renderTrackedGroups() {
         </div>
         ${itemsHtml}
         <div style="display:flex; justify-content:space-between; margin-top:7px; font-weight:700; font-size:12.5px;">
-          <span>الإجمالي</span><span>${total.toLocaleString()} د</span>
+          <span>الإجمالي</span><span>${fmtNum(total)} د</span>
         </div>
         ${customerCancelSectionHtml(g.groupId, items[0])}
       </div>

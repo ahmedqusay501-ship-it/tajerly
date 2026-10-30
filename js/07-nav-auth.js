@@ -177,7 +177,7 @@ let loggedInEmployeeId = null; // set only when currentRole === 'employee'
 // Kept in memory ONLY (never saved/sent anywhere else) for the duration of an admin session,
 // so a real password reset (see resetAuthPassword) can prove to the Cloud Function that the
 // caller really is the admin, without asking the admin to re-type their own password every time.
-let adminSessionCreds = null; // { username, passwordHash } | null
+let adminSessionCreds = null; // { username } | null — marker for an active admin session (never holds a password/hash)
 
 function showHomeScreen() {
   document.getElementById('public-store-screen').style.display = 'none';
@@ -292,8 +292,26 @@ async function platformLogin() {
     }
   }
 
-  const passwordHash = await hashPassword(password);
-  if (username === data.settings.adminUsername && passwordHash === data.settings.adminPassword) {
+  // ---- Admin: Firebase Authentication is the verifier (nothing secret lives in a public doc) ----
+  if (username === data.settings.adminUsername && window.authApi && window.authApi.signInAdmin) {
+    try {
+      const adminUid = await window.authApi.signInAdmin(password);
+      if (await window.authApi.isRegisteredAdmin(adminUid)) {
+        await fetchRemoteData(); // reload everything under the real admin identity
+        try { await scrubAdminCredentialHash(); } catch (e) { /* best effort */ }
+        errorBox.textContent = '';
+        adminSessionCreds = { username };
+        enterApp('admin');
+        return;
+      }
+      await window.authApi.signOutMain(); // a real account, but not a registered admin
+    } catch (e) {
+      // wrong password, or the admin Firebase account doesn't exist yet → legacy path below
+    }
+  }
+
+  const adminLegacyHash = !!data.settings.adminPassword && data.settings.adminPassword.indexOf('pbkdf2$') !== 0;
+  if (username === data.settings.adminUsername && data.settings.adminPassword && await verifyPassword(password, data.settings.adminPassword)) {
     // The visible login itself still uses the local username/password check above (so the
     // admin keeps whatever username they've set) — but firestore.rules now requires a REAL
     // signed-in Firebase Auth session before it lets the admin write anything at all. Without
@@ -329,11 +347,27 @@ async function platformLogin() {
       }
     }
     errorBox.textContent = '';
-    adminSessionCreds = { username, passwordHash };
+    adminSessionCreds = { username };
+    // One-time upgrade of an old unsalted SHA-256 admin hash to salted PBKDF2. Needs the real
+    // admin Firebase session established above; if it can't be saved, the old hash simply stays.
+    try {
+      const adminUid = window.authApi && window.authApi.currentUid && window.authApi.currentUid();
+      if (adminUid && await window.authApi.isRegisteredAdmin(adminUid)) {
+        await scrubAdminCredentialHash(); // identity is now proven by Firebase → drop the hash for good
+      } else if (adminLegacyHash) {
+        const prevHash = data.settings.adminPassword; // admin not registered yet: at least make the hash salted/slow
+        data.settings.adminPassword = await hashPasswordStrong(password);
+        if (!(await saveAdminCredentials())) data.settings.adminPassword = prevHash;
+      }
+    } catch (e) { console.warn('admin credential hardening skipped:', e); }
     enterApp('admin');
     return;
   }
-  const merchant = data.merchants.find(x => x.username === username && x.password === passwordHash && x.status !== 'pending');
+  let merchant = null;
+  for (const x of data.merchants) {
+    if (x.username === username && x.status !== 'pending' && x.password && await verifyPassword(password, x.password)) { merchant = x; break; }
+  }
+  if (merchant && merchant.password.indexOf('pbkdf2$') !== 0) { try { merchant.password = await hashPasswordStrong(password); } catch (e) {} } // upgrade old SHA-256
   if (merchant) {
     // This account already has a real Firebase Auth login (authUid) — the attempt above at
     // the top of this function already tried that exact username/password against Firebase
@@ -352,7 +386,11 @@ async function platformLogin() {
     enterApp('merchant');
     return;
   }
-  const employee = data.employees.find(x => x.username === username && x.password === passwordHash && x.status === 'active');
+  let employee = null;
+  for (const x of data.employees) {
+    if (x.username === username && x.status === 'active' && x.password && await verifyPassword(password, x.password)) { employee = x; break; }
+  }
+  if (employee && employee.password.indexOf('pbkdf2$') !== 0) { try { employee.password = await hashPasswordStrong(password); } catch (e) {} }
   if (employee) {
     // Same reasoning as the merchant case above.
     if (window.authApi && employee.authUid) {

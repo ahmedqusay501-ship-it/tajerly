@@ -174,7 +174,7 @@ async function subActivate() {
   m.subscriptionEndsAt = Date.now() + days * SUB_DAY_MS;
   if (paid && price > 0) subRecordPayment(m, price, days, 'activate');
   await saveData();
-  logAudit('تفعيل اشتراك لتاجر', `${m.shop} — ${days} يوم / ${price.toLocaleString()} د`);
+  logAudit('تفعيل اشتراك لتاجر', `${m.shop} — ${days} يوم / ${fmtNum(price)} د`);
   document.getElementById('sub-new-merchant').value = '';
   showToast(`تم تفعيل اشتراك "${m.shop}" لمدة ${days} يوم`);
   renderAll();
@@ -187,13 +187,13 @@ function subRenew(id) {
   const days = Math.max(1, Number(m.subscriptionDays) || 30);
   const price = Number(m.subscriptionPrice) || 0;
   openConfirmModal('تجديد الاشتراك',
-    `تجديد اشتراك "${m.shop}" لمدة ${days} يوم وتسجيل ${price.toLocaleString()} د ضمن أرباحك من الاشتراكات؟ (إذا اشتراكه لسا ما انتهى، الأيام تنضاف فوق المتبقي)`,
+    `تجديد اشتراك "${m.shop}" لمدة ${days} يوم وتسجيل ${fmtNum(price)} د ضمن أرباحك من الاشتراكات؟ (إذا اشتراكه لسا ما انتهى، الأيام تنضاف فوق المتبقي)`,
     async () => {
       const base = Math.max(Date.now(), Number(m.subscriptionEndsAt) || 0);
       m.subscriptionEndsAt = base + days * SUB_DAY_MS;
       if (price > 0) subRecordPayment(m, price, days, 'renew');
       await saveData();
-      logAudit('تجديد اشتراك تاجر', `${m.shop} — ${days} يوم / ${price.toLocaleString()} د`);
+      logAudit('تجديد اشتراك تاجر', `${m.shop} — ${days} يوم / ${fmtNum(price)} د`);
       showToast(`تم تجديد اشتراك "${m.shop}"`);
       renderAll();
     });
@@ -219,7 +219,7 @@ function subDeletePayment(paymentId) {
   openConfirmModal('حذف دفعة', `حذف دفعة ${subFmtMoney(p.amount)} الخاصة بـ"${p.shop}" من سجل أرباح الاشتراكات؟ (ما يغيّر مدة الاشتراك، بس ينقص من إجمالي الأرباح)`, async () => {
     data.subscriptionPayments = data.subscriptionPayments.filter(x => x.id !== paymentId);
     await saveData();
-    logAudit('حذف دفعة اشتراك', `${p.shop} — ${p.amount.toLocaleString()} د`);
+    logAudit('حذف دفعة اشتراك', `${p.shop} — ${fmtNum(p.amount)} د`);
     renderAll();
   });
 }
@@ -256,7 +256,7 @@ async function confirmSubEdit() {
     m.subscriptionEndsAt = Date.now() + rem * SUB_DAY_MS;
   }
   await saveData();
-  logAudit('تعديل اشتراك تاجر', `${m.shop} — ${days} يوم / ${price.toLocaleString()} د${remRaw !== '' ? ` / متبقي ${remRaw} يوم` : ''}`);
+  logAudit('تعديل اشتراك تاجر', `${m.shop} — ${days} يوم / ${fmtNum(price)} د${remRaw !== '' ? ` / متبقي ${remRaw} يوم` : ''}`);
   closeSubEdit();
   showToast(`تم حفظ تعديلات اشتراك "${m.shop}"`);
   renderAll();

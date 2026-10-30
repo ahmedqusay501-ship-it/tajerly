@@ -39,14 +39,14 @@ function renderMerchantAccounting(merchantId) {
 
   summaryEl.innerHTML = `
     <div class="stat"><div class="stat-num">${accepted.length}</div><div class="stat-label">طلبات مقبولة</div></div>
-    <div class="stat"><div class="stat-num">${totalSales.toLocaleString()}</div><div class="stat-label">إجمالي مبيعاتي (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalFeeDeducted.toLocaleString()}</div><div class="stat-label">رسوم المنصة المستقطعة (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalSales)}</div><div class="stat-label">إجمالي مبيعاتي (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalFeeDeducted)}</div><div class="stat-label">رسوم المنصة المستقطعة (د)</div></div>
   `;
   summary2El.innerHTML = `
-    <div class="stat"><div class="stat-num">${totalItemDeduction.toLocaleString()}</div><div class="stat-label">استقطاع ثابت للقطع (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalCouponDiscount.toLocaleString()}</div><div class="stat-label">خصومات الكوبونات (د)</div></div>
-    <div class="stat"><div class="stat-num">${netProfit.toLocaleString()}</div><div class="stat-label">صافي ربحي (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">أجور توصيل زبائني (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalItemDeduction)}</div><div class="stat-label">استقطاع ثابت للقطع (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalCouponDiscount)}</div><div class="stat-label">خصومات الكوبونات (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(netProfit)}</div><div class="stat-label">صافي ربحي (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalShipping)}</div><div class="stat-label">أجور توصيل زبائني (د)</div></div>
   `;
 
   if (orders.length === 0) {
@@ -59,8 +59,8 @@ function renderMerchantAccounting(merchantId) {
     return `<div class="list-item" style="align-items:flex-start;">
       <span>${esc(o.productName)}${o.size ? ' (مقاس ' + esc(o.size) + ')' : ''}${o.color ? ' — ' + esc(o.color) : ''} ${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span>`}<br>
       <span style="color:var(--text-mute); font-size:11px;">${dateStr}</span><br>
-      <span style="color:var(--text-mute); font-size:11px;">السعر: ${o.price.toLocaleString()} د — رسم منصة مستقطع مني: ${(o.feeFromMerchant || 0).toLocaleString()} د${o.itemDeduction ? ' — استقطاع القطعة: ' + o.itemDeduction.toLocaleString() + ' د' : ''}${o.couponDiscount ? ' — خصم كوبون ' + esc(o.couponCode || '') + ': ' + o.couponDiscount.toLocaleString() + ' د' : ''} — توصيل الزبون: ${(o.shippingFee || 0).toLocaleString()} د</span></span>
-      <span style="text-align:left; white-space:nowrap;">${o.status === 'accepted' && !o.cancelled ? 'صافيّ: ' + net.toLocaleString() + ' د' : '—'}</span>
+      <span style="color:var(--text-mute); font-size:11px;">السعر: ${fmtNum(o.price)} د — رسم منصة مستقطع مني: ${fmtNum((o.feeFromMerchant || 0))} د${o.itemDeduction ? ' — استقطاع القطعة: ' + fmtNum(o.itemDeduction) + ' د' : ''}${o.couponDiscount ? ' — خصم كوبون ' + esc(o.couponCode || '') + ': ' + fmtNum(o.couponDiscount) + ' د' : ''} — توصيل الزبون: ${fmtNum((o.shippingFee || 0))} د</span></span>
+      <span style="text-align:left; white-space:nowrap;">${o.status === 'accepted' && !o.cancelled ? 'صافيّ: ' + fmtNum(net) + ' د' : '—'}</span>
     </div>`;
   }).join('');
 }
@@ -142,11 +142,11 @@ function exportMerchantAccountingPDF(merchantId) {
       <td>${dateStr}</td>
       <td>${timeStr}</td>
       <td>${esc(o.productName)}${o.size ? ' (' + esc(o.size) + ')' : ''}${o.color ? ' — ' + esc(o.color) : ''}</td>
-      <td>${o.price.toLocaleString()}</td>
-      <td>${(o.feeFromMerchant || 0).toLocaleString()}</td>
-      <td>${(o.itemDeduction || 0).toLocaleString()}</td>
-      <td>${(o.couponDiscount || 0).toLocaleString()}</td>
-      <td>${net.toLocaleString()}</td>
+      <td>${fmtNum(o.price)}</td>
+      <td>${fmtNum((o.feeFromMerchant || 0))}</td>
+      <td>${fmtNum((o.itemDeduction || 0))}</td>
+      <td>${fmtNum((o.couponDiscount || 0))}</td>
+      <td>${fmtNum(net)}</td>
       <td>${orderStatusLabel(o.status)}</td>
     </tr>`;
   }).join('');
@@ -172,15 +172,15 @@ function exportMerchantAccountingPDF(merchantId) {
       @media print { body { padding: 8px; } .table-scroll { overflow-x: visible; } }
     </style></head><body>
       <h1>تقرير حسابات — ${esc(m.shop)}</h1>
-      <div class="sub">تاريخ الإصدار: ${new Date().toLocaleDateString('ar-IQ')} — عدد زيارات المتجر: ${m.visits || 0}</div>
+      <div class="sub">تاريخ الإصدار: ${new Date().toLocaleDateString('ar-IQ')} — عدد زيارات المتجر: ${fmtNum(m.visits)}</div>
       <div class="summary">
         <div><b>${accepted.length}</b>طلبات مقبولة</div>
-        <div><b>${totalSales.toLocaleString()} د</b>إجمالي المبيعات</div>
-        <div><b>${totalFee.toLocaleString()} د</b>رسوم المنصة المستقطعة</div>
-        <div><b>${totalItemDeduction.toLocaleString()} د</b>استقطاع ثابت للقطع</div>
-        <div><b>${totalCouponDiscount.toLocaleString()} د</b>خصومات الكوبونات</div>
-        <div><b>${netProfit.toLocaleString()} د</b>صافي ربحي</div>
-        <div><b>${totalShipping.toLocaleString()} د</b>أجور توصيل الزبائن</div>
+        <div><b>${fmtNum(totalSales)} د</b>إجمالي المبيعات</div>
+        <div><b>${fmtNum(totalFee)} د</b>رسوم المنصة المستقطعة</div>
+        <div><b>${fmtNum(totalItemDeduction)} د</b>استقطاع ثابت للقطع</div>
+        <div><b>${fmtNum(totalCouponDiscount)} د</b>خصومات الكوبونات</div>
+        <div><b>${fmtNum(netProfit)} د</b>صافي ربحي</div>
+        <div><b>${fmtNum(totalShipping)} د</b>أجور توصيل الزبائن</div>
       </div>
       <div class="table-scroll">
       <table>
@@ -190,12 +190,8 @@ function exportMerchantAccountingPDF(merchantId) {
       </div>
     </body></html>`;
 
-  const printWin = window.open('', '_blank');
+  const printWin = openPrintWindow(html);
   if (!printWin) { showToast('المتصفح منع فتح نافذة الطباعة — فعّل النوافذ المنبثقة واعد المحاولة'); return; }
-  printWin.document.open();
-  printWin.document.write(html);
-  printWin.document.close();
-  setTimeout(() => { try { printWin.focus(); printWin.print(); } catch (e) {} }, 350);
   showToast('اختر "حفظ كـ PDF" من نافذة الطباعة اللي فتحت');
 }
 
@@ -504,7 +500,7 @@ function renderAdminLedger() {
       <div class="list-item" style="align-items:flex-start;">
         <span>${esc(o.productName)} ${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span>`}${orderCustomerLine(o)}<br>
         <span style="color:var(--text-mute); font-size:11px;">${orderDateTimeLabel(o.date)}</span></span>
-        <span>${(o.feeFromCustomer + o.feeFromMerchant + (o.itemDeduction || 0)).toLocaleString()} د</span>
+        <span>${fmtNum((o.feeFromCustomer + o.feeFromMerchant + (o.itemDeduction || 0)))} د</span>
       </div>`).join('');
     return `
       <div class="card" style="box-shadow:none; border-style:dashed; margin-bottom:10px;">
@@ -514,8 +510,8 @@ function renderAdminLedger() {
         </div>
         ${ordersHtml}
         <div style="display:flex; justify-content:space-between; gap:8px; font-size:12px; padding-top:6px; margin-top:4px; border-top:1px dashed var(--border);">
-          <span>مستحق التاجر: <b>${mb.merchantDue.toLocaleString()} د</b></span>
-          <span>مستحق المنصة: <b>${mb.platformDue.toLocaleString()} د</b></span>
+          <span>مستحق التاجر: <b>${fmtNum(mb.merchantDue)} د</b></span>
+          <span>مستحق المنصة: <b>${fmtNum(mb.platformDue)} د</b></span>
         </div>
       </div>`;
   }).join('');
@@ -526,8 +522,8 @@ function renderAdminLedger() {
     <div class="card" style="background:var(--accent-soft); border:none;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
         <div style="font-size:13px;">
-          إجمالي مستحقات التجار هذا اليوم: <b>${day.totalMerchantDue.toLocaleString()} د</b><br>
-          إجمالي مستحقات المنصة هذا اليوم: <b>${day.totalPlatformDue.toLocaleString()} د</b>
+          إجمالي مستحقات التجار هذا اليوم: <b>${fmtNum(day.totalMerchantDue)} د</b><br>
+          إجمالي مستحقات المنصة هذا اليوم: <b>${fmtNum(day.totalPlatformDue)} د</b>
         </div>
         ${allMerchantIds.length > 1 ? `<button class="btn danger small" onclick='openCloseLedgerDayModal("${day.dateKey}", ${JSON.stringify(allMerchantIds)})'>إغلاق سجل كل تجار هذا اليوم</button>` : ''}
       </div>
@@ -615,7 +611,7 @@ function renderLedgerPagesManager() {
     <div class="list-item" style="align-items:flex-start;">
       <input type="checkbox" style="width:auto; margin-top:3px;" ${checked} onchange="toggleLedgerPageSelection('${day.dateKey}', this.checked)">
       <span>${ledgerPageLabel(day.dateKey)}<br>
-      <span style="color:var(--text-mute); font-size:11px;">${day.orders.length} عملية — مستحق التاجر: ${day.totalMerchantDue.toLocaleString()} د — مستحق المنصة: ${day.totalPlatformDue.toLocaleString()} د</span></span>
+      <span style="color:var(--text-mute); font-size:11px;">${day.orders.length} عملية — مستحق التاجر: ${fmtNum(day.totalMerchantDue)} د — مستحق المنصة: ${fmtNum(day.totalPlatformDue)} د</span></span>
       <button class="btn danger small" onclick='confirmDeleteLedgerPages(${merchantId}, ["${day.dateKey}"])'>حذف هذي الصفحة</button>
     </div>`;
   }).join('');
@@ -674,15 +670,15 @@ function renderMerchantLedger(merchantId) {
     return `<div class="list-item" style="align-items:flex-start;">
       <span>${esc(o.productName)}${o.size ? ' (مقاس ' + esc(o.size) + ')' : ''}${o.color ? ' — ' + esc(o.color) : ''} ${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span>`}<br>
       <span style="color:var(--text-mute); font-size:11px;">${orderDateTimeLabel(o.date)}</span></span>
-      <span style="text-align:left; white-space:nowrap;">${o.status === 'accepted' && !o.cancelled ? 'صافيّ: ' + split.merchantDue.toLocaleString() + ' د' : '—'}</span>
+      <span style="text-align:left; white-space:nowrap;">${o.status === 'accepted' && !o.cancelled ? 'صافيّ: ' + fmtNum(split.merchantDue) + ' د' : '—'}</span>
     </div>`;
   }).join('');
 
   if (footEl) {
     footEl.innerHTML = `
       <div style="display:flex; justify-content:space-between; gap:8px; font-size:12.5px; flex-wrap:wrap;">
-        <span>مستحق لي هذا اليوم: <b>${day.totalMerchantDue.toLocaleString()} د</b></span>
-        <span>مستحق للمنصة هذا اليوم: <b>${day.totalPlatformDue.toLocaleString()} د</b></span>
+        <span>مستحق لي هذا اليوم: <b>${fmtNum(day.totalMerchantDue)} د</b></span>
+        <span>مستحق للمنصة هذا اليوم: <b>${fmtNum(day.totalPlatformDue)} د</b></span>
       </div>
       <div class="subtitle" style="margin-top:6px; margin-bottom:0;">سجل هذا اليوم ما يقدر يحذفه إلا الأدمن — ما عندك صلاحية حذف أو تعديل هنا</div>
     `;
@@ -725,8 +721,8 @@ function renderMerchantPeriodDues() {
     }, { today: { merchantDue: 0, platformDue: 0 }, week: { merchantDue: 0, platformDue: 0 }, month: { merchantDue: 0, platformDue: 0 } });
     const statBlock = (label, bucket) => `
       <div class="stat">
-        <div class="stat-num" style="font-size:15px;">${bucket.merchantDue.toLocaleString()} د</div>
-        <div class="stat-num" style="font-size:15px; color:#0EA5E9;">${bucket.platformDue.toLocaleString()} د</div>
+        <div class="stat-num" style="font-size:15px;">${fmtNum(bucket.merchantDue)} د</div>
+        <div class="stat-num" style="font-size:15px; color:#0EA5E9;">${fmtNum(bucket.platformDue)} د</div>
         <div class="stat-label">${label}</div>
       </div>`;
     totalsEl.innerHTML = statBlock('اليوم', totals.today) + statBlock('آخر أسبوع', totals.week) + statBlock('آخر شهر', totals.month);
@@ -740,8 +736,8 @@ function renderMerchantPeriodDues() {
   const periodRow = (label, bucket) => `
     <div style="display:flex; justify-content:space-between; gap:8px; font-size:11.5px; padding:3px 0; border-top:1px dashed #EEE;">
       <span style="color:var(--text-mute); min-width:64px;">${label}</span>
-      <span>له: <b>${bucket.merchantDue.toLocaleString()} د</b></span>
-      <span>للمنصة: <b>${bucket.platformDue.toLocaleString()} د</b></span>
+      <span>له: <b>${fmtNum(bucket.merchantDue)} د</b></span>
+      <span>للمنصة: <b>${fmtNum(bucket.platformDue)} د</b></span>
     </div>`;
 
   el.innerHTML = rows.map(b => `
@@ -757,7 +753,7 @@ function renderAccounting() {
   const merchantSelect = document.getElementById('acc-merchant');
   const currentSel = merchantSelect.value || 'all';
   merchantSelect.innerHTML = '<option value="all">كل التجار</option>' +
-    data.merchants.map(m => `<option value="${m.id}">${m.shop}</option>`).join('');
+    data.merchants.map(m => `<option value="${m.id}">${esc(m.shop)}</option>`).join('');
   merchantSelect.value = Array.from(merchantSelect.options).some(o => o.value === currentSel) ? currentSel : 'all';
 
   const orders = filteredAccountingOrders();
@@ -779,15 +775,15 @@ function renderAccounting() {
 
   document.getElementById('acc-summary').innerHTML = `
     <div class="stat"><div class="stat-num">${orders.length}</div><div class="stat-label">عدد العمليات</div></div>
-    <div class="stat"><div class="stat-num">${totalSales.toLocaleString()}</div><div class="stat-label">إجمالي المبيعات (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalPlatformProfit.toLocaleString()}</div><div class="stat-label">أرباح المنصة (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalSales)}</div><div class="stat-label">إجمالي المبيعات (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalPlatformProfit)}</div><div class="stat-label">أرباح المنصة (د)</div></div>
   `;
   document.getElementById('acc-summary2').innerHTML = `
-    <div class="stat"><div class="stat-num">${totalFeeCustomer.toLocaleString()}</div><div class="stat-label">محصّل من الزبائن (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalFeeMerchant.toLocaleString()}</div><div class="stat-label">محصّل من التجار (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalItemDeduction.toLocaleString()}</div><div class="stat-label">استقطاع ثابت للقطع (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalCouponDiscount.toLocaleString()}</div><div class="stat-label">خصومات الكوبونات (د)</div></div>
-    <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">إجمالي الشحن (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalFeeCustomer)}</div><div class="stat-label">محصّل من الزبائن (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalFeeMerchant)}</div><div class="stat-label">محصّل من التجار (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalItemDeduction)}</div><div class="stat-label">استقطاع ثابت للقطع (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalCouponDiscount)}</div><div class="stat-label">خصومات الكوبونات (د)</div></div>
+    <div class="stat"><div class="stat-num">${fmtNum(totalShipping)}</div><div class="stat-label">إجمالي الشحن (د)</div></div>
   `;
 
   const byMerchant = accountingMerchantBreakdown(orders);
@@ -800,10 +796,10 @@ function renderAccounting() {
       const m = data.merchants.find(x => String(x.id) === id);
       const b = byMerchant[id];
       return `<div class="list-item" style="align-items:flex-start;">
-        <span>${m ? m.shop : 'تاجر محذوف'} — ${b.count} عملية (${b.accepted} مقبولة)<br>
+        <span>${m ? esc(m.shop) : 'تاجر محذوف'} — ${b.count} عملية (${b.accepted} مقبولة)<br>
         <span style="color:var(--text-mute); font-size:11px;">قطع مباعة: ${b.accepted} — ملغاة: ${b.cancelledCount} — عليها عمولة: ${b.withCommissionCount} — بدون عمولة: ${b.withoutCommissionCount}</span><br>
-        <span style="color:var(--text-mute); font-size:11px;">مبيعات: ${b.sales.toLocaleString()} د — رسوم منصة: ${(b.feeCustomer + b.feeMerchant).toLocaleString()} د${b.itemDeduction ? ' — استقطاع قطع: ' + b.itemDeduction.toLocaleString() + ' د' : ''}${b.couponDiscount ? ' — خصومات كوبونات: ' + b.couponDiscount.toLocaleString() + ' د' : ''} — شحن: ${b.shipping.toLocaleString()} د</span></span>
-        <span style="text-align:left; white-space:nowrap;">صافي مستحقاته: ${b.netPayout.toLocaleString()} د</span>
+        <span style="color:var(--text-mute); font-size:11px;">مبيعات: ${fmtNum(b.sales)} د — رسوم منصة: ${fmtNum((b.feeCustomer + b.feeMerchant))} د${b.itemDeduction ? ' — استقطاع قطع: ' + fmtNum(b.itemDeduction) + ' د' : ''}${b.couponDiscount ? ' — خصومات كوبونات: ' + fmtNum(b.couponDiscount) + ' د' : ''} — شحن: ${fmtNum(b.shipping)} د</span></span>
+        <span style="text-align:left; white-space:nowrap;">صافي مستحقاته: ${fmtNum(b.netPayout)} د</span>
       </div>`;
     }).join('');
   }
@@ -819,9 +815,9 @@ function renderAccounting() {
       const checked = selectedAccountingOrderIds.has(o.id) ? 'checked' : '';
       return `<div class="list-item" style="align-items:flex-start;">
         <input type="checkbox" style="width:auto; margin-top:3px;" ${checked} onchange="toggleAccountingOrderSelection(${o.id}, this.checked)">
-        <span>${m ? m.shop : '—'} — ${o.productName} ${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span>`}<br>
+        <span>${m ? esc(m.shop) : '—'} — ${esc(o.productName)} ${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span>`}<br>
         <span style="color:var(--text-mute); font-size:11px;">${dateStr}</span><br>
-        <span style="color:var(--text-mute); font-size:11px;">السعر: ${o.price.toLocaleString()} د — رسم زبون: ${o.feeFromCustomer.toLocaleString()} د — رسم تاجر: ${o.feeFromMerchant.toLocaleString()} د${o.itemDeduction ? ' — استقطاع قطعة: ' + o.itemDeduction.toLocaleString() + ' د' : ''}${o.couponDiscount ? ' — خصم كوبون ' + esc(o.couponCode || '') + ': ' + o.couponDiscount.toLocaleString() + ' د' : ''} — شحن: ${(o.shippingFee || 0).toLocaleString()} د — ${o.governorate || ''}</span></span>
+        <span style="color:var(--text-mute); font-size:11px;">السعر: ${fmtNum(o.price)} د — رسم زبون: ${fmtNum(o.feeFromCustomer)} د — رسم تاجر: ${fmtNum(o.feeFromMerchant)} د${o.itemDeduction ? ' — استقطاع قطعة: ' + fmtNum(o.itemDeduction) + ' د' : ''}${o.couponDiscount ? ' — خصم كوبون ' + esc(o.couponCode || '') + ': ' + fmtNum(o.couponDiscount) + ' د' : ''} — شحن: ${fmtNum((o.shippingFee || 0))} د — ${o.governorate || ''}</span></span>
       </div>`;
     }).join('');
   }
@@ -1176,7 +1172,7 @@ async function submitAgentAdjustment() {
   });
   await saveData();
   const a = data.employees.find(x => x.id === adjustmentTargetAgentId);
-  await logAudit('تعديل يدوي بحساب مندوب', `${a ? a.name : adjustmentTargetAgentId} — ${adjustmentTargetDateKey} — ${amount > 0 ? '+' : ''}${amount.toLocaleString()} د — ${reason}`);
+  await logAudit('تعديل يدوي بحساب مندوب', `${a ? a.name : adjustmentTargetAgentId} — ${adjustmentTargetDateKey} — ${amount > 0 ? '+' : ''}${fmtNum(amount)} د — ${reason}`);
   showToast('تم تسجيل التعديل');
   closeAgentAdjustmentModal();
   renderAll();
@@ -1199,7 +1195,7 @@ function openCloseAgentLedgerDayModal(agentId, dateKey) {
   const settled = isAgentDaySettled(agentId, dateKey);
   let text = `راح تحذف ${ledgerPageLabel(dateKey)} من حسابات المندوب "${esc(a ? a.name : '')}". الطلبات نفسها ما تنحذف — تبقى موجودة بمحاسبة التاجر والمحاسبة العامة، بس هذي الصفحة تختفي من هذا التقرير. بس الأدمن يقدر يسوي هذا الإجراء.`;
   if (!settled && day && (day.totalPlatformCommission > 0 || day.totalMerchantNetDue > 0)) {
-    text += `<br><br><b style="color:#B3261E;">⚠️ تنبيه:</b> هذا اليوم لسا "غير مسدَّد" — فيه ${day.totalPlatformCommission.toLocaleString()} د مستحقة للمنصة و${day.totalMerchantNetDue.toLocaleString()} د صافي مستحق للتجار. حذف الصفحة قبل التسديد يخليك تنسى هذا المبلغ. الأفضل تسجل "تم التسديد" أول.`;
+    text += `<br><br><b style="color:#B3261E;">⚠️ تنبيه:</b> هذا اليوم لسا "غير مسدَّد" — فيه ${fmtNum(day.totalPlatformCommission)} د مستحقة للمنصة و${fmtNum(day.totalMerchantNetDue)} د صافي مستحق للتجار. حذف الصفحة قبل التسديد يخليك تنسى هذا المبلغ. الأفضل تسجل "تم التسديد" أول.`;
   }
   document.getElementById('close-agent-ledger-text').innerHTML = text;
   document.getElementById('close-agent-ledger-modal').classList.add('show');
@@ -1287,13 +1283,13 @@ function renderAgentAccounts() {
       <div class="stat"><div class="stat-num">${pendingCount}</div><div class="stat-label">طلبات بعهدته حالياً</div></div>
       <div class="stat"><div class="stat-num">${totalDelivered}</div><div class="stat-label">طلبات موصلة</div></div>
       <div class="stat"><div class="stat-num">${totalReturned}</div><div class="stat-label">طلبات راجعة</div></div>
-      <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">مجموع أجور الشحن (د)</div></div>
-      <div class="stat"><div class="stat-num">${totalMerchantDue.toLocaleString()}</div><div class="stat-label">مجموع مبالغ التجار (د)</div></div>
-      <div class="stat"><div class="stat-num">${totalCommission.toLocaleString()}</div><div class="stat-label">مستحقات المنصة من المندوب (د)</div></div>
-      <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
-      <div class="stat"><div class="stat-num" style="color:${unsettled > 0 ? '#B3261E' : 'inherit'};">${unsettled.toLocaleString()}</div><div class="stat-label">غير مسدَّد بعد (د)</div></div>
-      <div class="stat"><div class="stat-num">${bal.paid.toLocaleString()}</div><div class="stat-label">مسدَّد نقداً (د)</div></div>
-      <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${bal.remaining.toLocaleString()}</div><div class="stat-label">المتبقي (د)${bal.overpaid ? ' — زيادة مسدَّدة ' + bal.overpaid.toLocaleString() : ''}</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalShipping)}</div><div class="stat-label">مجموع أجور الشحن (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalMerchantDue)}</div><div class="stat-label">مجموع مبالغ التجار (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalCommission)}</div><div class="stat-label">مستحقات المنصة من المندوب (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalNetDue)}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${unsettled > 0 ? '#B3261E' : 'inherit'};">${fmtNum(unsettled)}</div><div class="stat-label">غير مسدَّد بعد (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(bal.paid)}</div><div class="stat-label">مسدَّد نقداً (د)</div></div>
+      <div class="stat"><div class="stat-num" style="color:${bal.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(bal.remaining)}</div><div class="stat-label">المتبقي (د)${bal.overpaid ? ' — زيادة مسدَّدة ' + fmtNum(bal.overpaid) : ''}</div></div>
     `;
   }
   const actionsEl = document.getElementById('agent-accounts-actions');
@@ -1317,8 +1313,8 @@ function renderAgentAccounts() {
     const merchantRows = Object.values(day.byMerchant).map(mb => {
       const m = data.merchants.find(x => x.id === mb.merchantId);
       return `<div style="font-size:11.5px; color:var(--ink-2); padding:4px 0; border-top:1px dashed #EEE;">
-        ${esc(m ? m.shop : 'تاجر محذوف')} — عدد الطلبات: ${mb.count} — مستحق التاجر: ${mb.merchantDue.toLocaleString()} د —
-        عمولة المنصة: ${mb.platformCommission.toLocaleString()} د — صافي المستحق للتاجر: <b>${mb.merchantNetDue.toLocaleString()} د</b>
+        ${esc(m ? m.shop : 'تاجر محذوف')} — عدد الطلبات: ${mb.count} — مستحق التاجر: ${fmtNum(mb.merchantDue)} د —
+        عمولة المنصة: ${fmtNum(mb.platformCommission)} د — صافي المستحق للتاجر: <b>${fmtNum(mb.merchantNetDue)} د</b>
       </div>`;
     }).join('');
     const returnedRows = day.returned.map(o => {
@@ -1328,7 +1324,7 @@ function renderAgentAccounts() {
       </div>`;
     }).join('');
     const adjustmentRows = (day.adjustments || []).map(adj => `<div style="font-size:11.5px; color:${adj.amount >= 0 ? '#92400E' : '#065F46'}; padding:4px 0; border-top:1px dashed #E2E8F0; display:flex; justify-content:space-between; align-items:center; gap:6px;">
-        <span>تعديل يدوي: <b>${adj.amount > 0 ? '+' : ''}${adj.amount.toLocaleString()} د</b> — ${esc(adj.reason)} <span style="color:var(--text-mute);">(${esc(adj.by)})</span></span>
+        <span>تعديل يدوي: <b>${adj.amount > 0 ? '+' : ''}${fmtNum(adj.amount)} د</b> — ${esc(adj.reason)} <span style="color:var(--text-mute);">(${esc(adj.by)})</span></span>
         <button class="btn danger small" style="padding:2px 8px; font-size:10px;" onclick="deleteAgentAdjustment('${adj.id}')">حذف</button>
       </div>`).join('');
     return `<div class="card" style="margin-top:10px;">
@@ -1344,9 +1340,9 @@ function renderAgentAccounts() {
         </div>
       </div>
       <div style="font-size:12px; color:var(--text-mute); margin-top:6px;">
-        موصلة: ${day.deliveredCount} — راجعة: ${day.returnedCount} — أجور شحن: ${day.totalShipping.toLocaleString()} د —
-        مستحق المنصة: ${day.totalPlatformCommission.toLocaleString()} د${day.totalAdjustments ? ` (منها ${day.totalAdjustments > 0 ? '+' : ''}${day.totalAdjustments.toLocaleString()} د تعديل يدوي)` : ''} —
-        صافي مستحق التجار: <b>${day.totalMerchantNetDue.toLocaleString()} د</b>
+        موصلة: ${day.deliveredCount} — راجعة: ${day.returnedCount} — أجور شحن: ${fmtNum(day.totalShipping)} د —
+        مستحق المنصة: ${fmtNum(day.totalPlatformCommission)} د${day.totalAdjustments ? ` (منها ${day.totalAdjustments > 0 ? '+' : ''}${fmtNum(day.totalAdjustments)} د تعديل يدوي)` : ''} —
+        صافي مستحق التجار: <b>${fmtNum(day.totalMerchantNetDue)} د</b>
       </div>
       ${merchantRows ? `<div style="margin-top:6px;">${merchantRows}</div>` : ''}
       ${returnedRows ? `<div style="margin-top:6px;">${returnedRows}</div>` : ''}
@@ -1416,13 +1412,13 @@ function copyAgentStatement(agentId) {
     days.forEach(d => {
       text += `${ledgerPageLabel(d.dateKey)}:\n`;
       text += `  موصلة: ${d.deliveredCount} — راجعة: ${d.returnedCount}\n`;
-      text += `  أجور شحن: ${d.totalShipping.toLocaleString()} د\n`;
-      text += `  مستحق المنصة منه: ${d.totalPlatformCommission.toLocaleString()} د\n`;
-      text += `  صافي مستحق التجار: ${d.totalMerchantNetDue.toLocaleString()} د\n\n`;
+      text += `  أجور شحن: ${fmtNum(d.totalShipping)} د\n`;
+      text += `  مستحق المنصة منه: ${fmtNum(d.totalPlatformCommission)} د\n`;
+      text += `  صافي مستحق التجار: ${fmtNum(d.totalMerchantNetDue)} د\n\n`;
     });
     const totalCommission = days.reduce((s, d) => s + d.totalPlatformCommission, 0);
     const totalNet = days.reduce((s, d) => s + d.totalMerchantNetDue, 0);
-    text += `-----\nالإجمالي غير المسدَّد — مستحق المنصة: ${totalCommission.toLocaleString()} د — صافي مستحق التجار: ${totalNet.toLocaleString()} د`;
+    text += `-----\nالإجمالي غير المسدَّد — مستحق المنصة: ${fmtNum(totalCommission)} د — صافي مستحق التجار: ${fmtNum(totalNet)} د`;
   }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(
@@ -1479,7 +1475,7 @@ function exportAgentAccountingExcel(agentId) {
 
   const totals = agentAllTimeTotals(agentId);
   const pendingCount = agentPendingCustodyOrders(agentId).length;
-  const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${a.commissionValue.toLocaleString()} د لكل طلب`;
+  const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${fmtNum(a.commissionValue)} د لكل طلب`;
 
   const summaryRows = [
     { 'البند': 'اسم المندوب', 'القيمة': a.name },

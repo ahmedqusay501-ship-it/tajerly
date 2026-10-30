@@ -265,7 +265,7 @@ async function confirmApprove() {
       if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = 'تأكيد'; }
     }
 
-    m.username = username; m.password = await hashPassword(password); m.status = 'active';
+    m.username = username; m.password = await hashPasswordStrong(password); m.status = 'active';
     // الإدارة تقدر تراجع/تغيّر اختيار التاجر (ماركت/مطعم) هنا قبل الموافقة النهائية —
     // نفس الحقل المقفول لاحقاً بـ firestore.rules (التاجر ما يقدر يبدّله بنفسه بعد هذا).
     const approveTypeSelect = document.getElementById('approve-type');
@@ -353,7 +353,7 @@ function renderRequests() {
   const pending = data.merchants.filter(m => m.status === 'pending');
   pendingList.innerHTML = pending.length === 0 ? '<div class="empty">ما فيه طلبات حالياً</div>' : pending.map(m => `
     <div class="list-item">
-      <span>${esc(m.name)} — ${esc(m.shop)} — ${esc(m.governorate)}${m.area ? ' / ' + esc(m.area) : ''}<br><span style="color:var(--text-mute); font-size:11px;">${esc(m.phone) || '—'}${(m.expectedDailyOrders !== null && m.expectedDailyOrders !== undefined) ? ` — توقعه: ${m.expectedDailyOrders} طلب/يوم` : ''}</span>${(currentRole === 'admin' && m.description) ? `<br><span style="color:var(--text-mute); font-size:11px;">${esc(m.description)}</span>` : ''}</span>
+      <span>${esc(m.name)} — ${esc(m.shop)} — ${esc(m.governorate)}${m.area ? ' / ' + esc(m.area) : ''}<br><span style="color:var(--text-mute); font-size:11px;">${esc(m.phone) || '—'}${(m.expectedDailyOrders !== null && m.expectedDailyOrders !== undefined) ? ` — توقعه: ${esc(m.expectedDailyOrders)} طلب/يوم` : ''}</span>${(currentRole === 'admin' && m.description) ? `<br><span style="color:var(--text-mute); font-size:11px;">${esc(m.description)}</span>` : ''}</span>
       <span>
         <button class="btn small" onclick="approveMerchant(${m.id})">قبول</button>
         <button class="btn danger small" onclick="rejectMerchant(${m.id})">رفض</button>
@@ -367,7 +367,7 @@ function renderRequests() {
   removalList.innerHTML = removalRequests.length === 0 ? '<div class="empty">ما فيه طلبات حذف حالياً</div>' : removalRequests.map(o => {
     const m = data.merchants.find(x => x.id === o.merchantId);
     return `<div class="list-item" style="align-items:flex-start;">
-      <span>${m ? esc(m.shop) : 'تاجر محذوف'} — ${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د
+      <span>${m ? esc(m.shop) : 'تاجر محذوف'} — ${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د
       <br><span style="color:var(--text-mute); font-size:11px;">${orderDateTimeLabel(o.date)}</span>
       <br><span style="color:var(--text-mute); font-size:11px;">${esc(o.customerName) || '—'} — ${esc(o.customerPhone) || ''}</span></span>
       <span>
@@ -395,7 +395,7 @@ function renderCancelRequestsAdmin() {
     const items = g.orders;
     const first = items[0];
     const m = data.merchants.find(x => x.id === first.merchantId);
-    const itemsHtml = items.map(o => `<div class="invoice-line"><span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د</span></div>`).join('');
+    const itemsHtml = items.map(o => `<div class="invoice-line"><span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د</span></div>`).join('');
     const stageBadge = first.cancelStage === 'merchant_approved'
       ? '<span class="badge pending">تمت المراجعة والموافقة من قبل التاجر — بانتظار موافقة الإدارة</span>'
       : '<span class="badge pending">الزبون طلب الإلغاء — بانتظار تأكيد التاجر</span>';
@@ -706,7 +706,7 @@ async function confirmApproveEmployee() {
   }
 
   e.username = username;
-  e.password = await hashPassword(password);
+  e.password = await hashPasswordStrong(password);
   e.status = 'active';
 
   if (window.authApi) {
@@ -817,7 +817,7 @@ async function submitAdminEmployeeModal() {
   }
 
   emp.username = username;
-  emp.password = await hashPassword(password);
+  emp.password = await hashPasswordStrong(password);
   data.employees.push(emp);
 
   if (window.authApi && emp.authUid) await window.authApi.saveDoc('employees', emp.authUid, emp).catch(() => {});
@@ -894,7 +894,7 @@ function renderAgentZonesList() {
   if (zones.length === 0) { list.innerHTML = '<div class="empty">ما فيه مناطق توصيل مضافة لهذا المندوب بعد — بدون مناطق، يوصل بأي مكان بالأجرة الافتراضية أعلاه</div>'; return; }
   list.innerHTML = zones.map(z => `
     <div class="list-item">
-      <span>${esc(z.governorate)}${z.area ? ' — ' + esc(z.area) : ' (كل المناطق)'} — سريع: ${z.fastEnabled !== false ? z.fastPrice.toLocaleString() + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${z.slowEnabled !== false ? z.slowPrice.toLocaleString() + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
+      <span>${esc(z.governorate)}${z.area ? ' — ' + esc(z.area) : ' (كل المناطق)'} — سريع: ${z.fastEnabled !== false ? fmtNum(z.fastPrice) + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${z.slowEnabled !== false ? fmtNum(z.slowPrice) + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
       <span>
         <button class="btn secondary small" onclick="editAgentZone('${z.id}')">تعديل</button>
         <button class="btn danger small" onclick="deleteAgentZone('${z.id}')">حذف</button>
@@ -1072,7 +1072,7 @@ async function submitAgentModal() {
   }
 
   agent.username = username;
-  agent.password = await hashPassword(password);
+  agent.password = await hashPasswordStrong(password);
   data.employees.push(agent);
 
   if (window.authApi && agent.authUid) await window.authApi.saveDoc('employees', agent.authUid, agent).catch(() => {});
@@ -1090,7 +1090,7 @@ function renderDeliveryAgentsList() {
   if (agents.length === 0) { el.innerHTML = '<div class="empty">ما ضفت مندوبين توصيل بعد</div>'; return; }
   el.innerHTML = agents.map(a => {
     const shopsCount = a.merchantIds.length;
-    const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${a.commissionValue.toLocaleString()} د لكل طلب`;
+    const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${fmtNum(a.commissionValue)} د لكل طلب`;
     // مؤشر أداء بسيط: نسبة الإرجاع من كل تاريخ هذا المندوب (موصلة + راجعة، بدون الطلبات
     // اللي لسا بعهدته) — تنبيه بصري بس لو النسبة عالية، مو حكم قاطع على أداء المندوب.
     const finished = data.orders.filter(o => o.deliveryAgentId === a.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
@@ -1105,19 +1105,19 @@ function renderDeliveryAgentsList() {
       <div style="width:100%;">
         <b>${esc(a.name)}</b>${a.companyName ? ' — ' + esc(a.companyName) : ''}
         <span class="badge ${a.status === 'active' ? 'active' : 'rejected'}" style="margin-right:6px;">${a.status === 'active' ? 'نشط' : 'موقوف مؤقتاً'}</span>
-        <br><span style="color:var(--text-mute); font-size:11px;">عدد التجار المسؤول عنهم: <b>${shopsCount}</b> — أجرة التوصيل: ${a.deliveryZones.length ? `مسعّرة حسب المنطقة (${a.deliveryZones.length} منطقة)` : a.deliveryFee.toLocaleString() + ' د (بأي مكان)'} — عمولة المنصة منه: ${commissionLabel}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">عدد التجار المسؤول عنهم: <b>${shopsCount}</b> — أجرة التوصيل: ${a.deliveryZones.length ? `مسعّرة حسب المنطقة (${a.deliveryZones.length} منطقة)` : fmtNum(a.deliveryFee) + ' د (بأي مكان)'} — عمولة المنصة منه: ${commissionLabel}</span>
         <br><span style="color:var(--text-mute); font-size:11px;">طلبات بعهدته حالياً: ${pendingCount}${returnRate != null ? ` — نسبة الإرجاع (من كامل تاريخه): <span style="color:${returnRate >= 20 ? '#B3261E' : 'inherit'}; font-weight:${returnRate >= 20 ? '700' : '400'};">${returnRate}%</span>` : ''}</span>
         <br><span style="color:var(--text-mute); font-size:11px;">
-          مستحقات المنصة عليه من عمولته (كل الوقت): <b>${totals.totalCommission.toLocaleString()} د</b>
-          — منها غير مسدَّد حالياً: <b style="color:${totals.unsettled > 0 ? '#B3261E' : 'inherit'};">${totals.unsettled.toLocaleString()} د</b>
+          مستحقات المنصة عليه من عمولته (كل الوقت): <b>${fmtNum(totals.totalCommission)} د</b>
+          — منها غير مسدَّد حالياً: <b style="color:${totals.unsettled > 0 ? '#B3261E' : 'inherit'};">${fmtNum(totals.unsettled)} د</b>
         </span>
         <br><span style="color:var(--text-mute); font-size:11px;">
-          مسدَّد نقداً: <b>${totals.balance.paid.toLocaleString()} د</b>
-          — المتبقي: <b style="color:${totals.balance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.balance.remaining.toLocaleString()} د</b>${totals.balance.overpaid ? ` <span style="color:#065F46;">(زيادة مسدَّدة ${totals.balance.overpaid.toLocaleString()} د)</span>` : ''}
+          مسدَّد نقداً: <b>${fmtNum(totals.balance.paid)} د</b>
+          — المتبقي: <b style="color:${totals.balance.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(totals.balance.remaining)} د</b>${totals.balance.overpaid ? ` <span style="color:#065F46;">(زيادة مسدَّدة ${fmtNum(totals.balance.overpaid)} د)</span>` : ''}
         </span>
         <br><span style="color:var(--text-mute); font-size:11px;">
-          عمولة التوصيل — مسدَّد: <b>${totals.deliveryBalance.paid.toLocaleString()} د</b> — المتبقي: <b style="color:${totals.deliveryBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.deliveryBalance.remaining.toLocaleString()} د</b>
-          — حق التجار عنده (متبقي): <b style="color:${totals.merchantBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${totals.merchantBalance.remaining.toLocaleString()} د</b>
+          عمولة التوصيل — مسدَّد: <b>${fmtNum(totals.deliveryBalance.paid)} د</b> — المتبقي: <b style="color:${totals.deliveryBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(totals.deliveryBalance.remaining)} د</b>
+          — حق التجار عنده (متبقي): <b style="color:${totals.merchantBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(totals.merchantBalance.remaining)} د</b>
         </span>
         ${renderAgentPendingPayments(a.id, false)}
         <br><span style="color:var(--text-mute); font-size:11px;">
@@ -1484,9 +1484,7 @@ async function confirmResetPassword() {
     if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'جاري التغيير...'; }
     try {
       const targetUsername = target.username;
-      const result = await window.authApi.resetAuthPassword(
-        targetUsername, newPassword, adminSessionCreds.username, adminSessionCreds.passwordHash
-      );
+      const result = await window.authApi.resetAuthPassword(targetUsername, newPassword);
       if (!result || !result.updatedAuth) {
         // No real Firebase Auth account found for this username after all — fall through and
         // just update the local hash below, same as a legacy account.
@@ -1502,7 +1500,7 @@ async function confirmResetPassword() {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'حفظ'; }
   }
 
-  target.password = await hashPassword(newPassword);
+  target.password = await hashPasswordStrong(newPassword);
   const resetTargetType = resetPasswordTarget.type; // captured before closeResetPasswordModal() clears resetPasswordTarget
   const resetOk = await saveData();
   closeResetPasswordModal();
@@ -1537,8 +1535,12 @@ async function changeAdminPassword() {
 
   errorBox.textContent = '';
 
-  const oldPasswordHash = await hashPassword(oldPassword);
-  if (oldUsername !== data.settings.adminUsername || oldPasswordHash !== data.settings.adminPassword) {
+  let oldOk = false;
+  if (oldUsername === data.settings.adminUsername) {
+    if (data.settings.adminPassword) oldOk = await verifyPassword(oldPassword, data.settings.adminPassword);
+    else if (window.authApi && window.authApi.verifyAdminPassword) oldOk = await window.authApi.verifyAdminPassword(oldPassword); // Firebase-only mode
+  }
+  if (!oldOk) {
     errorBox.textContent = 'اسم المستخدم أو كلمة المرور الحاليين غير صحيحين';
     return;
   }
@@ -1565,7 +1567,7 @@ async function changeAdminPassword() {
   const prevUsername = data.settings.adminUsername;
   const prevPassword = data.settings.adminPassword;
   if (newUsername) data.settings.adminUsername = newUsername;
-  if (newPassword) data.settings.adminPassword = await hashPassword(newPassword);
+  if (newPassword && data.settings.adminPassword) data.settings.adminPassword = await hashPasswordStrong(newPassword); // in Firebase-only mode no hash is stored at all
 
   // Saved to its own protected doc (storage/admin-credentials) — NOT via the general
   // saveData(), which no longer writes these fields at all (see fetchRemoteData/saveData
@@ -1581,7 +1583,7 @@ async function changeAdminPassword() {
   }
   await saveData(); // persists the version bump / anything else pending as usual
 
-  adminSessionCreds = { username: data.settings.adminUsername, passwordHash: data.settings.adminPassword };
+  adminSessionCreds = { username: data.settings.adminUsername };
   oldUserInput.value = ''; oldPassInput.value = '';
   userInput.value = ''; passInput.value = '';
   document.getElementById('topbar-name').textContent = data.settings.adminUsername;
@@ -1703,7 +1705,7 @@ function renderMerchantPanel() {
         <div class="card-title">بيانات حسابي (خاصة بيك انت بس)</div>
         <div class="subtitle" style="margin-bottom:8px;">هاي البيانات ما يشوفها أي تاجر ثاني — يشوفها الأدمن وانت بس</div>
         <div style="font-size:12.5px; color:var(--text-mute);">
-          اسم المستخدم: <b style="color:var(--ink);">${(revealedUsernames.has('own-'+m.id) ? m.username : '•'.repeat(Math.max(6, (m.username||'').length))) || '—'}</b>
+          اسم المستخدم: <b style="color:var(--ink);">${(revealedUsernames.has('own-'+m.id) ? esc(m.username) : '•'.repeat(Math.max(6, (m.username||'').length))) || '—'}</b>
           ${m.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('own-${m.id}')">${revealedUsernames.has('own-'+m.id) ? 'إخفاء' : 'إظهار'}</span>` : ''}
           <br>كلمة المرور: مخفية لحمايتك — إذا نسيتها اطلب من الأدمن يصفرها ويعطيك وحدة جديدة
         </div>
@@ -1827,7 +1829,7 @@ function renderMerchantPanel() {
         <div class="card-title">لون لوحة تحكمك</div>
         <div class="subtitle" style="margin-bottom:8px;">هذا اللون يخص شكل لوحتك انت بس (الأزرار والعناوين هنا بلوحة التحكم) — منفصل تماماً عن شكل متجرك اللي يشوفه الزبون</div>
         <div class="theme-row">
-          <input type="color" id="dash-color-${m.id}" value="${m.dashboardColor}" onchange="setDashboardColor(${m.id}, this.value)">
+          <input type="color" id="dash-color-${m.id}" value="${safeColor(m.dashboardColor, '#10B981')}" onchange="setDashboardColor(${m.id}, this.value)">
           <span style="font-size:12px; color:#475569;">اختر اللون المفضل لواجهتك</span>
         </div>
       </div>
@@ -1842,14 +1844,14 @@ function renderMerchantPanel() {
 
         <label>اللون الرئيسي (للأزرار والعناوين)</label>
         <div class="theme-row">
-          <input type="color" id="theme-color-${m.id}" value="${m.theme.primaryColor}" onchange="setThemeColor(${m.id}, this.value)">
+          <input type="color" id="theme-color-${m.id}" value="${safeColor(m.theme.primaryColor)}" onchange="setThemeColor(${m.id}, this.value)">
           <span style="font-size:12px; color:#475569;">اختر لون يمثل هوية محلك</span>
         </div>
 
         <label>شعار المحل (لوگو)</label>
         <div class="theme-row">
           ${m.theme.logo
-            ? `<img class="logo-preview" src="${m.theme.logo}">`
+            ? `<img class="logo-preview" src="${imgSrc(m.theme.logo)}">`
             : `<div class="thumb-placeholder" style="width:56px;height:56px;"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 9l1-5h14l1 5" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" stroke="#94A3B8" stroke-width="1.6"/><path d="M9.5 19v-4a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v4" stroke="#94A3B8" stroke-width="1.6"/></svg></div>`}
           <div style="flex:1;">
             <input type="file" accept="image/*" id="theme-logo-${m.id}" onchange="setThemeLogo(${m.id}, this)">
@@ -1860,13 +1862,13 @@ function renderMerchantPanel() {
         <label>صورة غلاف المتجر (اختياري)</label>
         <input type="file" accept="image/*" id="theme-banner-${m.id}" onchange="setThemeBanner(${m.id}, this)">
         ${m.theme.banner
-          ? `<img class="banner-preview" src="${m.theme.banner}"><span class="link-chip" style="margin-top:6px;" onclick="removeThemeImage(${m.id},'banner')">إزالة صورة الغلاف</span>`
+          ? `<img class="banner-preview" src="${imgSrc(m.theme.banner)}"><span class="link-chip" style="margin-top:6px;" onclick="removeThemeImage(${m.id},'banner')">إزالة صورة الغلاف</span>`
           : ''}
 
         <label>سلايدر العروض (حتى ${MAX_THEME_BANNERS} صور تتحرك تلقائياً أعلى متجرك — اختياري)</label>
         <input type="file" accept="image/*" multiple id="theme-banners-${m.id}" onchange="addThemeBanners(${m.id}, this)">
         ${(m.theme.banners && m.theme.banners.length)
-          ? `<div class="banner-slides-edit">${m.theme.banners.map((b, i) => `<div class="banner-slide-thumb"><img src="${b}"><span onclick="removeThemeBannerAt(${m.id}, ${i})" aria-label="حذف">✕</span></div>`).join('')}</div>
+          ? `<div class="banner-slides-edit">${m.theme.banners.map((b, i) => `<div class="banner-slide-thumb"><img src="${imgSrc(b)}"><span onclick="removeThemeBannerAt(${m.id}, ${i})" aria-label="حذف">✕</span></div>`).join('')}</div>
              <div class="subtitle" style="margin-top:4px;">لما تضيف صورتين أو أكثر يتحول الغلاف لسلايدر يتقلب لحاله ويقدر الزبون يسحبه</div>`
           : ''}
       </div>
@@ -1907,9 +1909,9 @@ function renderMerchantPanel() {
         ${aiDesignSuggestion && aiDesignSuggestion.merchantId === m.id ? `
           <div style="margin-top:12px; padding:10px; border-radius:10px; background:#fff; border:1px dashed var(--accent);">
             <div style="font-size:12px; color:#475569; margin-bottom:8px;">اقتراح الذكاء الاصطناعي — استوحيناه من ألوان شعارك:</div>
-            <img src="${aiDesignSuggestion.banner}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">
+            <img src="${imgSrc(aiDesignSuggestion.banner)}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">
             <div class="theme-row">
-              <span style="width:30px; height:30px; border-radius:6px; display:inline-block; background:${aiDesignSuggestion.primaryColor}; border:1px solid #ddd;"></span>
+              <span style="width:30px; height:30px; border-radius:6px; display:inline-block; background:${safeColor(aiDesignSuggestion.primaryColor)}; border:1px solid #ddd;"></span>
               <span style="font-size:12px; color:#475569;">اللون الرئيسي المقترح للمتجر</span>
             </div>
             <div style="display:flex; gap:8px; margin-top:6px;">
@@ -1926,10 +1928,10 @@ function renderMerchantPanel() {
         <div class="card-title">أرباحي</div>
         <div class="grid3">
           <div class="stat"><div class="stat-num">${m.salesCount}</div><div class="stat-label">عمليات بيع</div></div>
-          <div class="stat"><div class="stat-num">${m.balance.toLocaleString()}</div><div class="stat-label">رصيدي (د)</div></div>
+          <div class="stat"><div class="stat-num">${fmtNum(m.balance)}</div><div class="stat-label">رصيدي (د)</div></div>
           <div class="stat"><div class="stat-num">${m.visits || 0}</div><div class="stat-label">زيارات متجرك</div></div>
         </div>
-        ${m.feeExemptMaxPrice > 0 ? `<div class="subtitle" style="margin-top:8px;">أي قطعة سعرها ${m.feeExemptMaxPrice.toLocaleString()} د أو أقل — الأدمن أعفاها من عمولة المنصة بالكامل</div>` : ''}
+        ${m.feeExemptMaxPrice > 0 ? `<div class="subtitle" style="margin-top:8px;">أي قطعة سعرها ${fmtNum(m.feeExemptMaxPrice)} د أو أقل — الأدمن أعفاها من عمولة المنصة بالكامل</div>` : ''}
       </div>
       ${merchantAgentStatementHtml(m.id)}
       <div class="card">

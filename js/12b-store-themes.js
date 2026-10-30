@@ -109,7 +109,7 @@ function renderStoreThemePicker(m) {
     return `
       <div class="theme-pick${sel ? ' selected' : ''}" onclick="setStoreTheme(${m.id}, '${t.id}')">
         <div class="theme-pick-prev" style="background:${p.bg}; border-color:${p.border};">
-          <div class="theme-pick-bar" style="background:${m.theme.primaryColor};"></div>
+          <div class="theme-pick-bar" style="background:${safeColor(m.theme.primaryColor)};"></div>
           <div class="theme-pick-cards">
             <span style="background:${p.surface}; border:1px solid ${p.border}; border-radius:${p.radius}px; box-shadow:${p.shadow};"></span>
             <span style="background:${p.surface}; border:1px solid ${p.border}; border-radius:${p.radius}px; box-shadow:${p.shadow};"></span>
@@ -123,7 +123,7 @@ function renderStoreThemePicker(m) {
   const t = getStoreTheme(m);
   const suggest = t.suggestedColor && t.suggestedColor.toLowerCase() !== (m.theme.primaryColor || '').toLowerCase()
     ? `<div class="theme-suggest">
-         <span class="theme-suggest-dot" style="background:${t.suggestedColor};"></span>
+         <span class="theme-suggest-dot" style="background:${safeColor(t.suggestedColor)};"></span>
          <span>لون يناسب ثيم «${t.name}»</span>
          <button type="button" class="btn secondary small" style="margin:0;" onclick="applyThemeSuggestedColor(${m.id})">جرّبه</button>
        </div>` : '';

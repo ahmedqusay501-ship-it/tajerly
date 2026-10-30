@@ -30,6 +30,18 @@ function resizeImageFile(file, maxDim, quality) {
 // check nobody else saved since we last synced. If someone did, we refuse to blindly overwrite
 // their changes (which is what caused silent data loss before) — we warn and reload instead.
 let loadedVersion = 0;
+// [أمان] حقول المندوب/الشحن يكتبها السيرفر (stampAgentOnHandover) أو الأدمن، والقواعد ترفض أي تغيير لها من
+// التاجر. فلا نرسلها أبداً من جلسة غير إدارية — (merge:true يبقي القيم المخزّنة كما هي). الأدمن/موظف الإدارة
+// يكتبها كاملة لأن إعادة توجيه المندوب (أدمن) تمرّ من هنا.
+const SERVER_OWNED_ORDER_FIELDS = ['deliveryAgentId', 'deliveryAssignedAt', 'agentFeeSnapshot', 'agentCommissionTypeSnapshot', 'agentCommissionValueSnapshot', 'shippingFee', 'governorate', 'area', 'shippingSpeed'];
+function orderPayloadForWrite(o) {
+  const emp = (typeof currentEmployee === 'function') ? currentEmployee() : null;
+  const isAdminSide = currentRole === 'admin' || (currentRole === 'employee' && emp && emp.ownerType === 'admin');
+  if (isAdminSide) return o;
+  const copy = { ...o };
+  SERVER_OWNED_ORDER_FIELDS.forEach(f => { delete copy[f]; });
+  return copy;
+}
 async function saveData() {
   try {
     // Settings are admin-only to write now, so most callers here (a customer checking
@@ -86,7 +98,8 @@ async function saveData() {
       // والمنتج يبقى بالذاكرة بس ويختفي بعد تحديث الصفحة.
       const merchantWrites = [];
       data.merchants.filter(m => m.authUid).forEach(m => {
-        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, ...publicFields } = m;
+        // commissionRequests deliberately excluded: they live in commission_exemptions now (admin-approved).
+        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, commissionRequests: _cr, ...publicFields } = m;
         const json = JSON.stringify(publicFields);
         if (lastSyncedMerchantSnapshots.get(m.authUid) !== json) {
           pendingOrderWrites++; // نفس حارس الـ poller: ما يجلب نسخة قديمة فوق تعديل لسا ما وصل
@@ -111,7 +124,8 @@ async function saveData() {
         // Balance/salesCount are cheap, small, and only the earning merchant + admin can ever
         // write them (see merchant_private rules) — no diff needed here, unlike the full
         // product/category/coupon payload above.
-        window.authApi.saveDoc('merchant_private', m.authUid, { balance: m.balance || 0, salesCount: m.salesCount || 0 }).catch(() => {});
+        // [أمان] لا يكتب المتصفح الرصيد/عدد المبيعات بعد الآن: تُحسب سيرفرياً بدالة syncMerchantBalance
+        // (functions/index.js) من تغيّر حالة الطلبات، وقواعد Firestore ترفض كتابة التاجر لها.
       });
       // طلبات الانضمام المعلقة: ما نعيد كتابتها هنا عمداً. الطلب يُكتب مرة وحدة مباشرة وقت
       // الإرسال (submitRequest)، والقواعد تمنع تعديله. لما كانت هذي الحلقة تعيد كتابتها مع
@@ -131,7 +145,7 @@ async function saveData() {
         if (lastSyncedOrderSnapshots.get(o.id) !== json) {
           changedOrders.push(o);
           pendingOrderWrites++;
-          window.authApi.saveDoc('orders', String(o.id), o)
+          window.authApi.saveDoc('orders', String(o.id), orderPayloadForWrite(o))
             .then(() => lastSyncedOrderSnapshots.set(o.id, json))
             .catch(e => console.error('order sync failed for', o.id, e))
             .finally(() => pendingOrderWrites--);

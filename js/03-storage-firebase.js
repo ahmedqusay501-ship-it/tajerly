@@ -28,6 +28,16 @@ async function initStorage() {
     const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut: authSignOut, updatePassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
     const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js");
     const firebaseApp = initializeApp(firebaseConfig);
+    // [أمان] Firebase App Check — يربط طلبات Firestore/Functions بموقعك الحقيقي فقط، فيصعّب إساءة استخدام
+    // المفتاح العلني (طلبات وهمية/سبام من سكربتات خارجية). يبقى معطّلاً (لا يغيّر أي سلوك) لحين وضع مفتاح
+    // reCAPTCHA v3 هنا بعد تفعيل App Check من Firebase Console — الخطوات بملف SECURITY-DEPLOY.md.
+    const APP_CHECK_SITE_KEY = ''; // مثال: '6Lc...'  (reCAPTCHA v3 site key — علني بطبيعته)
+    if (APP_CHECK_SITE_KEY) {
+      try {
+        const { initializeAppCheck, ReCaptchaV3Provider } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js");
+        initializeAppCheck(firebaseApp, { provider: new ReCaptchaV3Provider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+      } catch (e) { console.warn('App Check init failed:', e); }
+    }
     // Auto-detect long-polling: some Iraqi ISPs/networks stall Firestore's WebChannel streams,
     // leaving dozens of "pending" channel requests. This falls back to long-polling when needed.
     const db = initializeFirestore(firebaseApp, { experimentalAutoDetectLongPolling: true });
@@ -120,6 +130,23 @@ async function initStorage() {
       // just set locally (Settings → admin credentials). Uses the client SDK's own
       // "change my own password" call — no Cloud Function needed here, unlike resetting
       // someone ELSE's password, because the admin IS currently signed in as this account.
+      // Preferred admin login: the password is verified by Firebase Authentication itself, so no
+      // password (or hash) has to exist in any readable document. Throws on a wrong password.
+      async signInAdmin(password) {
+        const cred = await signInWithEmailAndPassword(auth, ADMIN_AUTH_EMAIL, password);
+        return cred.user.uid;
+      },
+      // True only if this uid has a document in the `admins` collection (console-only to create,
+      // see firestore.rules). A signed-in account that isn't registered there is NOT an admin.
+      async isRegisteredAdmin(uid) {
+        try { const snap = await getDoc(doc(db, 'admins', uid)); return snap.exists(); }
+        catch (e) { return false; }
+      },
+      // Re-checks the admin's CURRENT password with Firebase (used by "change admin credentials").
+      async verifyAdminPassword(password) {
+        try { await signInWithEmailAndPassword(auth, ADMIN_AUTH_EMAIL, password); return true; }
+        catch (e) { return false; }
+      },
       async syncAdminAuthPassword(newPassword) {
         if (!auth.currentUser) return false;
         await updatePassword(auth.currentUser, newPassword);
@@ -132,9 +159,9 @@ async function initStorage() {
       // which uses the Admin SDK to do it for real. It proves the caller is really the admin by
       // sending the same admin username + password hash this app already trusts for admin login;
       // the function independently re-checks those against Firestore before touching anything.
-      async resetAuthPassword(targetUsername, newPassword, adminUsername, adminPasswordHash) {
+      async resetAuthPassword(targetUsername, newPassword) {
         const call = httpsCallable(functionsApi, 'resetUserPassword');
-        const res = await call({ targetUsername, newPassword, adminUsername, adminPasswordHash });
+        const res = await call({ targetUsername, newPassword }); // authenticated by the caller's Firebase ID token — never by a password hash
         return res.data; // { updatedAuth: true, uid } or { updatedAuth: false } if no real account existed yet
       },
       async getPublicDoc(collectionName, uid) {
@@ -528,7 +555,7 @@ let data = {
       { id: 'z2', name: 'باقي المحافظات', fastPrice: 7000, slowPrice: 4000 }
     ],
     adminUsername: 'admin',
-    adminPassword: 'admin123',
+    adminPassword: '', // never ship a default password — credentials come only from the protected admin-credentials doc
     customAreas: {},
     // "الأكثر مبيعاً" بالسوق العام — [{merchantId, productId}, ...] معاد ترتيبها حسب الأكثر
     // طلباً، محسوبة من الأدمن بس (شوف recomputeMarketBestSellers بـ 15-admin-tools.js) لأن
@@ -557,7 +584,44 @@ async function hashPassword(plain) {
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 function looksHashed(str) {
-  return typeof str === 'string' && /^[0-9a-f]{64}$/.test(str);
+  return typeof str === 'string' && (/^[0-9a-f]{64}$/.test(str) || /^pbkdf2\$\d+\$[A-Za-z0-9+\/=]+\$[A-Za-z0-9+\/=]+$/.test(str));
+}
+// ---- Strong (salted + slow) password hashing, used for the ADMIN credential ----
+// The admin's hash lives in a document the login screen must read before anyone is signed
+// in, so it is world-readable. A plain unsalted SHA-256 there can be cracked offline in
+// seconds if the password is guessable. PBKDF2-SHA256 with a random per-password salt and
+// 210,000 iterations makes every guess ~200,000x more expensive. Format:
+//   pbkdf2$<iterations>$<salt base64>$<hash base64>
+// Old 64-hex SHA-256 values still verify (verifyPassword) and are upgraded on next login.
+const PBKDF2_ITERATIONS = 210000;
+function _b64FromBytes(bytes) { let s = ''; bytes.forEach(b => { s += String.fromCharCode(b); }); return btoa(s); }
+function _bytesFromB64(b64) { const s = atob(b64); const out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; }
+async function _pbkdf2(plain, salt, iterations) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(String(plain)), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+  return new Uint8Array(bits);
+}
+async function hashPasswordStrong(plain) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await _pbkdf2(plain, salt, PBKDF2_ITERATIONS);
+  return 'pbkdf2$' + PBKDF2_ITERATIONS + '$' + _b64FromBytes(salt) + '$' + _b64FromBytes(hash);
+}
+async function verifyPassword(plain, stored) {
+  if (typeof stored !== 'string' || !stored) return false;
+  if (stored.indexOf('pbkdf2$') === 0) {
+    const parts = stored.split('$');
+    if (parts.length !== 4) return false;
+    try {
+      const iters = parseInt(parts[1], 10);
+      if (!(iters >= 1000 && iters <= 5000000)) return false;
+      const expected = _bytesFromB64(parts[3]);
+      const actual = await _pbkdf2(plain, _bytesFromB64(parts[2]), iters);
+      if (expected.length !== actual.length) return false;
+      let diff = 0; for (let i = 0; i < expected.length; i++) diff |= expected[i] ^ actual[i]; // constant-time compare
+      return diff === 0;
+    } catch (e) { return false; }
+  }
+  return (await hashPassword(plain)) === stored; // legacy SHA-256
 }
 // Persists the admin's username/password hash to their own protected doc — separate from
 // saveData()/platform-settings so that no delegable employee permission (settings, shipping,
@@ -579,20 +643,31 @@ async function saveAdminCredentials() {
     return false;
   }
 }
+// Removes the admin password hash from the world-readable admin-credentials doc once the admin has
+// proven their identity through real Firebase Auth (see platformLogin). After this, the doc holds
+// only the (harmless) display username — there is nothing left to crack offline.
+async function scrubAdminCredentialHash() {
+  if (!data.settings.adminPassword) return true;
+  const prev = data.settings.adminPassword;
+  data.settings.adminPassword = '';
+  const ok = await saveAdminCredentials();
+  if (!ok) data.settings.adminPassword = prev;
+  return ok;
+}
 // One-time migration: any credential still stored as plain text (old demo data, or data
 // saved before hashing existed) gets hashed in place the first time it's loaded.
 async function migratePlainTextPasswords() {
   let changed = false;
   if (data.settings.adminPassword && !looksHashed(data.settings.adminPassword)) {
-    data.settings.adminPassword = await hashPassword(data.settings.adminPassword);
+    data.settings.adminPassword = await hashPasswordStrong(data.settings.adminPassword);
     changed = true;
     saveAdminCredentials(); // separate doc/permission from the rest of saveData() below
   }
   for (const m of data.merchants) {
-    if (m.password && !looksHashed(m.password)) { m.password = await hashPassword(m.password); changed = true; }
+    if (m.password && !looksHashed(m.password)) { m.password = await hashPasswordStrong(m.password); changed = true; }
   }
   for (const e of data.employees) {
-    if (e.password && !looksHashed(e.password)) { e.password = await hashPassword(e.password); changed = true; }
+    if (e.password && !looksHashed(e.password)) { e.password = await hashPasswordStrong(e.password); changed = true; }
   }
   if (changed) await saveData();
 }
@@ -737,7 +812,7 @@ async function fetchRemoteData() {
       if (Array.isArray(loadedAudit)) data.auditLog = loadedAudit;
     }
   } catch (e) {
-    if (e && e.message !== 'key not found') console.error('Storage error while loading audit log:', e);
+    if (e && e.message !== 'key not found' && e.code !== 'permission-denied' && !/permission/i.test(e.message || '')) console.error('Storage error while loading audit log:', e); // permission-denied is expected for visitors (audit log is admin-only)
   }
 
   if (window.authApi) {
@@ -852,7 +927,7 @@ async function fetchRemoteData() {
     // Before this change, one denied collection silently emptied the entire app (storefront,
     // dashboards, everything) for that visitor, because a single failed promise inside
     // Promise.all rejects the whole batch.
-    const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes, offersRes, reviewsRes] = await Promise.allSettled([
+    const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes, offersRes, reviewsRes, exemptionsRes] = await Promise.allSettled([
       window.authApi.listCollection('merchants'),
       ordersPromise,
       window.authApi.listCollection('join_requests'),
@@ -866,7 +941,10 @@ async function fetchRemoteData() {
       // product_reviews: same "publicly readable" shape as offers — any visitor, logged in
       // or not, can list every review for every merchant (see firestore.rules). Attached to
       // each product below once merchants have loaded.
-      window.authApi.listCollection('product_reviews')
+      window.authApi.listCollection('product_reviews'),
+      // commission_exemptions: طلبات/موافقات إعفاء العمولة. عامة القراءة (الزبون يحتاجها لحساب الرسوم)،
+      // لكن 'approved' فيها يكتبه الأدمن فقط (firestore.rules) — هذا هو مصدر الحقيقة الوحيد للإعفاء.
+      window.authApi.listCollection('commission_exemptions')
     ]);
 
     if (merchantsRes.status === 'fulfilled') {
@@ -879,7 +957,20 @@ async function fetchRemoteData() {
         try { return await window.authApi.getPrivateDoc('merchant_private', m._uid); }
         catch (e) { return null; }
       }));
-      const approvedMerchants = merchantPubs.map((m, i) => ({ ...m, ...(merchantPrivs[i] || { balance: 0, salesCount: 0 }), authUid: m._uid }));
+      // [أمان] نتجاهل تماماً الحقل القديم commissionRequests المخزّن بوثيقة التاجر (كان قابلاً للتعديل
+      // من التاجر) ونبنيه فقط من مجموعة commission_exemptions. لو فشل جلبها نترك [] (لا نصدّق القديم).
+      const exemptionsByMerchant = new Map();
+      if (exemptionsRes.status === 'fulfilled') {
+        exemptionsRes.value.forEach(e => {
+          if (!e || !e.merchantAuthUid) return;
+          const { _uid, merchantAuthUid, merchantId, ...req } = e;
+          if (!exemptionsByMerchant.has(merchantAuthUid)) exemptionsByMerchant.set(merchantAuthUid, []);
+          exemptionsByMerchant.get(merchantAuthUid).push(req);
+        });
+      } else {
+        console.error('Storage error while loading commission exemptions:', exemptionsRes.reason);
+      }
+      const approvedMerchants = merchantPubs.map((m, i) => ({ ...m, ...(merchantPrivs[i] || { balance: 0, salesCount: 0 }), authUid: m._uid, commissionRequests: exemptionsByMerchant.get(m._uid) || [] }));
       // Pending join requests (submitted by anyone, not yet approved — no login account exists
       // for them yet) live in their own collection so an anonymous visitor can create one
       // without needing write access to anything else.
@@ -909,7 +1000,7 @@ async function fetchRemoteData() {
       // saveData()'s diff (see lastSyncedMerchantSnapshots above) compares against reality —
       // not against whatever this admin's session happened to save last.
       approvedMerchants.forEach(m => {
-        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, ...publicFields } = m;
+        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, commissionRequests: _cr, ...publicFields } = m;
         lastSyncedMerchantSnapshots.set(m.authUid, JSON.stringify(publicFields));
       });
     } else {
@@ -1079,7 +1170,7 @@ async function fetchRemoteData() {
       { id: 'z2', name: 'باقي المحافظات', fastPrice: 7000, slowPrice: 4000 }
     ];
   }
-  if (!data.settings.adminPassword) data.settings.adminPassword = 'admin123';
+  if (!data.settings.adminPassword) data.settings.adminPassword = ''; // no default password (see verifyPassword: empty never matches)
   if (!data.settings.adminUsername) data.settings.adminUsername = 'admin';
   if (!data.settings.feeType) data.settings.feeType = 'fixed';
   // Custom areas added by merchants or the admin beyond the built-in AREAS_BY_GOVERNORATE

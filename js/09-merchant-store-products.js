@@ -559,7 +559,7 @@ function renderProductList(m) {
           <div style="margin-top:4px;">${commissionExemptionRowHtml(m, p)}</div>
         </span>
       </span>
-      <span>${p.price.toLocaleString()} د
+      <span>${fmtNum(p.price)} د
         <button class="btn secondary small" style="margin-right:6px;" onclick="copyProductLandingLink(${m.id}, ${p.id})">🔗 صفحة الهبوط</button>
         <button class="btn secondary small" style="margin-right:6px;" onclick="editProduct(${p.id})">تعديل</button>
         <button class="btn danger small" style="margin-right:6px;" onclick="deleteProduct(${m.id},${p.id})">حذف</button>
@@ -595,8 +595,20 @@ async function refreshMerchantProductLists(m) {
     if (Array.isArray(fresh.products)) m.products = fresh.products;
     if (Array.isArray(fresh.categories)) m.categories = fresh.categories;
     if (Array.isArray(fresh.coupons)) m.coupons = fresh.coupons;
-    if (Array.isArray(fresh.commissionRequests)) m.commissionRequests = fresh.commissionRequests;
   } catch (e) { /* offline or denied — fall back to whatever's already in memory */ }
+  await refreshCommissionRequests(m);
+}
+// [أمان] طلبات/موافقات الإعفاء تعيش بمجموعة commission_exemptions (الأدمن وحده يكتب 'approved')،
+// لا داخل وثيقة التاجر. معرّف الوثيقة = {merchantUid}_{productId}.
+function commissionDocKey(m, productId) { return `${m.authUid}_${productId}`; }
+async function refreshCommissionRequests(m) {
+  if (!m || !m.authUid || !window.authApi) return;
+  try {
+    const all = await window.authApi.listCollection('commission_exemptions');
+    m.commissionRequests = all
+      .filter(e => e.merchantAuthUid === m.authUid)
+      .map(e => { const { _uid, merchantAuthUid, merchantId, ...req } = e; return req; });
+  } catch (e) { /* offline — keep what we have */ }
 }
 function findCommissionRequest(m, productId) {
   return (m.commissionRequests || []).find(r => r.productId === productId);
@@ -619,42 +631,55 @@ function commissionExemptionRowHtml(m, p) {
 async function requestCommissionExemption(merchantId, productId) {
   const m = data.merchants.find(x => x.id === merchantId);
   let p = m && m.products.find(x => x.id === productId);
-  if (!m || !p) return;
+  if (!m || !p || !m.authUid) return;
   await refreshMerchantProductLists(m);
   // Re-look-up after the refresh — the array reference above may have just been replaced.
   p = m.products.find(x => x.id === productId);
   if (!p) return;
-  let r = findCommissionRequest(m, productId);
-  if (r) {
-    // Re-requesting after a previous rejection — reopen the same record instead of piling
-    // up duplicate history for the same product.
-    r.status = 'pending';
-    r.createdAt = new Date().toISOString();
-    r.respondedAt = null;
-  } else {
-    if (!Array.isArray(m.commissionRequests)) m.commissionRequests = [];
-    m.commissionRequests.push({
-      id: genId(),
-      productId,
-      productName: p.name,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      respondedAt: null
-    });
+  const existing = findCommissionRequest(m, productId);
+  if (existing && existing.status !== 'rejected') return; // pending أو approved: ما نلمسها
+  const now = new Date().toISOString();
+  // Re-requesting after a previous rejection reopens the same record (same doc id) instead of
+  // piling up duplicates; the rules only let a merchant do rejected -> pending, never approve.
+  const payload = {
+    id: existing ? existing.id : genId(),
+    merchantAuthUid: m.authUid,
+    merchantId: m.id,
+    productId,
+    productName: p.name,
+    status: 'pending',
+    createdAt: now,
+    respondedAt: null
+  };
+  try {
+    await window.authApi.saveDoc('commission_exemptions', commissionDocKey(m, productId), payload);
+  } catch (e) {
+    console.error('commission request failed', e);
+    showToast('ما انرسل طلب الإعفاء — تأكد من الاتصال وحاول مرة ثانية');
+    return;
   }
-  saveData();
+  await refreshCommissionRequests(m);
   renderMerchantPanel();
   showToast('تم إرسال طلب الإعفاء للأدمن ');
 }
 async function respondToCommissionRequest(merchantId, requestId, approve) {
   const m = data.merchants.find(x => x.id === merchantId);
-  if (!m) return;
-  await refreshMerchantProductLists(m);
+  if (!m || !m.authUid) return;
+  await refreshCommissionRequests(m);
   const r = (m.commissionRequests || []).find(x => x.id === requestId);
   if (!r) return;
-  r.status = approve ? 'approved' : 'rejected';
-  r.respondedAt = new Date().toISOString();
-  await saveData();
+  try {
+    // الأدمن (أو موظف requests) فقط تقبل القواعد منه status=approved/rejected على هذي المجموعة.
+    await window.authApi.saveDoc('commission_exemptions', commissionDocKey(m, r.productId), {
+      status: approve ? 'approved' : 'rejected',
+      respondedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    console.error('commission response failed', e);
+    showToast('ما انحفظ القرار — تأكد من صلاحيتك والاتصال');
+    return;
+  }
+  await refreshCommissionRequests(m);
   logAudit(approve ? 'قبول طلب إعفاء عمولة' : 'رفض طلب إعفاء عمولة', `${m.shop} — ${r.productName || 'منتج #' + r.productId}`);
   renderRequests();
   showToast(approve ? 'تمت الموافقة — هذا المنتج صار معفى من العمولة ' : 'تم رفض الطلب — العمولة مستمرة على هذا المنتج');
@@ -788,7 +813,7 @@ function renderCategoryList(m) {
   return `<div style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:8px;">
     ${m.categories.map(c => `
       <span class="category-chip" style="display:inline-flex; align-items:center; gap:6px;">
-        ${c.image ? `<img src="${c.image}" style="width:22px; height:22px; border-radius:50%; object-fit:cover;">` : ''}
+        ${c.image ? `<img src="${imgSrc(c.image)}" style="width:22px; height:22px; border-radius:50%; object-fit:cover;">` : ''}
         ${esc(c.name)}
         <label style="cursor:pointer; font-size:11px; color:var(--accent-dark);" title="${c.image ? 'تغيير الصورة' : 'إضافة صورة'}">
           📷<input type="file" accept="image/*" style="display:none;" onchange="setCategoryImage(${m.id}, ${c.id}, this)">
@@ -820,7 +845,7 @@ function renderCouponsList(m) {
   if (!m.coupons || m.coupons.length === 0) return '<div class="empty">ما ضفت كوبونات بعد</div>';
   const todayStr = new Date().toISOString().slice(0, 10);
   return m.coupons.map(c => {
-    const valueLabel = c.type === 'percent' ? `${c.value}%` : `${c.value.toLocaleString()} د`;
+    const valueLabel = c.type === 'percent' ? `${c.value}%` : `${fmtNum(c.value)} د`;
     const expired = c.expiryDate && todayStr > c.expiryDate;
     const exhausted = c.maxUses && (c.usedCount || 0) >= c.maxUses;
     let statusBadge;
@@ -828,10 +853,10 @@ function renderCouponsList(m) {
     else if (exhausted) statusBadge = '<span class="badge disabled">اكتمل الاستخدام</span>';
     else statusBadge = `<span class="badge ${c.active ? 'active' : 'disabled'}">${c.active ? 'مفعّل' : 'موقّف'}</span>`;
     const detailBits = [];
-    if (c.minOrder) detailBits.push(`لطلب ≥ ${c.minOrder.toLocaleString()} د`);
+    if (c.minOrder) detailBits.push(`لطلب ≥ ${fmtNum(c.minOrder)} د`);
     if (c.expiryDate) detailBits.push(`ينتهي ${esc(c.expiryDate)}`);
-    if (c.maxDiscount) detailBits.push(`أقصى خصم ${c.maxDiscount.toLocaleString()} د`);
-    detailBits.push(`استُخدم ${(c.usedCount || 0).toLocaleString()}${c.maxUses ? ' / ' + c.maxUses.toLocaleString() : ' مرة'}`);
+    if (c.maxDiscount) detailBits.push(`أقصى خصم ${fmtNum(c.maxDiscount)} د`);
+    detailBits.push(`استُخدم ${fmtNum((c.usedCount || 0))}${c.maxUses ? ' / ' + fmtNum(c.maxUses) : ' مرة'}`);
     return `<div class="list-item" style="align-items:flex-start;">
       <span><b>${esc(c.code)}</b> — خصم ${valueLabel}
         ${statusBadge}
@@ -994,8 +1019,8 @@ function cancelReasonLine(o) {
   if (!o.cancelled) return '';
   const when = o.cancelAt ? new Date(o.cancelAt).toLocaleString('ar-IQ') : '';
   return `<div style="font-size:11px; color:#B3261E; margin-top:4px; border-top:1px dashed #EEC9C6; padding-top:4px;">
-    ملغي بواسطة ${o.cancelByName ? o.cancelByName + ' (' + cancelByLabel(o.cancelBy) + ')' : cancelByLabel(o.cancelBy)}${when ? ' — ' + when : ''}
-    <br>السبب: ${o.cancelReason || '—'}
+    ملغي بواسطة ${o.cancelByName ? esc(o.cancelByName) + ' (' + cancelByLabel(o.cancelBy) + ')' : cancelByLabel(o.cancelBy)}${when ? ' — ' + when : ''}
+    <br>السبب: ${esc(o.cancelReason) || '—'}
     ${o.cancelBy === 'customer' && o.merchantCancelNote ? '<br>ملاحظة المحل: ' + esc(o.merchantCancelNote) : ''}
   </div>`;
 }

@@ -15,9 +15,9 @@ function exportMerchantsDirectoryPDF() {
       <td>${esc(m.phone) || '—'}</td>
       <td style="text-align:right;">${esc(m.description) || '—'}</td>
       <td>${m.status === 'active' ? 'نشط' : 'معطل'}</td>
-      <td>${s.sales.toLocaleString()}</td>
-      <td>${s.merchantDue.toLocaleString()}</td>
-      <td>${s.platformDue.toLocaleString()}</td>
+      <td>${fmtNum(s.sales)}</td>
+      <td>${fmtNum(s.merchantDue)}</td>
+      <td>${fmtNum(s.platformDue)}</td>
     </tr>`;
   }).join('');
 
@@ -44,12 +44,8 @@ function exportMerchantsDirectoryPDF() {
       </div>
     </body></html>`;
 
-  const printWin = window.open('', '_blank');
+  const printWin = openPrintWindow(html);
   if (!printWin) { showToast('المتصفح منع فتح نافذة الطباعة — فعّل النوافذ المنبثقة واعد المحاولة'); return; }
-  printWin.document.open();
-  printWin.document.write(html);
-  printWin.document.close();
-  setTimeout(() => { try { printWin.focus(); printWin.print(); } catch (e) {} }, 350);
   showToast('اختر "حفظ كـ PDF" من نافذة الطباعة اللي فتحت');
 }
 function resetFinancials(type) {
@@ -150,7 +146,7 @@ function confirmOwnDelivery() {
   m.ownDeliveryGovernorates = [...ownDeliveryState.governorates];
   m.ownDeliveryAreaPrices = JSON.parse(JSON.stringify(ownDeliveryState.areaPrices));
   saveData();
-  const labels = { merchant: `تم تفعيل التوصيل الخاص لـ"${m.shop}" بسعر افتراضي ${price.toLocaleString()} د`, platform: `تم رجّاع "${m.shop}" لتوصيل المنصة`, agent: `تم تحويل "${m.shop}" لسعر المندوب` };
+  const labels = { merchant: `تم تفعيل التوصيل الخاص لـ"${m.shop}" بسعر افتراضي ${fmtNum(price)} د`, platform: `تم رجّاع "${m.shop}" لتوصيل المنصة`, agent: `تم تحويل "${m.shop}" لسعر المندوب` };
   showToast(labels[m.deliveryPriceSource]);
   closeOwnDeliveryModal();
   renderAll();
@@ -453,7 +449,7 @@ function renderMerchantRanking() {
   el.innerHTML = ranked.map((r, i) => `
     <div class="list-item">
       <span><b>#${i + 1}</b> ${esc(r.m.shop)}</span>
-      <span>${r.s.sales.toLocaleString()} د — ${r.s.ordersCount} طلب</span>
+      <span>${fmtNum(r.s.sales)} د — ${r.s.ordersCount} طلب</span>
     </div>`).join('');
 }
 
@@ -656,7 +652,7 @@ function renderMerchantActions() {
     const missingAgentForPricing = !m.ownDelivery && m.deliveryPriceSource === 'agent' && !deliveryAgent;
     let priceSourceBadge;
     if (m.ownDelivery) {
-      priceSourceBadge = `<span class="badge" style="background:#FEF3C7; color:#92400E;">سعر التاجر — ${(m.ownDeliveryPrice||0).toLocaleString()} د</span>`;
+      priceSourceBadge = `<span class="badge" style="background:#FEF3C7; color:#92400E;">سعر التاجر — ${fmtNum((m.ownDeliveryPrice||0))} د</span>`;
     } else if (m.deliveryPriceSource === 'agent') {
       priceSourceBadge = missingAgentForPricing
         ? `<span class="badge" style="background:#FEE2E2; color:#B91C1C;">سعر المندوب — بلا مندوب! التوصيل معطّل</span>`
@@ -666,7 +662,7 @@ function renderMerchantActions() {
     }
     return `
     <div class="list-item" style="align-items:flex-start;">
-      <span>${m.shop} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> <span class="badge" style="background:${m.type==='restaurant' ? '#FFF7ED' : '#EEF2FF'}; color:${m.type==='restaurant' ? '#9A3412' : '#3730A3'};">${m.type==='restaurant' ? '🍽️ مطعم' : '🛒 ماركت'}</span>${m.hiddenFromMarket ? ` <span class="badge disabled">مخفي من ${m.type==='restaurant' ? 'صفحة المطاعم' : 'السوق العام'}</span>` : ''} ${priceSourceBadge}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
+      <span>${esc(m.shop)} <span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> <span class="badge" style="background:${m.type==='restaurant' ? '#FFF7ED' : '#EEF2FF'}; color:${m.type==='restaurant' ? '#9A3412' : '#3730A3'};">${m.type==='restaurant' ? '🍽️ مطعم' : '🛒 ماركت'}</span>${m.hiddenFromMarket ? ` <span class="badge disabled">مخفي من ${m.type==='restaurant' ? 'صفحة المطاعم' : 'السوق العام'}</span>` : ''} ${priceSourceBadge}${m.customDomain ? ` <span class="badge active">${esc(m.customDomain)}</span>` : ''}<br>
       <span style="color:var(--text-mute); font-size:11px;">
         يوزر: ${usernameDisplay}
         ${m.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${key}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
@@ -769,7 +765,7 @@ function renderMarketPagesCard() {
       <div class="badge ${enabled ? 'active' : 'disabled'}" style="margin-bottom:8px;">${enabled ? 'الصفحة مفعّلة' : 'الصفحة معطّلة كاملة'}</div><br>
       <button class="btn ${enabled ? 'warn' : ''} small" onclick="${toggleFn}()">${enabled ? 'تعطيل الصفحة كاملة' : 'إعادة تفعيل الصفحة'}</button>
       <button class="btn secondary small" onclick="${resetFn}()">تصفير عداد الزيارات</button>
-      <a href="${openUrl}" target="_blank" class="btn secondary small" style="display:inline-block; text-decoration:none;">فتح الصفحة</a>
+      <a href="${esc(safeUrl(openUrl))}" target="_blank" class="btn secondary small" style="display:inline-block; text-decoration:none;">فتح الصفحة</a>
     </div>`;
   box.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
     ${block('السوق العام', '🛒', data.settings.marketPageEnabled !== false, data.settings.marketVisits, marketMerchants, 'toggleMarketPageEnabled', 'resetMarketVisits', '?market=1')}
@@ -807,7 +803,7 @@ function renderOffersList() {
     return `
     <div class="list-item">
       <span style="display:flex; align-items:center; gap:8px;">
-        ${o.image ? `<img src="${o.image}" style="width:44px; height:44px; border-radius:8px; object-fit:cover;">` : ''}
+        ${o.image ? `<img src="${imgSrc(o.image)}" style="width:44px; height:44px; border-radius:8px; object-fit:cover;">` : ''}
         <span><b>${esc(o.name)}</b> <span class="badge ${status.cls}">${status.text}</span><br>
         <span style="color:var(--text-mute); font-size:11px;">${esc(period)} — ${o.merchantIds.length} محل</span></span>
       </span>
@@ -824,7 +820,7 @@ function openOfferEditor(id) {
   document.getElementById('offer-editor-title').textContent = o ? 'تعديل العرض' : 'عرض جديد';
   document.getElementById('offer-editor-id').value = o ? o.id : '';
   document.getElementById('offer-editor-name').value = o ? o.name : '';
-  document.getElementById('offer-editor-image-preview').innerHTML = o && o.image ? `<img src="${o.image}" style="max-width:120px; max-height:80px; border-radius:8px;">` : '';
+  document.getElementById('offer-editor-image-preview').innerHTML = o && o.image ? `<img src="${imgSrc(o.image)}" style="max-width:120px; max-height:80px; border-radius:8px;">` : '';
   document.getElementById('offer-editor-image-file').value = '';
   document.getElementById('offer-editor-image-file').dataset.currentImage = o ? (o.image || '') : '';
   const permanent = !o || (!o.startDate && !o.endDate);
@@ -851,7 +847,7 @@ async function setOfferEditorImage(inputEl) {
   try {
     const dataUrl = await resizeImageFile(file, 900, 0.75);
     inputEl.dataset.currentImage = dataUrl;
-    document.getElementById('offer-editor-image-preview').innerHTML = `<img src="${dataUrl}" style="max-width:120px; max-height:80px; border-radius:8px;">`;
+    document.getElementById('offer-editor-image-preview').innerHTML = `<img src="${imgSrc(dataUrl)}" style="max-width:120px; max-height:80px; border-radius:8px;">`;
   } catch (e) {
     showToast('صار خطأ بمعالجة الصورة');
   }

@@ -168,7 +168,7 @@ function renderDashboard() {
   const todayFees = todayOrders.reduce((sum, o) => sum + o.feeFromCustomer + o.feeFromMerchant + (o.itemDeduction || 0), 0);
 
   document.getElementById('d-orders').textContent = todayOrders.length;
-  document.getElementById('d-fees').textContent = todayFees.toLocaleString();
+  document.getElementById('d-fees').textContent = fmtNum(todayFees);
   document.getElementById('d-active').textContent = data.merchants.filter(m => m.status === 'active').length;
 
   const list = document.getElementById('d-merchant-list');
@@ -183,9 +183,9 @@ function renderDashboard() {
           <span><span class="badge ${m.status==='active'?'active':'disabled'}">${m.status==='active'?'نشط':'معطل'}</span> — ${m.salesCount} عملية</span>
         </div>
         <div class="grid3" style="margin:8px 0 0; gap:6px;">
-          <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${s.sales.toLocaleString()}</div><div class="stat-label">رصيد المبيعات (د)</div></div>
-          <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${s.merchantDue.toLocaleString()}</div><div class="stat-label">مستحقات التاجر (د)</div></div>
-          <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${s.platformDue.toLocaleString()}</div><div class="stat-label">مستحقات المنصة (د)</div></div>
+          <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${fmtNum(s.sales)}</div><div class="stat-label">رصيد المبيعات (د)</div></div>
+          <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${fmtNum(s.merchantDue)}</div><div class="stat-label">مستحقات التاجر (د)</div></div>
+          <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${fmtNum(s.platformDue)}</div><div class="stat-label">مستحقات المنصة (د)</div></div>
         </div>
         <div class="grid3" style="margin:6px 0 0; gap:6px;">
           <div class="stat" style="padding:8px 4px;"><div class="stat-num" style="font-size:14px;">${s.ordersCount}</div><div class="stat-label">عدد الطلبات</div></div>

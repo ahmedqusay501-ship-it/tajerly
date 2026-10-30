@@ -74,12 +74,12 @@ function renderStoreProductCardGrid(p, color, m) {
   return `
     <div class="store-product-card" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-card-img">
-        ${img ? `<img src="${img}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+        ${img ? `<img src="${imgSrc(img)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
         ${closed ? `<span class="badge rejected">مغلق الآن</span>` : (outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : '')}
       </div>
       <div class="store-product-card-info">
         <div class="store-product-card-name">${esc(p.name)}</div>
-        <div class="store-product-card-price">${p.price.toLocaleString()} د</div>
+        <div class="store-product-card-price">${fmtNum(p.price)} د</div>
         <button class="btn small ${disabled ? 'secondary' : ''}" style="width:100%; margin-top:6px;" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
       </div>
     </div>
@@ -99,9 +99,9 @@ function renderStoreProductCardList(p, color, m) {
   return `
     <div class="store-product-row" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-row-img">
-        ${img ? `<img src="${img}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+        ${img ? `<img src="${imgSrc(img)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
       </div>
-      <div class="store-product-row-name">${esc(p.name)}<div class="store-product-row-price">${p.price.toLocaleString()} د</div></div>
+      <div class="store-product-row-name">${esc(p.name)}<div class="store-product-row-price">${fmtNum(p.price)} د</div></div>
       <button class="btn small ${disabled ? 'secondary' : ''}" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
     </div>
   `;
@@ -168,7 +168,7 @@ function setStoreFilterCategory(merchantId, catId) {
 function updateStoreProductsArea(merchantId) {
   const m = data.merchants.find(x => x.id === merchantId);
   if (!m) return;
-  const color = (m.theme && m.theme.primaryColor) || '#C77B4A';
+  const color = safeColor(m.theme && m.theme.primaryColor);
   const area = document.getElementById(`store-products-area-${merchantId}`);
   if (area) area.innerHTML = renderStoreProducts(m, color);
 }
@@ -180,9 +180,9 @@ function renderStoreFilterChips(m) {
   // tapping "الكل" or the selected one again goes back to the full browsing view.
   const item = (id, label, img, fallback) => {
     const sel = String(f.categoryId) === String(id);
-    const arg = typeof id === 'number' ? id : `'${id}'`;
+    const arg = typeof id === 'number' ? id : jsAttr(id);
     return `<div class="store-cat-icon${sel ? ' selected' : ''}" onclick="setStoreFilterCategory(${m.id}, ${arg})">
-      <div class="store-cat-icon-circle">${img ? `<img src="${img}">` : `<span>${fallback}</span>`}</div>
+      <div class="store-cat-icon-circle">${img ? `<img src="${imgSrc(img)}">` : `<span>${fallback}</span>`}</div>
       <div class="store-cat-icon-label">${esc(label)}</div>
     </div>`;
   };
@@ -204,7 +204,7 @@ function renderStoreBannerSlider(m, color) {
   return `
     <div class="store-slider-wrap">
       <div class="store-slider" id="store-slider-${m.id}" onscroll="onStoreSliderScroll(this)">
-        ${list.map(src => `<div class="store-slide"><img src="${src}"></div>`).join('')}
+        ${list.map(src => `<div class="store-slide"><img src="${imgSrc(src)}"></div>`).join('')}
       </div>
       <div class="store-slider-dots" id="store-slider-dots-${m.id}">${list.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>
     </div>`;
@@ -289,7 +289,7 @@ function renderStoreProducts(m, color) {
   m.categories.forEach(c => {
     const catItems = items.filter(p => p.categoryId === c.id);
     if (catItems.length === 0) return;
-    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${c.image}" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}<span style="flex:1;">${esc(c.name)}</span><a class="store-see-all" onclick="setStoreFilterCategory(${m.id}, ${typeof c.id === 'number' ? c.id : `'${c.id}'`})">عرض الكل ›</a></div>`;
+    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${imgSrc(c.image)}" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}<span style="flex:1;">${esc(c.name)}</span><a class="store-see-all" onclick="setStoreFilterCategory(${m.id}, ${typeof c.id === 'number' ? c.id : `'${c.id}'`})">عرض الكل ›</a></div>`;
     html += shelf(catItems);
   });
   const catIds = new Set(m.categories.map(c => c.id));
@@ -322,15 +322,15 @@ function renderProductDetailContent(p, color, m) {
   const curColor = selectedProductColor[p.id];
   return `
     <div class="product-detail-main-img-wrap">
-      ${mainImg ? `<img id="store-img-${p.id}" src="${mainImg}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+      ${mainImg ? `<img id="store-img-${p.id}" src="${imgSrc(mainImg)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
     </div>
     ${p.images.length > 1 ? `
       <div class="store-photo-strip" id="store-strip-${p.id}">
-        ${p.images.map((img, i) => `<img src="${img}" class="${i === shownIndex ? 'selected' : ''}" onclick="pickStoreImage(${m.id}, ${p.id}, ${i})">`).join('')}
+        ${p.images.map((img, i) => `<img src="${imgSrc(img)}" class="${i === shownIndex ? 'selected' : ''}" onclick="pickStoreImage(${m.id}, ${p.id}, ${i})">`).join('')}
       </div>
     ` : ''}
     <div class="product-detail-name">${esc(p.name)} <button class="btn secondary small" style="padding:3px 10px; font-size:12px;" onclick="shareProduct(${m.id}, ${p.id})" aria-label="شارك المنتج">↗ شارك</button></div>
-    <div class="product-detail-price">${p.price.toLocaleString()} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
+    <div class="product-detail-price">${fmtNum(p.price)} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
     ${!isMerchantOpenNow(m) ? `<div class="empty" style="margin:6px 0;">🕓 هذا المطعم مغلق حالياً — تقدر تشوف القائمة بس ما تقدر تطلب${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ' لين يفتح'}</div>` : ''}
     ${(() => { const avg = productAvgRating(p); return avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : `<div class="store-product-card-rating">لا يوجد تقييمات بعد — كن أول من يقيّم</div>`; })()}
     ${p.description ? `<div class="product-desc">${esc(p.description)}</div>` : ''}
@@ -340,7 +340,7 @@ function renderProductDetailContent(p, color, m) {
         <div class="size-chip-row" id="size-chip-row-${p.id}">
           ${p.sizes.map(s => {
             const depleted = typeof s.stock === 'number' && s.stock <= 0;
-            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, '${esc(s.value).replace(/'/g, "\\'")}')">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
+            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, ${jsAttr(s.value)})">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
           }).join('')}
         </div>
       </div>
@@ -351,7 +351,7 @@ function renderProductDetailContent(p, color, m) {
         <div class="store-color-row" id="color-chip-row-${p.id}">
           ${p.colors.map(c => {
             const depleted = typeof c.stock === 'number' && c.stock <= 0;
-            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, '${esc(c.name).replace(/'/g, "\\'")}')"></span>`;
+            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, ${jsAttr(c.name)})"></span>`;
           }).join('')}
         </div>
         <div class="store-color-label" id="color-selected-label-${p.id}">${curColor ? `اللون المختار: ${esc(curColor)}` : ''}</div>
@@ -397,7 +397,7 @@ async function shareProduct(merchantId, productId) {
   if (!p) return;
   ensureProductImages(p);
   const link = productShareLink(m, p);
-  const text = `${p.name}\nالسعر: ${p.price.toLocaleString()} د\n${link}`;
+  const text = `${p.name}\nالسعر: ${fmtNum(p.price)} د\n${link}`;
   if (navigator.share) {
     try {
       const img = p.images && p.images[0];
@@ -555,7 +555,7 @@ function openProductDetail(merchantId, productId) {
   const p = m && m.products.find(x => x.id === productId);
   if (!m || !p) return;
   openProductDetailId = { merchantId, productId };
-  const color = (m.theme && m.theme.primaryColor) || '#C77B4A';
+  const color = safeColor(m.theme && m.theme.primaryColor);
   // على صفحة المتجر الفردي بس (مو السوق العام ولا صفحة المطاعم — هذولا يبقون بنفس نافذة
   // التفاصيل المنبثقة القديمة): التفاصيل تفتح بملء الصفحة، بمعنى تستبدل محتوى المتجر نفسه
   // بدل ما تفتح كطبقة فوقه.
@@ -598,7 +598,7 @@ function refreshOpenProductDetail() {
   const m = data.merchants.find(x => x.id === merchantId);
   const p = m && m.products.find(x => x.id === productId);
   if (!m || !p) { if (productDetailFullPageActive) closeStoreProductDetailFullPage(); else closeProductDetail(); return; }
-  const color = (m.theme && m.theme.primaryColor) || '#C77B4A';
+  const color = safeColor(m.theme && m.theme.primaryColor);
   if (productDetailFullPageActive) {
     const body = document.getElementById('store-product-detail-fullpage-body');
     if (body) body.innerHTML = renderProductDetailContent(p, color, m);
@@ -623,7 +623,7 @@ function renderStorefrontInto(merchantId, content, opts) {
     return;
   }
 
-  const color = m.theme.primaryColor || '#C77B4A';
+  const color = safeColor(m.theme.primaryColor, '#C77B4A');
   const visibleSocials = SOCIAL_PLATFORMS.filter(p => m.theme.social[p.key].visible && m.theme.social[p.key].url);
 
   content.innerHTML = `
@@ -633,21 +633,21 @@ function renderStorefrontInto(merchantId, content, opts) {
           هذي معاينة بس — متجرك حالياً معطّل من الأدمن وما يشوفه الزبون لين يتفعّل.
         </div>` : ''}
       <div class="store-header">
-        ${m.theme.logo ? `<img class="store-logo" src="${m.theme.logo}">` : `<div class="store-logo store-logo-default" style="background:${color};">${(m.shop||'م').trim().charAt(0)}</div>`}
-        <div class="card-title" style="color:${color};">${m.shop} ${restaurantOpenBadgeHtml(m)}</div>
+        ${m.theme.logo ? `<img class="store-logo" src="${imgSrc(m.theme.logo)}">` : `<div class="store-logo store-logo-default" style="background:${color};">${esc((m.shop||'م').trim().charAt(0))}</div>`}
+        <div class="card-title" style="color:${color};">${esc(m.shop)} ${restaurantOpenBadgeHtml(m)}</div>
       </div>
       ${m.products.length > 0 ? renderStoreSearchBar(m) : ''}
-      ${renderStoreBannerSlider(m, color) || (m.theme.banner ? `<img class="store-banner" src="${m.theme.banner}">` : `
+      ${renderStoreBannerSlider(m, color) || (m.theme.banner ? `<img class="store-banner" src="${imgSrc(m.theme.banner)}">` : `
         <div class="store-banner store-banner-default" style="background:linear-gradient(120deg, ${color}, ${color}CC), url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%2270%22 cy=%2250%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%22100%22 cy=%2290%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%2240%22 cy=%22100%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3C/svg%3E');">
           <svg class="store-banner-default-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 9l1-5h14l1 5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" stroke="white" stroke-width="1.4" opacity=".85"/><path d="M9.5 19v-4a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v4" stroke="white" stroke-width="1.4" opacity=".85"/></svg>
         </div>`)}
-      ${m.bio ? `<div class="store-bio">${m.bio}</div>` : ''}
+      ${m.bio ? `<div class="store-bio">${esc(m.bio)}</div>` : ''}
       ${visibleSocials.length > 0 ? `
         <div class="store-social-row">
-          ${visibleSocials.map(p => `<a class="store-social-btn" href="${m.theme.social[p.key].url}" target="_blank" rel="noopener">${p.label}</a>`).join('')}
+          ${visibleSocials.map(p => `<a class="store-social-btn" href="${esc(safeUrl(m.theme.social[p.key].url))}" target="_blank" rel="noopener">${p.label}</a>`).join('')}
         </div>
       ` : ''}
-      ${m.welcomeMessage ? `<div class="store-welcome">${m.welcomeMessage}</div>` : ''}
+      ${m.welcomeMessage ? `<div class="store-welcome">${esc(m.welcomeMessage)}</div>` : ''}
       <div class="store-trust-row">
         <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7h11v9H3z" stroke="currentColor" stroke-width="1.6"/><path d="M14 10h4l3 3v3h-7z" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/><circle cx="17.5" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg><span>توصيل لكل المحافظات</span></div>
         <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>دفع عند الاستلام</span></div>
@@ -659,7 +659,7 @@ function renderStorefrontInto(merchantId, content, opts) {
       ${cart.length && cart[0].merchantId === m.id ? `
         <div class="cart-bar" onclick="openCartModal()">
           <span>السلة (${cartCount()} قطعة)</span>
-          <span>${cartSubtotal().toLocaleString()} د — إتمام الشراء ›</span>
+          <span>${fmtNum(cartSubtotal())} د — إتمام الشراء ›</span>
         </div>
       ` : ''}
       <div id="store-products-area-${m.id}">${renderStoreProducts(m, color)}</div>
@@ -774,7 +774,7 @@ function renderProductLandingBody() {
   ensureMerchantTheme(m);
   ensureProductImages(p);
   ensureProductVariants(p);
-  const color = m.theme.primaryColor || '#C77B4A';
+  const color = safeColor(m.theme.primaryColor, '#C77B4A');
   const outOfStock = productOutOfStock(p);
   const closed = !isMerchantOpenNow(m);
   const disabled = outOfStock || closed;
@@ -787,28 +787,28 @@ function renderProductLandingBody() {
   const avg = productAvgRating(p);
   const gallery = p.images.length
     ? (p.images.length > 1
-      ? `<div class="store-slider-wrap"><div class="store-slider" onscroll="landingSlideScroll(this)">${p.images.map(src => `<div class="store-slide landing-slide"><img src="${src}"></div>`).join('')}</div>
+      ? `<div class="store-slider-wrap"><div class="store-slider" onscroll="landingSlideScroll(this)">${p.images.map(src => `<div class="store-slide landing-slide"><img src="${imgSrc(src)}"></div>`).join('')}</div>
           <div class="store-slider-dots">${p.images.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div></div>`
-      : `<div class="store-slider-wrap"><div class="store-slide landing-slide" style="border-radius:14px; overflow:hidden;"><img src="${p.images[0]}"></div></div>`)
+      : `<div class="store-slider-wrap"><div class="store-slide landing-slide" style="border-radius:14px; overflow:hidden;"><img src="${imgSrc(p.images[0])}"></div></div>`)
     : '';
   root.innerHTML = `
     <div class="landing-page">
       <div class="landing-brand" onclick="leaveProductLanding()">
-        ${m.theme.logo ? `<img class="store-logo" src="${m.theme.logo}">` : `<div class="store-logo store-logo-default" style="background:${color};">${(m.shop || 'م').trim().charAt(0)}</div>`}
+        ${m.theme.logo ? `<img class="store-logo" src="${imgSrc(m.theme.logo)}">` : `<div class="store-logo store-logo-default" style="background:${color};">${esc((m.shop || 'م').trim().charAt(0))}</div>`}
         <span style="color:${color};">${esc(m.shop)}</span>
         <span class="landing-brand-link">زيارة المتجر ›</span>
       </div>
       ${gallery}
       <h1 class="landing-title">${esc(p.name)}</h1>
       ${avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : ''}
-      <div class="landing-price" style="color:${color};">${p.price.toLocaleString()} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
+      <div class="landing-price" style="color:${color};">${fmtNum(p.price)} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
       ${closed ? `<div class="empty" style="margin:6px 0;">🕓 المتجر مغلق حالياً${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ''}</div>` : ''}
       ${p.sizes.length ? `
         <div class="product-sizes-label">اختر المقاس</div>
         <div class="size-chip-row" id="size-chip-row-${p.id}">
           ${p.sizes.map(s => {
             const depleted = typeof s.stock === 'number' && s.stock <= 0;
-            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, '${esc(s.value).replace(/'/g, "\\'")}')">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
+            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, ${jsAttr(s.value)})">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
           }).join('')}
         </div>` : ''}
       ${p.colors.length ? `
@@ -816,7 +816,7 @@ function renderProductLandingBody() {
         <div class="store-color-row" id="color-chip-row-${p.id}">
           ${p.colors.map(c => {
             const depleted = typeof c.stock === 'number' && c.stock <= 0;
-            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, '${esc(c.name).replace(/'/g, "\\'")}')"></span>`;
+            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, ${jsAttr(c.name)})"></span>`;
           }).join('')}
         </div>
         <div class="store-color-label" id="color-selected-label-${p.id}">${curColor ? `اللون المختار: ${esc(curColor)}` : ''}</div>` : ''}
@@ -830,7 +830,7 @@ function renderProductLandingBody() {
       ${renderProductReviewsSection(p, m)}
     </div>
     <div class="landing-sticky">
-      <div class="landing-sticky-price" style="color:${color};">${p.price.toLocaleString()} د</div>
+      <div class="landing-sticky-price" style="color:${color};">${fmtNum(p.price)} د</div>
       <button class="btn" style="background:${disabled ? '' : color};" ${disabled ? 'disabled' : ''} onclick="landingOrderNow(${m.id}, ${p.id})">${outOfStock ? 'غير متوفر' : (closed ? 'مغلق حالياً' : 'اطلب الآن')}</button>
     </div>
   `;

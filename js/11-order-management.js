@@ -43,7 +43,7 @@ function renderMerchantCancelRequests(m) {
   return groups.map(g => {
     const items = g.orders;
     const first = items[0];
-    const itemsHtml = items.map(o => `<div class="invoice-line"><span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د</span></div>`).join('');
+    const itemsHtml = items.map(o => `<div class="invoice-line"><span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د</span></div>`).join('');
     const stageNote = first.cancelStage === 'merchant_approved'
       ? `<div style="font-size:11px; color:#92400E; margin-top:6px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:6px; padding:5px 6px;">
            وافقت وأرسلته للإدارة — بانتظار موافقتها النهائية
@@ -157,14 +157,14 @@ function orderCustomerLine(o) {
 function orderFinanceLine(o) {
   const customerTotal = o.price + (o.feeFromCustomer || 0) + (o.shippingFee || 0);
   const net = o.price - (o.feeFromMerchant || 0) - (o.itemDeduction || 0);
-  let breakdown = `القطعة ${o.price.toLocaleString()} د`;
-  if (o.feeFromCustomer) breakdown += ` + رسوم خدمة ${o.feeFromCustomer.toLocaleString()} د`;
-  if (o.shippingFee) breakdown += ` + توصيل ${o.shippingFee.toLocaleString()} د`;
-  let deducted = `رسم المنصة المستقطع مني: ${(o.feeFromMerchant || 0).toLocaleString()} د`;
-  if (o.itemDeduction) deducted += ` + استقطاع القطعة: ${o.itemDeduction.toLocaleString()} د`;
+  let breakdown = `القطعة ${fmtNum(o.price)} د`;
+  if (o.feeFromCustomer) breakdown += ` + رسوم خدمة ${fmtNum(o.feeFromCustomer)} د`;
+  if (o.shippingFee) breakdown += ` + توصيل ${fmtNum(o.shippingFee)} د`;
+  let deducted = `رسم المنصة المستقطع مني: ${fmtNum((o.feeFromMerchant || 0))} د`;
+  if (o.itemDeduction) deducted += ` + استقطاع القطعة: ${fmtNum(o.itemDeduction)} د`;
   return `<div style="font-size:11px; color:#64748B; margin-top:3px; border-top:1px dashed #EEE; padding-top:3px;">
-    فاتورة الزبون: ${breakdown} = <b>${customerTotal.toLocaleString()} د</b>
-    <br>${deducted}${o.status === 'accepted' && !o.cancelled ? ' — صافيّ من هذا الطلب: ' + net.toLocaleString() + ' د' : ''}
+    فاتورة الزبون: ${breakdown} = <b>${fmtNum(customerTotal)} د</b>
+    <br>${deducted}${o.status === 'accepted' && !o.cancelled ? ' — صافيّ من هذا الطلب: ' + fmtNum(net) + ' د' : ''}
   </div>`;
 }
 
@@ -256,7 +256,7 @@ function renderReadyForShipping(m) {
     const first = items[0];
     const itemsHtml = items.map(o => `
       <div class="invoice-line">
-        <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د</span>
+        <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د</span>
       </div>
     `).join('');
     return `
@@ -270,7 +270,7 @@ function renderReadyForShipping(m) {
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
         <button class="btn small" onclick="handOverInvoiceToShipping(${g.groupId}, this)">تم التجهيز — تسليم للتوصيل</button>
-        <button class="btn danger small" onclick="openCancelReasonModal(${g.groupId}, 'merchant', '${esc(m.shop || '').replace(/'/g, "\\'")}')">إلغاء الطلب</button>
+        <button class="btn danger small" onclick="openCancelReasonModal(${g.groupId}, 'merchant', ${jsAttr(m.shop || '')})">إلغاء الطلب</button>
       </div>
     </div>`;
   }).join('');
@@ -321,7 +321,7 @@ async function handOverInvoiceToShipping(groupId, btn) {
   let ok = true;
   if (window.authApi) {
     try {
-      await Promise.all(items.map(o => window.authApi.saveDoc('orders', String(o.id), o)));
+      await Promise.all(items.map(o => window.authApi.saveDoc('orders', String(o.id), orderPayloadForWrite(o))));
     } catch (e) {
       console.error('handOverInvoiceToShipping: order write failed', e);
       ok = false;
@@ -380,7 +380,7 @@ function renderPendingOrders(m) {
 
     const itemsHtml = items.map(o => `
       <div class="invoice-line">
-        <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د
+        <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د
           ${o.removalStatus === 'requested' ? ' <span class="badge pending">بانتظار موافقة الأدمن على الحذف</span>' : ''}
           ${o.removalStatus === 'denied' ? ' <span class="badge rejected">الأدمن رفض حذفها</span>' : ''}
         </span>
@@ -396,11 +396,11 @@ function renderPendingOrders(m) {
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
         <div style="font-size:11px; color:#64748B; margin-top:6px; border-top:1px dashed #EEE; padding-top:6px;">
-          إجمالي الفاتورة: ${subtotal.toLocaleString()} د قطع${serviceFee ? ' + ' + serviceFee.toLocaleString() + ' د رسوم خدمة' : ''}${shipping ? ' + ' + shipping.toLocaleString() + ' د توصيل' : ''} = <b>${customerTotal.toLocaleString()} د</b>
+          إجمالي الفاتورة: ${fmtNum(subtotal)} د قطع${serviceFee ? ' + ' + fmtNum(serviceFee) + ' د رسوم خدمة' : ''}${shipping ? ' + ' + fmtNum(shipping) + ' د توصيل' : ''} = <b>${fmtNum(customerTotal)} د</b>
         </div>
         <div style="font-size:11px; color:var(--accent-dark); margin-top:3px; border-top:1px dashed #EEE; padding-top:6px;">
-          عمولة المنصة المستقطعة منك بهذي الفاتورة: <b>${platformCommission.toLocaleString()} د</b>${feeFromMerchant ? ' (رسم منصة ' + feeFromMerchant.toLocaleString() + ' د' : ''}${itemDeduction ? (feeFromMerchant ? ' + ' : ' (') + 'استقطاع قطع ' + itemDeduction.toLocaleString() + ' د' : ''}${(feeFromMerchant || itemDeduction) ? ')' : ''}
-          — صافيك المتوقع لو انقبلت الفاتورة: <b>${netPayout.toLocaleString()} د</b>
+          عمولة المنصة المستقطعة منك بهذي الفاتورة: <b>${fmtNum(platformCommission)} د</b>${feeFromMerchant ? ' (رسم منصة ' + fmtNum(feeFromMerchant) + ' د' : ''}${itemDeduction ? (feeFromMerchant ? ' + ' : ' (') + 'استقطاع قطع ' + fmtNum(itemDeduction) + ' د' : ''}${(feeFromMerchant || itemDeduction) ? ')' : ''}
+          — صافيك المتوقع لو انقبلت الفاتورة: <b>${fmtNum(netPayout)} د</b>
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
@@ -422,13 +422,10 @@ function acceptInvoice(groupId) {
   const m = data.merchants.find(x => x.id === items[0].merchantId);
   items.forEach(o => {
     o.status = 'accepted';
-    m.salesCount++;
-    // NOTE: was missing the coupon discount deduction here — every accounting report/export
-    // in the app already subtracts couponDiscount to compute the merchant's net (see
-    // orderFinanceLine, exportMerchantAccountingExcel, renderAdminAccounting...), so leaving
-    // it out of the actual balance credit meant the real balance silently drifted higher than
-    // what every report told the merchant they'd earned, by the full coupon amount.
-    m.balance += (o.price - o.feeFromMerchant - (o.itemDeduction || 0) - (o.couponDiscount || 0));
+    // [أمان] لا يُحتسب رصيد ولا عدد مبيعات عند القبول. الاحتساب يصير سيرفرياً (syncMerchantBalance)
+    // فقط عند التسليم الفعلي (deliveryStatus == 'delivered')، بعد ما يسجّله الأدمن أو المندوب.
+    // السبب: سعر الطلب يُكتب من متصفح الزائر، فلو انحسب الرصيد عند القبول كان يكفي تاجر ينشئ
+    // طلباً وهمياً بسعر كبير ويقبله.
     // This is the real, authoritative stock deduction — deliberately placed here instead of at
     // guest checkout time (see the comment in submitCheckout/newOrders.push above). This code
     // runs inside the merchant's own logged-in session, which does have permission to write to
@@ -479,8 +476,8 @@ function reverseOrderEffectsOnCancel(o) {
   if (o.status === 'accepted') {
     const p = o.productId ? m.products.find(x => x.id === o.productId) : null;
     if (p) restoreVariantStock(p, o.size, o.color);
-    m.balance -= (o.price - (o.feeFromMerchant || 0) - (o.itemDeduction || 0) - (o.couponDiscount || 0));
-    m.salesCount = Math.max(0, (m.salesCount || 0) - 1);
+    // الرصيد وعدد المبيعات لا يُعدَّلان هنا: syncMerchantBalance (سيرفر) يعكسهما تلقائياً لو كان
+    // الطلب مُسلَّماً وصار ملغياً — وتعديله محلياً كان سيُظهر رقماً مختلفاً عن الحقيقي.
   }
 }
 
@@ -574,7 +571,7 @@ function renderMerchantOrders(m) {
   const rows = pageOrders.map(o => {
     const dateLabel = orderDateTimeLabel(o.date);
     return `<div class="list-item" style="align-items:flex-start;">
-      <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${o.price.toLocaleString()} د${orderCustomerLine(o)}${orderFinanceLine(o)}${cancelReasonLine(o)}${returnReasonLine(o)}<br>
+      <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د${orderCustomerLine(o)}${orderFinanceLine(o)}${cancelReasonLine(o)}${returnReasonLine(o)}<br>
       <span style="color:var(--text-mute); font-size:11px;">${dateLabel} — رقم الطلب #${o.orderGroupId || o.id}</span></span>
       <span>${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span> ${o.deliveryStatus && o.deliveryStatus !== 'none' ? `<span class="badge ${deliveryStatusBadgeClass(o.deliveryStatus)}">${deliveryStatusLabel(o.deliveryStatus)}</span>` : ''}`}</span>
     </div>`;
@@ -847,11 +844,11 @@ function renderAdminShippingControl() {
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
         <div style="font-size:11px; color:#64748B; margin-top:6px; border-top:1px dashed #EEE; padding-top:6px;">
-          المبلغ الكامل من الزبون: <b>${customerTotal.toLocaleString()} د</b>
+          المبلغ الكامل من الزبون: <b>${fmtNum(customerTotal)} د</b>
         </div>
         ${showAccounting ? `
         <div style="font-size:11px; color:var(--accent-dark); margin-top:3px; border-top:1px dashed #EEE; padding-top:6px;">
-          عمولة المنصة: <b>${platformCommission.toLocaleString()} د</b> — صافي التاجر: <b>${netPayout.toLocaleString()} د</b>
+          عمولة المنصة: <b>${fmtNum(platformCommission)} د</b> — صافي التاجر: <b>${fmtNum(netPayout)} د</b>
         </div>` : ''}
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
@@ -1104,7 +1101,7 @@ function renderAgentPersonalSummary(emp, agent) {
   const weekReturned = finished.filter(o => o.deliveryStatus === 'returned' && new Date(o.date) >= sevenDaysAgo).length;
   const totalShippingEarned = finished.filter(o => o.deliveryStatus === 'delivered').reduce((s, o) => s + (o.agentFeeSnapshot || 0), 0);
   const overdueCount = agentPendingCustodyOrders(agent.id).filter(isAgentOrderOverdue).length;
-  const commissionLabel = agent.commissionType === 'percentage' ? `${agent.commissionValue}% لكل طلب` : `${agent.commissionValue.toLocaleString()} د لكل طلب`;
+  const commissionLabel = agent.commissionType === 'percentage' ? `${agent.commissionValue}% لكل طلب` : `${fmtNum(agent.commissionValue)} د لكل طلب`;
   box.innerHTML = `
     ${agentRequestsBannerHtml(agent)}
     <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
@@ -1116,11 +1113,11 @@ function renderAgentPersonalSummary(emp, agent) {
       <div class="stat"><div class="stat-num">${todayReturned}</div><div class="stat-label">راجعة اليوم</div></div>
       <div class="stat"><div class="stat-num">${weekDelivered}</div><div class="stat-label">واصلة آخر 7 أيام</div></div>
       <div class="stat"><div class="stat-num">${weekReturned}</div><div class="stat-label">راجعة آخر 7 أيام</div></div>
-      <div class="stat"><div class="stat-num">${totalShippingEarned.toLocaleString()}</div><div class="stat-label">مجموع أجور التوصيل (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalShippingEarned)}</div><div class="stat-label">مجموع أجور التوصيل (د)</div></div>
       <div class="stat"><div class="stat-num" style="color:${overdueCount > 0 ? '#B3261E' : 'inherit'};">${overdueCount}</div><div class="stat-label">طلبات متأخرة (+24 ساعة)</div></div>
     </div>
     <div style="font-size:12px; color:var(--text-mute); margin-top:8px; border-top:1px dashed #EEE; padding-top:8px;">
-      أجرة التوصيل الأساسية: <b>${agent.deliveryFee.toLocaleString()} د</b> لكل طلب — عمولة المنصة: <b>${commissionLabel}</b>
+      أجرة التوصيل الأساسية: <b>${fmtNum(agent.deliveryFee)} د</b> لكل طلب — عمولة المنصة: <b>${commissionLabel}</b>
     </div>
   `;
 }
@@ -1153,7 +1150,7 @@ function renderAgentActiveOrders(agent) {
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
         <div style="font-size:11px; color:#64748B; margin-top:6px; border-top:1px dashed #EEE; padding-top:6px;">
-          مبلغ التاجر (المنتجات): <b>${subtotal.toLocaleString()} د</b> — أجرة التوصيل: <b>${shipping.toLocaleString()} د</b>
+          مبلغ التاجر (المنتجات): <b>${fmtNum(subtotal)} د</b> — أجرة التوصيل: <b>${fmtNum(shipping)} د</b>
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
@@ -1190,7 +1187,7 @@ function renderAgentHistory(agent) {
         <span class="badge ${settled ? 'active' : 'pending'}">${settled ? 'مسدَّد' : 'غير مسدَّد بعد'}</span>
       </div>
       <div style="font-size:12px; color:var(--text-mute); margin-top:6px;">
-        واصلة: ${bucket.delivered.length} — راجعة: ${bucket.returned.length} — أجور توصيلك: ${shippingTotal.toLocaleString()} د
+        واصلة: ${bucket.delivered.length} — راجعة: ${bucket.returned.length} — أجور توصيلك: ${fmtNum(shippingTotal)} د
       </div>
       ${bucket.returned.map(o => `<div style="font-size:11.5px; color:#92400E; padding:4px 0; border-top:1px dashed #FDE68A;">${esc(o.productName)} — سبب الإرجاع: ${esc(o.returnReason || '—')}</div>`).join('')}
     </div>`;
@@ -1230,15 +1227,15 @@ function renderAgentSelfAccounts(agent) {
   const totalShipping = rows.reduce((s, r) => s + r.shippingDue, 0);
   const totalCommission = rows.reduce((s, r) => s + r.platformCommission, 0);
   const totalNetDue = rows.reduce((s, r) => s + r.merchantNetDue, 0);
-  const commissionLabel = agent.commissionType === 'percentage' ? `${agent.commissionValue}% من كل طلب` : `${agent.commissionValue.toLocaleString()} د لكل طلب`;
+  const commissionLabel = agent.commissionType === 'percentage' ? `${agent.commissionValue}% من كل طلب` : `${fmtNum(agent.commissionValue)} د لكل طلب`;
 
   let html = `
     <div class="subtitle" style="margin-bottom:8px;">حسابك مع كل تاجر تسلّم منه فواتير — عمولة المنصة منك محسوبة حسب: <b>${commissionLabel}</b>. هذا عرض للقراءة بس؛ التسديد والتعديلات يديرها الأدمن.</div>
     <div class="grid3">
       <div class="stat"><div class="stat-num">${totalCount}</div><div class="stat-label">إجمالي الطلبات الموصلة</div></div>
-      <div class="stat"><div class="stat-num">${totalShipping.toLocaleString()}</div><div class="stat-label">مجموع مستحقات التوصيل لك (د)</div></div>
-      <div class="stat"><div class="stat-num">${totalCommission.toLocaleString()}</div><div class="stat-label">مجموع مستحقات المنصة منك (د)</div></div>
-      <div class="stat"><div class="stat-num">${totalNetDue.toLocaleString()}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalShipping)}</div><div class="stat-label">مجموع مستحقات التوصيل لك (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalCommission)}</div><div class="stat-label">مجموع مستحقات المنصة منك (د)</div></div>
+      <div class="stat"><div class="stat-num">${fmtNum(totalNetDue)}</div><div class="stat-label">صافي مستحقات التجار (د)</div></div>
     </div>`;
 
   html += agentRequestsBannerHtml(agent) + agentSettlementCardsHtml(agent, 'agent') + agentPaymentsSectionHtml(agent);
@@ -1257,9 +1254,9 @@ function renderAgentSelfAccounts(agent) {
         <span style="font-size:11px; color:var(--text-mute);">عدد الطلبات: ${r.count}</span>
       </div>
       <div style="font-size:12px; color:var(--text-mute); margin-top:6px;">
-        مستحقات التوصيل: <b>${r.shippingDue.toLocaleString()} د</b> —
-        مستحقات المنصة منك: <b>${r.platformCommission.toLocaleString()} د</b> —
-        صافي مستحق هذا التاجر: <b>${r.merchantNetDue.toLocaleString()} د</b>
+        مستحقات التوصيل: <b>${fmtNum(r.shippingDue)} د</b> —
+        مستحقات المنصة منك: <b>${fmtNum(r.platformCommission)} د</b> —
+        صافي مستحق هذا التاجر: <b>${fmtNum(r.merchantNetDue)} د</b>
       </div>
     </div>`;
   }).join('');
