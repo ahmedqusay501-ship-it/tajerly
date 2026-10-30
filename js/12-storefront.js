@@ -613,6 +613,7 @@ function renderStorefrontInto(merchantId, content, opts) {
   const m = data.merchants.find(x => x.id === merchantId);
   if (!m) { content.innerHTML = ''; return; }
   ensureMerchantTheme(m);
+  applyStoreTheme(content, m); // ثيم المتجر المختار (الكلاسيكي = بدون أي تغيير)
 
   // ignoreDisabled is used by the merchant's own "لens" preview: the merchant should always
   // be able to see their real store/products, even while the admin has it disabled (e.g. before

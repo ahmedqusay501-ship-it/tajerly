@@ -1832,6 +1832,11 @@ function renderMerchantPanel() {
         </div>
       </div>
       <div class="card">
+        <div class="card-title">ثيم المتجر</div>
+        <div class="subtitle" style="margin-bottom:10px;">اختر شكل جاهز لمتجرك — تكدر تغيّره بأي وقت</div>
+        ${renderStoreThemePicker(m)}
+      </div>
+      <div class="card">
         <div class="card-title">تخصيص شكل متجرك</div>
         <div class="subtitle" style="margin-bottom:8px;">هذا الشكل يظهر للزبون بالضبط بصفحة متجرك</div>
 
