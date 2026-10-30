@@ -4,7 +4,7 @@
     try {
       var boot = document.getElementById('boot-loading');
       var params = new URLSearchParams(location.search);
-      var slug = params.get('store');
+      var slug = params.get('s'); // ?s=CODE
       var isCustomerStore = !!slug;
       if (!isCustomerStore) {
         try {
@@ -55,5 +55,6 @@
         placeholder.style.display = 'none';
       }
       if (m.linkSlug) localStorage.setItem('boot-logo-cache:' + m.linkSlug, logo);
+      if (m.shortSlug) localStorage.setItem('boot-logo-cache:' + m.shortSlug, logo);
     } catch (e) {}
   }

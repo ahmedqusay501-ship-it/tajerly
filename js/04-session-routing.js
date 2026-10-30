@@ -1,5 +1,5 @@
 // ---------- ROUTING: public store link vs login screen ----------
-// A merchant's unique store link looks like: yourdomain.com/page.html?store=SLUG
+// A merchant's unique store link looks like: yourdomain.com/?s=CODE
 // Anyone opening that link goes straight to that merchant's storefront — no login, no nav, nothing else.
 //
 // A merchant with a custom domain assigned by the admin (see assignCustomDomain) is reached
@@ -9,6 +9,43 @@
 // case by matching location.hostname against every merchant's customDomain here, before
 // falling through to the normal ?store= check. Nothing else about the merchant (products,
 // orders, slug link) changes — this is purely an alternate way to reach the exact same store.
+// ---------- SHORT STORE LINKS ----------
+// Store link is now  tajerly.shop/?s=ab3k9  (5 chars). The old ?store=<name>-<id> links are no longer supported. The short code is derived deterministically from the
+// merchant id (so every browser computes the same one) and then saved on the merchant.
+const SHORT_SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // no look-alike chars (i,l,o,0,1)
+const SHORT_SLUG_LEN = 5;
+function shortSlugCandidate(id, salt) {
+  const str = String(id) + ':' + (salt || 0);
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  let out = '';
+  for (let i = 0; i < SHORT_SLUG_LEN; i++) {
+    out += SHORT_SLUG_ALPHABET[h % SHORT_SLUG_ALPHABET.length];
+    h = (Math.imul(h, 1103515245) + 12345) >>> 0;
+  }
+  return out;
+}
+function shortSlugFor(m) {
+  if (!m) return '';
+  if (m.shortSlug) return m.shortSlug;
+  const list = (typeof data !== 'undefined' && data.merchants) || [];
+  for (let salt = 0; salt < 50; salt++) {
+    const cand = shortSlugCandidate(m.id, salt);
+    const taken = list.some(o => o.id !== m.id && (o.shortSlug
+      ? o.shortSlug === cand
+      : (o.id < m.id && shortSlugCandidate(o.id, 0) === cand)));
+    if (!taken) { m.shortSlug = cand; return cand; }
+  }
+  m.shortSlug = shortSlugCandidate(m.id, 99);
+  return m.shortSlug;
+}
+function findMerchantBySlug(slug) {
+  const s = (slug || '').trim();
+  if (!s) return null;
+  const lower = s.toLowerCase();
+  return data.merchants.find(x => x.status === 'active' && shortSlugFor(x) === lower) || null;
+}
+
 function normalizeDomain(d) {
   return (d || '').trim().toLowerCase().replace(/^www\./, '').replace(/\/+$/, '');
 }
@@ -24,7 +61,7 @@ function routeOnLoad() {
     return;
   }
   const params = new URLSearchParams(location.search);
-  const slug = params.get('store');
+  const slug = params.get('s');
   if (slug) {
     openPublicStore(decodeURIComponent(slug));
     return;
@@ -114,7 +151,7 @@ function openPublicStore(slug) {
   document.getElementById('restaurants-screen').style.display = 'none';
   restaurantsMarketActive = false;
   document.getElementById('public-store-screen').style.display = 'block';
-  const m = data.merchants.find(x => x.linkSlug === slug && x.status === 'active');
+  const m = findMerchantBySlug(slug);
   const brandEl = document.getElementById('public-store-brand');
   const content = document.getElementById('public-storefront-content');
   if (!m) {
@@ -134,8 +171,14 @@ function openPublicStore(slug) {
   renderStorefrontInto(m.id, content);
   updateCartFab();
   // رابط مشاركة منتج معيّن (شوف shareProduct بـ 12-storefront.js) يجي بصيغة
-  // ?store=SLUG&product=ID — نفتح تفاصيل هذا المنتج مباشرة بدل ما نوقف بقائمة المتجر
+  // ?s=CODE&product=ID — نفتح تفاصيل هذا المنتج مباشرة بدل ما نوقف بقائمة المتجر
   // ونخلي الشخص يدور عليه بنفسه.
+  // ?lp=ID → صفحة هبوط مخصصة لهذا المنتج وحده (شوف openProductLanding بـ 12-storefront.js)
+  const lpParam = new URLSearchParams(location.search).get('lp');
+  if (lpParam) {
+    const lpid = parseInt(lpParam, 10);
+    if (m.products.some(x => x.id === lpid)) { openProductLanding(m.id, lpid); return; }
+  }
   const productIdParam = new URLSearchParams(location.search).get('product');
   if (productIdParam) {
     const pid = parseInt(productIdParam, 10);
@@ -145,6 +188,7 @@ function openPublicStore(slug) {
 
 // Backfill theme/shipping fields for merchants created before these features existed
 function ensureMerchantTheme(m) {
+  shortSlugFor(m); // backfill short store code for merchants created before short links
   if (!m.theme) m.theme = { primaryColor: '#C77B4A', logo: null, banner: null };
   if (typeof m.shippingAmount !== 'number') m.shippingAmount = data.settings.shippingAmount;
   // Merchants the admin has flagged as handling their own delivery (their own driver/service)

@@ -37,7 +37,7 @@ async function submitRequest() {
     theme: { primaryColor: '#C77B4A', logo: null, banner: null },
     dashboardColor: '#10B981', visits: 0,
     balance: 0, salesCount: 0,
-    linkSlug: shop.trim().replace(/\s+/g, '-') + '-' + newId, // unique even if two shops share a name
+    linkSlug: '', shortSlug: '', // filled right after push (short unique code, see shortSlugFor)
     feeSource: s.feeSource,
     feeType: s.feeType || 'fixed',
     feeAmount: s.feeAmount,
@@ -56,6 +56,7 @@ async function submitRequest() {
     ownDeliveryGovernorates: [],
     ownDeliveryAreaPrices: {}
   });
+  { const _nm = data.merchants[data.merchants.length - 1]; _nm.linkSlug = shortSlugFor(_nm); }
 
   // IMPORTANT: the join-request document itself is written directly here (not through the
   // generic saveData() sweep), so we get an honest yes/no about whether it actually reached
@@ -1595,8 +1596,8 @@ async function changeAdminPassword() {
 // customers use to reach the exact same storefront.
 function storeLinkUrl(m) {
   if (m && m.customDomain) return `https://${m.customDomain}`;
-  const slug = typeof m === 'string' ? m : (m ? m.linkSlug : '');
-  return `${location.origin}${location.pathname}?store=${encodeURIComponent(slug)}`;
+  const slug = typeof m === 'string' ? m : shortSlugFor(m);
+  return `${location.origin}${location.pathname}?s=${encodeURIComponent(slug)}`;
 }
 
 function copyStoreLink(merchantId) {
@@ -1855,6 +1856,13 @@ function renderMerchantPanel() {
         <input type="file" accept="image/*" id="theme-banner-${m.id}" onchange="setThemeBanner(${m.id}, this)">
         ${m.theme.banner
           ? `<img class="banner-preview" src="${m.theme.banner}"><span class="link-chip" style="margin-top:6px;" onclick="removeThemeImage(${m.id},'banner')">إزالة صورة الغلاف</span>`
+          : ''}
+
+        <label>سلايدر العروض (حتى ${MAX_THEME_BANNERS} صور تتحرك تلقائياً أعلى متجرك — اختياري)</label>
+        <input type="file" accept="image/*" multiple id="theme-banners-${m.id}" onchange="addThemeBanners(${m.id}, this)">
+        ${(m.theme.banners && m.theme.banners.length)
+          ? `<div class="banner-slides-edit">${m.theme.banners.map((b, i) => `<div class="banner-slide-thumb"><img src="${b}"><span onclick="removeThemeBannerAt(${m.id}, ${i})" aria-label="حذف">✕</span></div>`).join('')}</div>
+             <div class="subtitle" style="margin-top:4px;">لما تضيف صورتين أو أكثر يتحول الغلاف لسلايدر يتقلب لحاله ويقدر الزبون يسحبه</div>`
           : ''}
       </div>
       <div class="card">

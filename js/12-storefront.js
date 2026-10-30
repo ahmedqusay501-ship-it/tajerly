@@ -175,9 +175,59 @@ function updateStoreProductsArea(merchantId) {
 function renderStoreFilterChips(m) {
   if (!m.categories || m.categories.length === 0) return '';
   const f = getStoreFilter(m.id);
-  const chip = (id, label, img) => `<span class="store-filter-chip${String(f.categoryId) === String(id) ? ' selected' : ''}" onclick="setStoreFilterCategory(${m.id}, ${typeof id === 'number' ? id : `'${id}'`})">${img ? `<img src="${img}" style="width:16px; height:16px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-left:4px;">` : ''}${esc(label)}</span>`;
-  return `<div class="store-filter-chips-row">${chip('all', 'الكل')}${m.categories.map(c => chip(c.id, c.name, c.image)).join('')}</div>`;
+  // Circular icon shortcuts row (like a store app's top shortcuts): category image (or its
+  // first letter when it has none) over its name. Tapping filters the page to that category;
+  // tapping "الكل" or the selected one again goes back to the full browsing view.
+  const item = (id, label, img, fallback) => {
+    const sel = String(f.categoryId) === String(id);
+    const arg = typeof id === 'number' ? id : `'${id}'`;
+    return `<div class="store-cat-icon${sel ? ' selected' : ''}" onclick="setStoreFilterCategory(${m.id}, ${arg})">
+      <div class="store-cat-icon-circle">${img ? `<img src="${img}">` : `<span>${fallback}</span>`}</div>
+      <div class="store-cat-icon-label">${esc(label)}</div>
+    </div>`;
+  };
+  return `<div class="store-cat-icons-row">${item('all', 'الكل', '', '🛍')}${m.categories.map(c => item(c.id, c.name, c.image, esc((c.name || '?').trim().charAt(0)))).join('')}</div>`;
 }
+
+// ---------- BANNER SLIDER (سلايدر العروض) ----------
+// Merchant can upload several banner images (theme.banners); they auto-rotate and can be
+// swiped. Older stores that only have the single theme.banner (or none) still render exactly
+// as before — one image / the default gradient.
+function storeBannerList(m) {
+  const list = (m.theme.banners || []).filter(Boolean);
+  if (list.length) return list;
+  return m.theme.banner ? [m.theme.banner] : [];
+}
+function renderStoreBannerSlider(m, color) {
+  const list = storeBannerList(m);
+  if (list.length <= 1) return null; // caller falls back to the original single-banner markup
+  return `
+    <div class="store-slider-wrap">
+      <div class="store-slider" id="store-slider-${m.id}" onscroll="onStoreSliderScroll(this)">
+        ${list.map(src => `<div class="store-slide"><img src="${src}"></div>`).join('')}
+      </div>
+      <div class="store-slider-dots" id="store-slider-dots-${m.id}">${list.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>
+    </div>`;
+}
+function onStoreSliderScroll(el) {
+  const w = el.clientWidth || 1;
+  const idx = Math.round(Math.abs(el.scrollLeft) / w);
+  const dots = el.parentElement.querySelector('.store-slider-dots');
+  if (dots) Array.from(dots.children).forEach((d, i) => d.classList.toggle('on', i === idx));
+}
+// One global timer for every slider on the page; sliders that left the DOM are just skipped,
+// and one the customer is touching right now is left alone until they let go.
+setInterval(() => {
+  document.querySelectorAll('.store-slider').forEach(el => {
+    if (!el.isConnected || el.children.length < 2 || el.dataset.touching === '1') return;
+    const w = el.clientWidth || 1;
+    const cur = Math.round(Math.abs(el.scrollLeft) / w);
+    const next = (cur + 1) % el.children.length;
+    el.children[next].scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+  });
+}, 4000);
+document.addEventListener('touchstart', e => { const s = e.target.closest && e.target.closest('.store-slider'); if (s) s.dataset.touching = '1'; }, { passive: true });
+document.addEventListener('touchend', e => { document.querySelectorAll('.store-slider[data-touching="1"]').forEach(s => { setTimeout(() => { s.dataset.touching = '0'; }, 2500); }); }, { passive: true });
 function renderStoreSearchBar(m) {
   const f = getStoreFilter(m.id);
   return `
@@ -195,6 +245,11 @@ function renderStoreProducts(m, color) {
     ? `<div class="store-products-list">${items.map(p => renderStoreProductCardList(p, color, m)).join('')}</div>`
     : `<div class="store-products-grid">${items.map(p => renderStoreProductCardGrid(p, color, m)).join('')}</div>`;
 
+  // Horizontal scrolling shelf (one per section) — used on the default browsing view in grid
+  // mode instead of a tall wrapped grid; list mode keeps its vertical rows.
+  const shelf = (items) => mode === 'list'
+    ? grid(items)
+    : `<div class="store-shelf">${items.map(p => renderStoreProductCardGrid(p, color, m)).join('')}</div>`;
   const f = getStoreFilter(m.id);
   const q = (f.query || '').trim().toLowerCase();
   const catActive = f.categoryId && f.categoryId !== 'all';
@@ -222,7 +277,7 @@ function renderStoreProducts(m, color) {
     const bestSellers = items.filter(p => idIndex.has(p.id)).sort((a, b) => idIndex.get(a.id) - idIndex.get(b.id));
     if (bestSellers.length) {
       html += `<div class="store-section-title">🔥 الأكثر مبيعاً</div>`;
-      html += grid(bestSellers);
+      html += shelf(bestSellers);
     }
   }
   if (!m.categories || m.categories.length === 0) {
@@ -234,14 +289,14 @@ function renderStoreProducts(m, color) {
   m.categories.forEach(c => {
     const catItems = items.filter(p => p.categoryId === c.id);
     if (catItems.length === 0) return;
-    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${c.image}" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}${esc(c.name)}</div>`;
-    html += grid(catItems);
+    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${c.image}" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}<span style="flex:1;">${esc(c.name)}</span><a class="store-see-all" onclick="setStoreFilterCategory(${m.id}, ${typeof c.id === 'number' ? c.id : `'${c.id}'`})">عرض الكل ›</a></div>`;
+    html += shelf(catItems);
   });
   const catIds = new Set(m.categories.map(c => c.id));
   const uncategorized = items.filter(p => !p.categoryId || !catIds.has(p.categoryId));
   if (uncategorized.length > 0) {
     html += `<div class="store-section-title">منتجات أخرى</div>`;
-    html += grid(uncategorized);
+    html += shelf(uncategorized);
   }
   return html;
 }
@@ -320,8 +375,8 @@ function renderProductDetailContent(p, color, m) {
 // بس على قائمة المتجر العامة.
 function productShareLink(m, p) {
   if (m && m.customDomain) return `https://${m.customDomain}?product=${p.id}`;
-  const slug = m ? m.linkSlug : '';
-  return `${location.origin}${location.pathname}?store=${encodeURIComponent(slug)}&product=${p.id}`;
+  const slug = m ? shortSlugFor(m) : '';
+  return `${location.origin}${location.pathname}?s=${encodeURIComponent(slug)}&product=${p.id}`;
 }
 
 async function dataUrlToImageFile(dataUrl, filename) {
@@ -528,6 +583,7 @@ function closeProductDetail() {
 }
 // الرجوع من التفاصيل بملء الصفحة لقائمة المتجر — عكس فتحها بـ openProductDetail أعلاه.
 function closeStoreProductDetailFullPage() {
+  productLandingActive = false;
   productDetailFullPageActive = false;
   openProductDetailId = null;
   if (publicStoreMerchantId) renderStorefrontInto(publicStoreMerchantId, document.getElementById('public-storefront-content'));
@@ -536,6 +592,7 @@ function closeStoreProductDetailFullPage() {
 // Redraws whichever product detail view is currently open — called after picking a
 // size/color box's live-refresh redraw, and after adding to cart, so stock/labels stay accurate.
 function refreshOpenProductDetail() {
+  if (productLandingActive) { renderProductLandingBody(); return; }
   if (!openProductDetailId) return;
   const { merchantId, productId } = openProductDetailId;
   const m = data.merchants.find(x => x.id === merchantId);
@@ -574,14 +631,15 @@ function renderStorefrontInto(merchantId, content, opts) {
         <div class="subtitle" style="background:#FFF4E5; border:1px solid #F0C879; border-radius:8px; padding:8px 10px; margin-bottom:10px; color:#8A5A00;">
           هذي معاينة بس — متجرك حالياً معطّل من الأدمن وما يشوفه الزبون لين يتفعّل.
         </div>` : ''}
-      ${m.theme.banner ? `<img class="store-banner" src="${m.theme.banner}">` : `
-        <div class="store-banner store-banner-default" style="background:linear-gradient(120deg, ${color}, ${color}CC), url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%2270%22 cy=%2250%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%22100%22 cy=%2290%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%2240%22 cy=%22100%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3C/svg%3E');">
-          <svg class="store-banner-default-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 9l1-5h14l1 5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" stroke="white" stroke-width="1.4" opacity=".85"/><path d="M9.5 19v-4a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v4" stroke="white" stroke-width="1.4" opacity=".85"/></svg>
-        </div>`}
       <div class="store-header">
         ${m.theme.logo ? `<img class="store-logo" src="${m.theme.logo}">` : `<div class="store-logo store-logo-default" style="background:${color};">${(m.shop||'م').trim().charAt(0)}</div>`}
         <div class="card-title" style="color:${color};">${m.shop} ${restaurantOpenBadgeHtml(m)}</div>
       </div>
+      ${m.products.length > 0 ? renderStoreSearchBar(m) : ''}
+      ${renderStoreBannerSlider(m, color) || (m.theme.banner ? `<img class="store-banner" src="${m.theme.banner}">` : `
+        <div class="store-banner store-banner-default" style="background:linear-gradient(120deg, ${color}, ${color}CC), url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%2270%22 cy=%2250%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%22100%22 cy=%2290%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3Ccircle cx=%2240%22 cy=%22100%22 r=%221.6%22 fill=%22white%22 fill-opacity=%220.35%22/%3E%3C/svg%3E');">
+          <svg class="store-banner-default-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 9l1-5h14l1 5" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" stroke="white" stroke-width="1.4" opacity=".85"/><path d="M9.5 19v-4a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v4" stroke="white" stroke-width="1.4" opacity=".85"/></svg>
+        </div>`)}
       ${m.bio ? `<div class="store-bio">${m.bio}</div>` : ''}
       ${visibleSocials.length > 0 ? `
         <div class="store-social-row">
@@ -603,7 +661,6 @@ function renderStorefrontInto(merchantId, content, opts) {
           <span>${cartSubtotal().toLocaleString()} د — إتمام الشراء ›</span>
         </div>
       ` : ''}
-      ${m.products.length > 0 ? renderStoreSearchBar(m) : ''}
       <div id="store-products-area-${m.id}">${renderStoreProducts(m, color)}</div>
     </div>
   `;
@@ -643,3 +700,137 @@ function calcFee(m, price, productId) {
   return {customer: 0, merchant: toAmount(s.feeAmount), exempt: false};
 }
 
+
+// ---------- PRODUCT LANDING PAGE (صفحة هبوط لكل منتج) ----------
+// A standalone, sales-focused page for ONE product, reached by its own link
+// (?store=SLUG&lp=ID — merchants copy it from the product list). No store header/search/other
+// products: photo slider, price, offer badges, variant pickers, description, trust row,
+// reviews, and a sticky "اطلب الآن" bar that jumps straight into the normal checkout (same
+// cart, stock checks, coupons and delivery pricing as everywhere else).
+let productLandingActive = false;
+let productLandingIds = null; // { merchantId, productId }
+
+function productLandingLink(m, p) {
+  if (m && m.customDomain) return `https://${m.customDomain}?lp=${p.id}`;
+  const slug = m ? shortSlugFor(m) : '';
+  return `${location.origin}${location.pathname}?s=${encodeURIComponent(slug)}&lp=${p.id}`;
+}
+
+function openProductLanding(merchantId, productId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  const p = m && m.products.find(x => x.id === productId);
+  if (!m || !p) return;
+  productLandingActive = true;
+  productLandingIds = { merchantId, productId };
+  openProductDetailId = { merchantId, productId };
+  productDetailFullPageActive = true; // hides the list-view toggle button, keeps refreshStorefrontView from redrawing the list
+  const content = document.getElementById('public-storefront-content');
+  if (content) content.innerHTML = '<div id="product-landing-root"></div>';
+  renderProductLandingBody();
+  window.scrollTo(0, 0);
+  updateStoreViewToggleFab();
+}
+
+function leaveProductLanding() {
+  productLandingActive = false;
+  productLandingIds = null;
+  closeStoreProductDetailFullPage();
+}
+
+// "اطلب الآن": puts this product (with the picked size/color) in the cart and opens checkout.
+// A one-product landing page shouldn't leave the customer with an unrelated old cart, so only
+// this product is checked out — but if the cart already holds exactly this variant we don't
+// double-add it.
+function landingOrderNow(merchantId, productId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  const p = m && m.products.find(x => x.id === productId);
+  if (!m || !p) return;
+  ensureProductVariants(p);
+  const size = p.sizes.length ? (selectedProductSize[productId] || p.sizes[0].value) : null;
+  const colorVal = p.colors.length ? (selectedProductColor[productId] || p.colors[0].name) : null;
+  const already = cart.length === 1 && cart[0].merchantId === merchantId && cart[0].productId === productId && cart[0].size === size && cart[0].color === colorVal;
+  if (!already) {
+    cart = []; appliedCoupon = null;
+    addToCart(merchantId, productId);
+    if (!cart.length) return; // blocked (closed / no stock) — addToCart already toasted why
+  }
+  openCheckoutFromCart();
+}
+
+function landingSlideScroll(el) {
+  const w = el.clientWidth || 1;
+  const idx = Math.round(Math.abs(el.scrollLeft) / w);
+  const dots = el.parentElement.querySelector('.store-slider-dots');
+  if (dots) Array.from(dots.children).forEach((d, i) => d.classList.toggle('on', i === idx));
+}
+
+function renderProductLandingBody() {
+  const root = document.getElementById('product-landing-root');
+  if (!root || !productLandingIds) return;
+  const m = data.merchants.find(x => x.id === productLandingIds.merchantId);
+  const p = m && m.products.find(x => x.id === productLandingIds.productId);
+  if (!m || !p) { leaveProductLanding(); return; }
+  ensureMerchantTheme(m);
+  ensureProductImages(p);
+  ensureProductVariants(p);
+  const color = m.theme.primaryColor || '#C77B4A';
+  const outOfStock = productOutOfStock(p);
+  const closed = !isMerchantOpenNow(m);
+  const disabled = outOfStock || closed;
+  const defaultSize = firstAvailableVariant(p.sizes);
+  const defaultColor = firstAvailableVariant(p.colors);
+  if (defaultSize && selectedProductSize[p.id] === undefined) selectedProductSize[p.id] = defaultSize.value;
+  if (defaultColor && selectedProductColor[p.id] === undefined) selectedProductColor[p.id] = defaultColor.name;
+  const curSize = selectedProductSize[p.id];
+  const curColor = selectedProductColor[p.id];
+  const avg = productAvgRating(p);
+  const gallery = p.images.length
+    ? (p.images.length > 1
+      ? `<div class="store-slider-wrap"><div class="store-slider" onscroll="landingSlideScroll(this)">${p.images.map(src => `<div class="store-slide landing-slide"><img src="${src}"></div>`).join('')}</div>
+          <div class="store-slider-dots">${p.images.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div></div>`
+      : `<div class="store-slider-wrap"><div class="store-slide landing-slide" style="border-radius:14px; overflow:hidden;"><img src="${p.images[0]}"></div></div>`)
+    : '';
+  root.innerHTML = `
+    <div class="landing-page">
+      <div class="landing-brand" onclick="leaveProductLanding()">
+        ${m.theme.logo ? `<img class="store-logo" src="${m.theme.logo}">` : `<div class="store-logo store-logo-default" style="background:${color};">${(m.shop || 'م').trim().charAt(0)}</div>`}
+        <span style="color:${color};">${esc(m.shop)}</span>
+        <span class="landing-brand-link">زيارة المتجر ›</span>
+      </div>
+      ${gallery}
+      <h1 class="landing-title">${esc(p.name)}</h1>
+      ${avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : ''}
+      <div class="landing-price" style="color:${color};">${p.price.toLocaleString()} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
+      ${closed ? `<div class="empty" style="margin:6px 0;">🕓 المتجر مغلق حالياً${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ''}</div>` : ''}
+      ${p.sizes.length ? `
+        <div class="product-sizes-label">اختر المقاس</div>
+        <div class="size-chip-row" id="size-chip-row-${p.id}">
+          ${p.sizes.map(s => {
+            const depleted = typeof s.stock === 'number' && s.stock <= 0;
+            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, '${esc(s.value).replace(/'/g, "\\'")}')">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
+          }).join('')}
+        </div>` : ''}
+      ${p.colors.length ? `
+        <div class="product-sizes-label">اختر اللون</div>
+        <div class="store-color-row" id="color-chip-row-${p.id}">
+          ${p.colors.map(c => {
+            const depleted = typeof c.stock === 'number' && c.stock <= 0;
+            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, '${esc(c.name).replace(/'/g, "\\'")}')"></span>`;
+          }).join('')}
+        </div>
+        <div class="store-color-label" id="color-selected-label-${p.id}">${curColor ? `اللون المختار: ${esc(curColor)}` : ''}</div>` : ''}
+      <button class="btn landing-cta" style="background:${disabled ? '' : color};" ${disabled ? 'disabled' : ''} onclick="landingOrderNow(${m.id}, ${p.id})">${outOfStock ? 'غير متوفر' : (closed ? 'المتجر مغلق حالياً' : 'اطلب الآن')}</button>
+      ${p.description ? `<div class="landing-section-title">عن المنتج</div><div class="product-desc" style="white-space:pre-wrap;">${esc(p.description)}</div>` : ''}
+      <div class="store-trust-row">
+        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7h11v9H3z" stroke="currentColor" stroke-width="1.6"/><path d="M14 10h4l3 3v3h-7z" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/><circle cx="17.5" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg><span>توصيل لكل المحافظات</span></div>
+        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>دفع عند الاستلام</span></div>
+        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 1 1-4-7.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M21 4v5h-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>استبدال سهل</span></div>
+      </div>
+      ${renderProductReviewsSection(p, m)}
+    </div>
+    <div class="landing-sticky">
+      <div class="landing-sticky-price" style="color:${color};">${p.price.toLocaleString()} د</div>
+      <button class="btn" style="background:${disabled ? '' : color};" ${disabled ? 'disabled' : ''} onclick="landingOrderNow(${m.id}, ${p.id})">${outOfStock ? 'غير متوفر' : (closed ? 'مغلق حالياً' : 'اطلب الآن')}</button>
+    </div>
+  `;
+}

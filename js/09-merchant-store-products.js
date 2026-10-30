@@ -141,6 +141,36 @@ async function setThemeBanner(id, inputEl) {
   }
 }
 
+// Slider banners (سلايدر العروض أعلى المتجر) — up to MAX_THEME_BANNERS images, auto-rotating on
+// the customer's storefront. Independent of the single cover image above (still used as the
+// fallback when no slider images were added).
+const MAX_THEME_BANNERS = 6;
+async function addThemeBanners(id, inputEl) {
+  const files = Array.from(inputEl.files || []);
+  if (!files.length) return;
+  const m = data.merchants.find(x => x.id === id);
+  ensureMerchantTheme(m);
+  if (!Array.isArray(m.theme.banners)) m.theme.banners = [];
+  const room = MAX_THEME_BANNERS - m.theme.banners.length;
+  if (room <= 0) { showToast(`الحد الأقصى ${MAX_THEME_BANNERS} صور`); return; }
+  try {
+    for (const f of files.slice(0, room)) m.theme.banners.push(await resizeImageFile(f, 900, 0.75));
+    saveData();
+    renderMerchantPanel();
+    showToast(files.length > room ? `انضافت ${room} صور (الحد الأقصى ${MAX_THEME_BANNERS})` : 'تمت إضافة الصور');
+  } catch (e) {
+    showToast('صار خطأ بمعالجة الصورة');
+  }
+}
+function removeThemeBannerAt(id, index) {
+  const m = data.merchants.find(x => x.id === id);
+  ensureMerchantTheme(m);
+  if (!Array.isArray(m.theme.banners)) return;
+  m.theme.banners.splice(index, 1);
+  saveData();
+  renderMerchantPanel();
+}
+
 function removeThemeImage(id, which) {
   const m = data.merchants.find(x => x.id === id);
   ensureMerchantTheme(m).theme[which] = null;
@@ -530,6 +560,7 @@ function renderProductList(m) {
         </span>
       </span>
       <span>${p.price.toLocaleString()} د
+        <button class="btn secondary small" style="margin-right:6px;" onclick="copyProductLandingLink(${m.id}, ${p.id})">🔗 صفحة الهبوط</button>
         <button class="btn secondary small" style="margin-right:6px;" onclick="editProduct(${p.id})">تعديل</button>
         <button class="btn danger small" style="margin-right:6px;" onclick="deleteProduct(${m.id},${p.id})">حذف</button>
       </span>
@@ -1004,3 +1035,19 @@ function customerCancelEligibility(o) {
   return { eligible: true, reason: '' };
 }
 
+
+// Copies this product's own landing-page link (see productLandingLink in 12-storefront.js).
+function copyProductLandingLink(merchantId, productId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  const p = m && m.products.find(x => x.id === productId);
+  if (!m || !p) return;
+  const url = productLandingLink(m, p);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => showToast('تم نسخ رابط صفحة الهبوط'),
+      () => showToast('تعذر النسخ: ' + url)
+    );
+  } else {
+    showToast('تعذر النسخ: ' + url);
+  }
+}
