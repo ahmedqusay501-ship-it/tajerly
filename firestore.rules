@@ -233,13 +233,46 @@ service cloud.firestore {
       // [أمان] كانت مقروءة للجميع — وهي تكشف أسماء التجار والمندوبين وإجراءات الإدارة الحساسة
       // لأي زائر. صارت مقروءة فقط للأدمن وموظفي الإدارة (شاشة السجل داخل لوحة الإدارة أصلاً).
       allow read: if isAdmin() || isAnyAdminEmployee();
-      allow write: if isAdmin() || isAdminEmployee('requests') || isDeliveryAgent() || isAgentEmployeeWithAny(['orders']);
+      // [أمان] كانت الكتابة مفتوحة لمندوب التوصيل وموظفه، وبما أن الوثيقة تحتوي السجل كله كان يقدر أي منهما
+      // يمسحه أو يزوّره. الآن للأدمن فقط (نسخة قديمة) — الإجراءات الجديدة تُسجَّل بـ audit_entries أدناه.
+      allow write: if isAdmin();
+    }
+
+    // audit_entries/{id} — كل إجراء وثيقة مستقلة: إنشاء فقط (لا تعديل ولا حذف إلا الأدمن). يمنع مسح/تزوير السجل.
+    match /audit_entries/{id} {
+      allow read: if isAdmin() || isAnyAdminEmployee();
+      allow create: if (isAdmin() || isAdminEmployee('requests') || isDeliveryAgent() || isAgentEmployeeWithAny(['orders']))
+        && request.resource.data.keys().hasOnly(['id', 'ts', 'actor', 'action', 'details'])
+        && request.resource.data.id == id
+        && request.resource.data.ts is string && request.resource.data.ts.size() <= 40
+        && request.resource.data.actor is string && request.resource.data.actor.size() <= 200
+        && request.resource.data.action is string && request.resource.data.action.size() <= 200
+        && request.resource.data.details is string && request.resource.data.details.size() <= 1500;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // ---------------------------------------------------------------------------------
     // merchants/{uid} — الملف العام للتاجر (منتجات، تصنيفات، مظهر المتجر...)
     // ---------------------------------------------------------------------------------
     match /merchants/{merchantUid} {
+      // [أمان] رابط تواصل اجتماعي: لازم http(s) بلا مسافات/محارف تحكم. يُفحص فقط إذا تغيّرت القيمة (لا يكسر بيانات قديمة).
+      function socialUrlNew(k) {
+        return request.resource.data.get('theme', {}).get('social', {}).get(k, {}).get('url', '');
+      }
+      function socialUrlOld(k) {
+        return resource.data.get('theme', {}).get('social', {}).get(k, {}).get('url', '');
+      }
+      function socialUrlOk(k) {
+        return socialUrlNew(k) == socialUrlOld(k)
+          || (socialUrlNew(k) is string && socialUrlNew(k).matches('^(https?://[^\\s\\x00-\\x1f]{1,300})?$'));
+      }
+      function merchantTextOk() {
+        return (request.resource.data.get('bio', '') == resource.data.get('bio', '')
+                || (request.resource.data.get('bio', '') is string && request.resource.data.get('bio', '').size() <= 2000))
+          && socialUrlOk('facebook') && socialUrlOk('instagram') && socialUrlOk('twitter') && socialUrlOk('tiktok');
+      }
+
       allow read: if true;
 
       // الموافقة على تاجر جديد = الأدمن فقط ينشئ الوثيقة (بعد إنشاء حساب Firebase Auth).
@@ -296,7 +329,8 @@ service cloud.firestore {
         merchantFieldUnchanged('type', 'market') &&
         // [أمان] موافقات إعفاء العمولة صارت بمجموعة commission_exemptions (يكتب 'approved' فيها الأدمن فقط).
         // الحقل القديم commissionRequests داخل وثيقة التاجر مقفول: لا يُقرأ سيرفرياً ولا يقدر التاجر يغيّره.
-        merchantFieldUnchanged('commissionRequests', []);
+        merchantFieldUnchanged('commissionRequests', []) &&
+        merchantTextOk();
 
       allow delete: if isAdmin() || isAdminEmployee('requests');
     }
@@ -560,7 +594,15 @@ service cloud.firestore {
           request.resource.data.get('shippingSpeed', '') == resource.data.get('shippingSpeed', '') &&
           request.resource.data.customerName    == resource.data.customerName &&
           request.resource.data.customerPhone   == resource.data.customerPhone &&
-          request.resource.data.customerAddress == resource.data.customerAddress
+          request.resource.data.customerAddress == resource.data.customerAddress &&
+          // [أمان] حقول هوية/ربط الطلب غير قابلة للتعديل من التاجر (تؤثر على حساب الرصيد والكوبونات)
+          request.resource.data.get('id', null) == resource.data.get('id', null) &&
+          request.resource.data.get('merchantId', null) == resource.data.get('merchantId', null) &&
+          request.resource.data.get('productId', null) == resource.data.get('productId', null) &&
+          request.resource.data.get('orderGroupId', null) == resource.data.get('orderGroupId', null) &&
+          request.resource.data.get('productName', '') == resource.data.get('productName', '') &&
+          request.resource.data.get('couponCode', null) == resource.data.get('couponCode', null) &&
+          request.resource.data.get('date', null) == resource.data.get('date', null)
         ) ||
         (
           // زبون غير مسجل دخول (صفحة "تتبع طلبي" العامة) يطلب إلغاء طلبه هو. نفس مبدأ
@@ -617,6 +659,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // [أمان] شكل مجموعة طلب داخل order_tracking: groupId/date/items فقط، وعدد العناصر محدود.
+    function trackingGroupOk(g) {
+      return g is map
+        && g.keys().hasOnly(['groupId', 'date', 'items'])
+        && g.groupId is number
+        && g.date is string && g.date.size() <= 40
+        && g.items is list && g.items.size() >= 1 && g.items.size() <= 50;
+    }
+
     match /order_tracking/{trackingKey} {
       allow get: if true;
       allow list: if false;
@@ -629,7 +680,11 @@ service cloud.firestore {
       allow create: if
         trackingKey == (request.resource.data.merchantAuthUid + '_' + request.resource.data.phone) &&
         exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid)) &&
-        request.resource.data.orders.size() == 1;
+        request.resource.data.orders.size() == 1 &&
+        // [أمان] شكل وحجم محدودان — يمنع حجز المفتاح بوثيقة مزوّرة/ضخمة
+        request.resource.data.keys().hasOnly(['merchantAuthUid', 'phone', 'orders']) &&
+        request.resource.data.phone is string && request.resource.data.phone.matches('^[0-9]{6,20}$') &&
+        trackingGroupOk(request.resource.data.orders[0]);
 
       // تحديث لاحق: إما تاجر/موظفه أو الأدمن (أو موظف الشحن) وقت تغيير حالة طلب
       // موجود أصلاً — أو زبون غير مسجل يسوي طلب ثاني (يرجع لنفس المتجر برقم هاتفه
@@ -644,7 +699,10 @@ service cloud.firestore {
           // [أمان] الزبون غير المسجل يضيف فاتورة واحدة بالضبط، والعناصر القديمة لازم تبقى كما هي حرفياً
           // (مقارنة بادئة القائمة بالتقطيع list[0:n]) — فلا يقدر يعدّل أو يحذف حالة/أسعار فواتير سابقة.
           request.resource.data.orders.size()   ==  resource.data.orders.size() + 1 &&
-          request.resource.data.orders[0:resource.data.orders.size()] == resource.data.orders
+          request.resource.data.orders.size()   <= 200 &&
+          request.resource.data.keys().hasOnly(['merchantAuthUid', 'phone', 'orders']) &&
+          request.resource.data.orders[0:resource.data.orders.size()] == resource.data.orders &&
+          trackingGroupOk(request.resource.data.orders[resource.data.orders.size()])
         );
 
       allow delete: if isAdmin();
@@ -672,7 +730,14 @@ service cloud.firestore {
       // بداخلها والمتجر موجود فعلاً.
       allow create: if
         groupId == request.resource.data.groupId + '' &&
-        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid));
+        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid)) &&
+        // [أمان] شكل وحجم محدودان
+        request.resource.data.keys().hasOnly(['groupId', 'merchantAuthUid', 'shopName', 'date', 'items', 'customerNameHash']) &&
+        request.resource.data.groupId is number &&
+        request.resource.data.get('shopName', '') is string && request.resource.data.get('shopName', '').size() <= 120 &&
+        request.resource.data.date is string && request.resource.data.date.size() <= 40 &&
+        request.resource.data.items is list && request.resource.data.items.size() >= 1 && request.resource.data.items.size() <= 50 &&
+        request.resource.data.customerNameHash is string && request.resource.data.customerNameHash.size() == 64;
 
       // تحديث لاحق: أدمن/موظفه، التاجر ونفس صلاحياته، أو موظف الشحن — وقت تغيير حالة
       // أي قطعة بهذا الطلب (نفس الجهات المسموح لها تحدّث orders الحقيقية).

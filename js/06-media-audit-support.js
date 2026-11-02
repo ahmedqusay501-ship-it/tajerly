@@ -224,11 +224,10 @@ async function logAudit(action, details) {
   if (data.auditLog.length > AUDIT_LOG_MAX_ENTRIES) data.auditLog.length = AUDIT_LOG_MAX_ENTRIES;
   if (document.getElementById('audit-log-list')) { auditLogPage = 1; renderAuditLog(); }
   try {
-    await window.storage.set('audit-log', JSON.stringify(data.auditLog), true);
+    if (window.authApi && window.authApi.addAuditEntry) await window.authApi.addAuditEntry(entry);
+    else await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); // وضع محلي فقط (Firebase غير متاح)
   } catch (e) {
-    // Best-effort, same pattern as saveAdminCredentials()/saveData() — an admin-team
-    // employee's session (or a stale one) getting permission-denied here must never block
-    // the actual action that triggered this log entry.
+    // Best-effort — فشل التسجيل (مثلاً permission-denied) ما يوقف الإجراء الأصلي.
     if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) {
       console.error('Failed to persist audit log entry:', e);
     }
@@ -244,7 +243,10 @@ function deleteAuditLogEntry(id) {
   if (!entry) return;
   openConfirmModal('حذف إجراء من السجل', `متأكد راح تحذف هذا الإجراء نهائياً؟ — "${entry.action}${entry.details ? ' — ' + entry.details : ''}"`, async () => {
     data.auditLog = (data.auditLog || []).filter(e => e.id !== id);
-    try { await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); } catch (e2) {
+    try {
+      if (window.authApi && window.authApi.deleteAuditEntry) await window.authApi.deleteAuditEntry(id);
+      await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); // النسخة القديمة (أدمن فقط)
+    } catch (e2) {
       if (!(e2 && (e2.code === 'permission-denied' || /permission/i.test(e2.message || '')))) console.error('Failed to persist audit log deletion:', e2);
     }
     await logAudit('حذف إجراء من سجل التدقيق', `${entry.action}${entry.details ? ' — ' + entry.details : ''} (بتاريخ ${new Date(entry.ts).toLocaleString('ar-IQ')})`);
@@ -259,8 +261,12 @@ function clearAuditLog() {
   const count = (data.auditLog || []).length;
   if (count === 0) { showToast('السجل فاضي أصلاً'); return; }
   openConfirmModal('مسح السجل بالكامل', `متأكد راح تمسح كل السجل نهائياً؟ (${count} إجراء) — هذا الإجراء لا يمكن التراجع عنه.`, async () => {
+    const oldEntries = data.auditLog || [];
     data.auditLog = [];
-    try { await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); } catch (e) {
+    try {
+      if (window.authApi && window.authApi.deleteAuditEntry) await Promise.all(oldEntries.map(x => window.authApi.deleteAuditEntry(x.id).catch(() => {})));
+      await window.storage.set('audit-log', JSON.stringify(data.auditLog), true);
+    } catch (e) {
       if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) console.error('Failed to persist audit log clear:', e);
     }
     await logAudit('مسح سجل التدقيق بالكامل', `${count} إجراء`);

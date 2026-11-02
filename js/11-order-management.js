@@ -698,10 +698,20 @@ async function importProductsFromFile(merchantId) {
 
   let rows;
   try {
-    const buf = await input.files[0].arrayBuffer();
+    const file = input.files[0];
+    // [أمان] مكتبة xlsx 0.18.5 فيها ثغرة prototype pollution (CVE-2023-30533) عند قراءة ملف مصنوع خصيصاً،
+    // ولا يوجد إصدار أحدث على npm. نحدّ نوع/حجم الملف ونتحقق أن Object.prototype لم يتغيّر بعد القراءة.
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name || '')) { showToast('نوع الملف غير مدعوم — استخدم xlsx أو csv'); return; }
+    if (file.size > 5 * 1024 * 1024) { showToast('الملف كبير (الحد 5 ميغابايت)'); return; }
+    const protoBefore = Object.getOwnPropertyNames(Object.prototype).sort().join('|');
+    const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
     rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    if (Object.getOwnPropertyNames(Object.prototype).sort().join('|') !== protoBefore) {
+      location.reload(); // ملف خبيث حاول تلويث النموذج الأصلي — نعيد تحميل الصفحة لتنظيف الحالة
+      return;
+    }
   } catch (e) {
     console.error('Product import parse failed:', e);
     showToast('تعذر قراءة الملف — تأكد إنه ملف Excel أو CSV صحيح وبنفس شكل القالب');

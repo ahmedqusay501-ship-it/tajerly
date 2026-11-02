@@ -24,7 +24,7 @@ window.__usingLocalFallback = false;
 async function initStorage() {
   try {
     const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, orderBy, limit } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
     const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut: authSignOut, updatePassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
     const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js");
     const firebaseApp = initializeApp(firebaseConfig);
@@ -147,6 +147,30 @@ async function initStorage() {
         try { await signInWithEmailAndPassword(auth, ADMIN_AUTH_EMAIL, password); return true; }
         catch (e) { return false; }
       },
+      // [أمان] جلسة الأدمن المحفوظة بـ localStorage لا تُصدَّق وحدها: لازم جلسة Firebase حقيقية + وثيقة admins.
+      async verifyAdminSession() {
+        try {
+          if (typeof auth.authStateReady === 'function') await auth.authStateReady();
+          const u = auth.currentUser;
+          if (!u) return false;
+          const snap = await getDoc(doc(db, 'admins', u.uid));
+          return snap.exists();
+        } catch (e) { return false; }
+      },
+      // هل جلسة Firebase الحالية تخص نفس الحساب المحفوظ بالجلسة المحلية (تاجر/موظف)؟
+      async sessionMatchesUid(expectedUid) {
+        try {
+          if (typeof auth.authStateReady === 'function') await auth.authStateReady();
+          return !!auth.currentUser && auth.currentUser.uid === expectedUid;
+        } catch (e) { return false; }
+      },
+      // سجل التدقيق: كل إجراء وثيقة مستقلة (إنشاء فقط) بدل مصفوفة واحدة قابلة للمسح من أي مندوب.
+      async addAuditEntry(entry) { await setDoc(doc(db, 'audit_entries', String(entry.id)), entry); },
+      async listAuditEntries(max) {
+        const snap = await getDocs(query(collection(db, 'audit_entries'), orderBy('ts', 'desc'), limit(max || 300)));
+        return snap.docs.map(d => d.data());
+      },
+      async deleteAuditEntry(id) { await deleteDoc(doc(db, 'audit_entries', String(id))); },
       async syncAdminAuthPassword(newPassword) {
         if (!auth.currentUser) return false;
         await updatePassword(auth.currentUser, newPassword);
@@ -814,6 +838,16 @@ async function fetchRemoteData() {
   } catch (e) {
     if (e && e.message !== 'key not found' && e.code !== 'permission-denied' && !/permission/i.test(e.message || '')) console.error('Storage error while loading audit log:', e); // permission-denied is expected for visitors (audit log is admin-only)
   }
+
+  // [أمان] الإجراءات الجديدة بمجموعة audit_entries (وثيقة لكل إجراء) — تُدمج مع النسخة القديمة إن وُجدت.
+  try {
+    if (window.authApi && window.authApi.listAuditEntries) {
+      const entries = await window.authApi.listAuditEntries(300);
+      const byId = new Map((data.auditLog || []).map(e => [e.id, e]));
+      entries.forEach(e => { if (e && e.id) byId.set(e.id, e); });
+      data.auditLog = Array.from(byId.values()).sort((a, b) => String(b.ts).localeCompare(String(a.ts))).slice(0, 300);
+    }
+  } catch (e) { /* permission-denied لغير الإدارة — متوقع */ }
 
   if (window.authApi) {
     // 'orders' needs special handling before the batch below fires. An UNFILTERED

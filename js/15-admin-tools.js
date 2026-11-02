@@ -765,7 +765,7 @@ function renderMarketPagesCard() {
       <div class="badge ${enabled ? 'active' : 'disabled'}" style="margin-bottom:8px;">${enabled ? 'الصفحة مفعّلة' : 'الصفحة معطّلة كاملة'}</div><br>
       <button class="btn ${enabled ? 'warn' : ''} small" onclick="${toggleFn}()">${enabled ? 'تعطيل الصفحة كاملة' : 'إعادة تفعيل الصفحة'}</button>
       <button class="btn secondary small" onclick="${resetFn}()">تصفير عداد الزيارات</button>
-      <a href="${esc(safeUrl(openUrl))}" target="_blank" class="btn secondary small" style="display:inline-block; text-decoration:none;">فتح الصفحة</a>
+      <a href="${esc(safeUrl(openUrl))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:inline-block; text-decoration:none;">فتح الصفحة</a>
     </div>`;
   box.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
     ${block('السوق العام', '🛒', data.settings.marketPageEnabled !== false, data.settings.marketVisits, marketMerchants, 'toggleMarketPageEnabled', 'resetMarketVisits', '?market=1')}

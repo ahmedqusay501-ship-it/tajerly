@@ -944,7 +944,10 @@ function setSocialLink(id, platform, url) {
   const m = data.merchants.find(x => x.id === id);
   if (!m) return;
   ensureMerchantTheme(m);
-  m.theme.social[platform].url = url.trim();
+  const rawUrl = (url || '').trim();
+  const cleanUrl = rawUrl ? safeUrl(rawUrl) : '';
+  if (rawUrl && cleanUrl === '#') { showToast('الرابط غير صالح — استخدم رابط يبدأ بـ https://'); return; }
+  m.theme.social[platform].url = cleanUrl;
   saveData();
 }
 

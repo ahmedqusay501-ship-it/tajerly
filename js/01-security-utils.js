@@ -21,14 +21,20 @@ function esc(value) {
 // Blocks javascript:, data:text/html, vbscript: and similar script-executing schemes while
 // still allowing normal http(s)/mailto/tel links and relative paths.
 function safeUrl(value) {
-  const v = (value || '').toString().trim();
-  if (!v) return '#';
-  if (/^(https?:|mailto:|tel:|#|\.|\/)/i.test(v)) return v;
-  // No scheme at all (e.g. "wa.me/xxx") — treat as a relative/bare URL, not a script scheme.
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(v)) return v;
+  // Allowlist (not blocklist): browsers strip tabs/newlines/control chars from URLs before parsing the
+  // scheme, so "java\tscript:..." used to slip through. Any whitespace/control char => rejected outright.
+  const raw = (value === null || value === undefined ? '' : String(value)).trim();
+  if (!raw) return '#';
+  if (/[\u0000-\u0020\u007f-\u009f\u2028\u2029\\]/.test(raw)) return '#';
+  if (raw.charAt(0) === '#') return raw;
+  if (/^\/\//.test(raw)) return '#';                       // protocol-relative (//evil.com) => open redirect
+  if (/^(\/|\.\.?\/)/.test(raw)) return raw;               // same-site relative path
+  const scheme = raw.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+  if (scheme) return /^(https?|mailto|tel)$/i.test(scheme[1]) ? raw : '#';
+  // No scheme at all (e.g. "wa.me/xxx", "instagram.com/user"): accept only domain-looking text, force https.
+  if (/^[A-Za-z0-9][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)+(:\d+)?([\/?#]\S*)?$/.test(raw)) return 'https://' + raw;
   return '#';
 }
-
 // Use for any value placed inside a JS string literal that lives in an HTML event attribute,
 // e.g. onclick="pick(${jsAttr(value)})". esc() alone is NOT enough there: the browser decodes
 // &#39; back to ' BEFORE the JavaScript runs, so a value like  a');alert(1);//  would break out

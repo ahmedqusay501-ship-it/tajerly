@@ -111,7 +111,12 @@ function restoreSession() {
   } catch (e) { return false; }
 
   if (saved.role === 'admin') {
-    enterApp('admin');
+    // [أمان] localStorage وحده ما يكفي: نتحقق من جلسة Firebase حقيقية + تسجيل الأدمن بمجموعة admins.
+    const verify = (window.authApi && window.authApi.verifyAdminSession) ? window.authApi.verifyAdminSession() : Promise.resolve(false);
+    verify.then(async ok => {
+      if (ok) { try { await fetchRemoteData(); } catch (e) {} enterApp('admin'); }
+      else { clearSession(); showHomeScreen(); }
+    });
     return true;
   }
   if (saved.role === 'merchant' && saved.merchantId != null) {
@@ -119,6 +124,7 @@ function restoreSession() {
     if (m) {
       loggedInMerchantId = m.id;
       enterApp('merchant');
+      verifySessionIdentity(m.authUid);
       return true;
     }
   }
@@ -131,12 +137,20 @@ function restoreSession() {
       }
       loggedInEmployeeId = emp.id;
       enterApp('employee');
+      verifySessionIdentity(emp.authUid);
       return true;
     }
   }
   // Session pointed at an account that's gone or disabled — don't keep retrying it
   clearSession();
   return false;
+}
+
+// [أمان] الجلسة المحلية (role + id) قابلة للتعديل من أي زائر — فنتأكد بالخلفية أن جلسة Firebase الفعلية
+// تخص نفس الحساب، وإلا نحذف الجلسة المحلية ونعيد التحميل.
+function verifySessionIdentity(expectedUid) {
+  if (!expectedUid || !window.authApi || !window.authApi.sessionMatchesUid) return;
+  window.authApi.sessionMatchesUid(expectedUid).then(ok => { if (!ok) { clearSession(); location.reload(); } });
 }
 
 let publicStoreMerchantId = null;
