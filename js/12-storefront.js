@@ -204,7 +204,7 @@ function renderStoreBannerSlider(m, color) {
   return `
     <div class="store-slider-wrap">
       <div class="store-slider" id="store-slider-${m.id}" onscroll="onStoreSliderScroll(this)">
-        ${list.map(src => `<div class="store-slide"><img src="${imgSrc(src)}"></div>`).join('')}
+        ${list.map(src => `<div class="store-slide" style="--bg:url('${esc(imgSrc(src)).replace(/'/g, '%27')}')"><img src="${imgSrc(src)}"></div>`).join('')}
       </div>
       <div class="store-slider-dots" id="store-slider-dots-${m.id}">${list.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>
     </div>`;
