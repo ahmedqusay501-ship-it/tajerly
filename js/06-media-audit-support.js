@@ -1,0 +1,564 @@
+// ---------- IMAGE HELPERS ----------
+// Reads an image file, downsizes it, and returns a compressed base64 data URL
+// so uploaded photos don't blow past storage limits.
+const MAX_PRODUCT_IMAGES = 5; // a merchant's whole product catalog lives inside one Firestore
+// document (1MB hard limit) — this keeps one product's photos from crowding out everything else.
+function resizeImageFile(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round(height * maxDim / width); width = maxDim; }
+          else { width = Math.round(width * maxDim / height); height = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('تعذر تحميل الصورة'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('تعذر قراءة الملف'));
+    reader.readAsDataURL(file);
+  });
+}
+// Optimistic concurrency: the shared storage has no real transactions, so before writing we
+// check nobody else saved since we last synced. If someone did, we refuse to blindly overwrite
+// their changes (which is what caused silent data loss before) — we warn and reload instead.
+let loadedVersion = 0;
+// [أمان] حقول المندوب/الشحن يكتبها السيرفر (stampAgentOnHandover) أو الأدمن، والقواعد ترفض أي تغيير لها من
+// التاجر. فلا نرسلها أبداً من جلسة غير إدارية — (merge:true يبقي القيم المخزّنة كما هي). الأدمن/موظف الإدارة
+// يكتبها كاملة لأن إعادة توجيه المندوب (أدمن) تمرّ من هنا.
+const SERVER_OWNED_ORDER_FIELDS = ['deliveryAgentId', 'deliveryAssignedAt', 'agentFeeSnapshot', 'agentCommissionTypeSnapshot', 'agentCommissionValueSnapshot', 'shippingFee', 'governorate', 'area', 'shippingSpeed'];
+function orderPayloadForWrite(o) {
+  const emp = (typeof currentEmployee === 'function') ? currentEmployee() : null;
+  const isAdminSide = currentRole === 'admin' || (currentRole === 'employee' && emp && emp.ownerType === 'admin');
+  if (isAdminSide) return o;
+  const copy = { ...o };
+  SERVER_OWNED_ORDER_FIELDS.forEach(f => { delete copy[f]; });
+  return copy;
+}
+async function saveData() {
+  try {
+    // Settings are admin-only to write now, so most callers here (a customer checking
+    // out, a merchant accepting an order) simply
+    // don't have permission to touch this doc — and that's expected, not an error. We only
+    // treat it as a real problem (and only reload the page) when we DO have permission but
+    // someone else changed it first, i.e. an actual conflicting write we detected.
+    try {
+      // A version mismatch here usually isn't a real conflict — it's the 5-second
+      // live-refresh poller (or another quick save) nudging the version forward between
+      // when we last loaded and when we're saving right now. Retrying a couple of times
+      // against the freshest version absorbs that benign race instead of throwing away
+      // whatever the admin just typed (a password change, a merchant approval, ...) and
+      // reloading the page out from under them. Only if it's STILL conflicting after
+      // retries do we fall back to the old, safer-but-destructive reload.
+      let settingsSaved = false;
+      for (let attempt = 1; attempt <= 3 && !settingsSaved; attempt++) {
+        const current = await window.storage.get('platform-settings', true).catch(() => null);
+        const remoteVersion = current && current.value ? (JSON.parse(current.value).version || 0) : 0;
+        if (remoteVersion !== loadedVersion) {
+          if (attempt < 3) { loadedVersion = remoteVersion; continue; }
+          showToast('صار تحديث من مكان ثاني — جاري تحديث الصفحة لتفادي فقدان بيانات');
+          setTimeout(() => location.reload(), 1500);
+          return false;
+        }
+        data.version = remoteVersion + 1;
+        // adminUsername/adminPassword deliberately excluded here — they live in their own
+        // 'admin-credentials' doc (see saveAdminCredentials) which only the real admin can
+        // write. This doc stays writable by 'settings'-permission employees for pricing only.
+        const { adminUsername: _au, adminPassword: _ap, ...publicSettings } = data.settings;
+        await window.storage.set('platform-settings', JSON.stringify({ settings: publicSettings, nextId: data.nextId, version: data.version, announcements: data.announcements, ledgerClosures: data.ledgerClosures, agentLedgerClosures: data.agentLedgerClosures, agentSettlements: data.agentSettlements, agentCashLogs: data.agentCashLogs, agentAdjustments: data.agentAdjustments, subscriptionPayments: data.subscriptionPayments }), true);
+        loadedVersion = data.version;
+        settingsSaved = true;
+      }
+    } catch (e) {
+      if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) {
+        console.error('Settings sync failed:', e);
+      }
+    }
+
+    // Merchants and orders each live in their own protected Firestore
+    // documents (see initStorage) — best-effort sync; a failure here (e.g. a merchant
+    // trying to touch another merchant's document) is expected and must never block a
+    // save the current user IS allowed to make.
+    if (window.authApi) {
+      // Diffed the same way as orders below: only a merchant whose public fields actually
+      // changed locally gets re-written. Without this, every saveData() call — including one
+      // triggered by deleting a single product or answering a single commission-exemption
+      // request — rewrote EVERY merchant's doc from this session's in-memory copy, clobbering
+      // any concurrent edit another merchant had made on their own device (see
+      // lastSyncedMerchantSnapshots above for the full story).
+      // كتابة وثيقة التاجر (منتجاته/متجره) تُنتظر الآن فعلاً وتُبلَّغ عند الفشل. قبل هذا كانت
+      // fire-and-forget مع catch فاضي: لو انرفضت (قاعدة أو وثيقة > 1MB) يظهر "تمت الإضافة"
+      // والمنتج يبقى بالذاكرة بس ويختفي بعد تحديث الصفحة.
+      const merchantWrites = [];
+      data.merchants.filter(m => m.authUid).forEach(m => {
+        // commissionRequests deliberately excluded: they live in commission_exemptions now (admin-approved).
+        const { password: _pw, balance: _b, salesCount: _s, authUid: _a, _docId: _d, commissionRequests: _cr, ...publicFields } = m;
+        const json = JSON.stringify(publicFields);
+        if (lastSyncedMerchantSnapshots.get(m.authUid) !== json) {
+          pendingOrderWrites++; // نفس حارس الـ poller: ما يجلب نسخة قديمة فوق تعديل لسا ما وصل
+          merchantWrites.push(
+            window.authApi.saveDoc('merchants', m.authUid, publicFields)
+              .then(() => { lastSyncedMerchantSnapshots.set(m.authUid, json); return true; })
+              .catch(e => {
+                console.error('merchant save failed for', m.authUid, e);
+                const mine = currentRole === 'admin' || m.id === loggedInMerchantId;
+                if (mine) {
+                  const tooBig = e && (e.code === 'invalid-argument' || /exceeds|too large|size/i.test(e.message || ''));
+                  showToast(tooBig
+                    ? 'ما انحفظ التعديل: حجم بيانات المتجر (الصور) كبير — قلّل الصور أو احذف منتجات قديمة'
+                    : 'ما انحفظ التعديل بالسيرفر — راح يختفي بعد التحديث. تأكد من الاتصال أو راجع الأدمن', 6000);
+                  return false;
+                }
+                return true; // مو وثيقتي: فشلها متوقع (صلاحيات) وما يوقف حفظي
+              })
+              .finally(() => { pendingOrderWrites--; })
+          );
+        }
+        // Balance/salesCount are cheap, small, and only the earning merchant + admin can ever
+        // write them (see merchant_private rules) — no diff needed here, unlike the full
+        // product/category/coupon payload above.
+        // [أمان] لا يكتب المتصفح الرصيد/عدد المبيعات بعد الآن: تُحسب سيرفرياً بدالة syncMerchantBalance
+        // (functions/index.js) من تغيّر حالة الطلبات، وقواعد Firestore ترفض كتابة التاجر لها.
+      });
+      // طلبات الانضمام المعلقة: ما نعيد كتابتها هنا عمداً. الطلب يُكتب مرة وحدة مباشرة وقت
+      // الإرسال (submitRequest)، والقواعد تمنع تعديله. لما كانت هذي الحلقة تعيد كتابتها مع
+      // كل saveData()، أي متصفح/تاب قديم فيه الطلب بذاكرته كان يرجّع طلب محذوف من الأدمن.
+      // Employees follow the exact same active/pending split as merchants above.
+      data.employees.filter(e => e.authUid).forEach(e => {
+        window.authApi.saveDoc('employees', e.authUid, e).catch(() => {});
+      });
+      data.employees.filter(e => !e.authUid && e.status === 'pending').forEach(e => {
+        window.authApi.saveDoc('employee_requests', String(e.id), e).catch(() => {});
+      });
+      // Only orders that actually changed since the last save get re-written — cheap
+      // in-memory diff, so this stays fast even once order history grows large.
+      const changedOrders = [];
+      data.orders.forEach(o => {
+        const json = JSON.stringify(o);
+        if (lastSyncedOrderSnapshots.get(o.id) !== json) {
+          changedOrders.push(o);
+          pendingOrderWrites++;
+          window.authApi.saveDoc('orders', String(o.id), orderPayloadForWrite(o))
+            .then(() => lastSyncedOrderSnapshots.set(o.id, json))
+            .catch(e => console.error('order sync failed for', o.id, e))
+            .finally(() => pendingOrderWrites--);
+        }
+      });
+      // Keep the public order_tracking "view" copy (see firestore.rules) in sync with
+      // every status change too — same best-effort fire-and-forget style as the orders
+      // write above. Brand new orders (checkout's own explicit upsertOrderTrackingGroup
+      // write hasn't necessarily landed/created their doc yet) are silently skipped inside
+      // syncOrderTrackingUpdates — nothing to patch until the group exists, and the very
+      // next status change will catch them up automatically.
+      syncOrderTrackingUpdates(changedOrders);
+
+      // Offers: admin-only, low-frequency writes — diffed the exact same way as merchants
+      // above, PLUS delete detection (an offer really can be removed entirely, unlike a
+      // merchant/order which only ever changes status). isAdmin()/isAdminEmployee('settings')
+      // enforce the actual permission server-side (see firestore.rules); this diff is purely
+      // to avoid redundant writes, not a security boundary itself.
+      const currentOfferIds = new Set(data.offers.map(o => String(o.id)));
+      data.offers.forEach(o => {
+        const key = String(o.id);
+        const json = JSON.stringify(o);
+        if (lastSyncedOfferSnapshots.get(key) !== json) {
+          window.authApi.saveDoc('offers', key, o)
+            .then(() => lastSyncedOfferSnapshots.set(key, json))
+            .catch(e => console.error('offer sync failed for', key, e));
+        }
+      });
+      Array.from(lastSyncedOfferSnapshots.keys()).forEach(key => {
+        if (!currentOfferIds.has(key)) {
+          window.authApi.deleteDoc('offers', key)
+            .then(() => lastSyncedOfferSnapshots.delete(key))
+            .catch(e => console.error('offer delete failed for', key, e));
+        }
+      });
+      const merchantResults = await Promise.all(merchantWrites);
+      if (merchantResults.includes(false)) return false;
+    }
+
+    return true;
+  } catch (e) { console.error('Storage error while saving:', e); return false; }
+}
+
+// ---------- AUDIT LOG ----------
+// A running trail of sensitive, hard-to-undo actions (approve/reject/delete a merchant,
+// reset someone's password, change admin credentials, ...) — who did it and when. Kept as
+// its own small doc (same shape as admin-credentials: publicly readable so any admin-side
+// screen can show it live, but writable only by a real admin session) so it never gets
+// tangled up with the version-conflict retry logic that guards 'platform-settings'.
+//
+// NOTE: like 'admin-credentials', this needs its own firestore.rules entry to actually be
+// enforced server-side (read: true, write: if isAdmin()) — see the admin-credentials rule
+// already deployed for this project and mirror it for the 'audit-log' key under /storage.
+const AUDIT_LOG_MAX_ENTRIES = 300;
+function currentActorLabel() {
+  if (currentRole === 'admin') return `${data.settings.adminUsername || 'admin'} (أدمن)`;
+  if (currentRole === 'merchant') {
+    const m = data.merchants.find(x => x.id === loggedInMerchantId);
+    return `${m ? m.shop : 'تاجر'} (تاجر)`;
+  }
+  if (currentRole === 'employee') {
+    const emp = currentEmployee();
+    return `${emp ? (emp.name || emp.username || 'موظف') : 'موظف'} (موظف)`;
+  }
+  return 'غير معروف';
+}
+async function logAudit(action, details) {
+  const entry = {
+    id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    ts: new Date().toISOString(),
+    actor: currentActorLabel(),
+    action,
+    details: details || ''
+  };
+  data.auditLog = [entry, ...(data.auditLog || [])];
+  if (data.auditLog.length > AUDIT_LOG_MAX_ENTRIES) data.auditLog.length = AUDIT_LOG_MAX_ENTRIES;
+  if (document.getElementById('audit-log-list')) { auditLogPage = 1; renderAuditLog(); }
+  try {
+    await window.storage.set('audit-log', JSON.stringify(data.auditLog), true);
+  } catch (e) {
+    // Best-effort, same pattern as saveAdminCredentials()/saveData() — an admin-team
+    // employee's session (or a stale one) getting permission-denied here must never block
+    // the actual action that triggered this log entry.
+    if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) {
+      console.error('Failed to persist audit log entry:', e);
+    }
+  }
+}
+
+// Deletes a single audit-log entry (after the admin confirms). We log the deletion itself as
+// a fresh entry right after — same accountability principle used everywhere else in this file
+// (تصفير حساب تاجر، حذف تاجر، ...): an admin action that erases a record must still leave a
+// trace of who erased it and when, so the log can never be silently edited without evidence.
+function deleteAuditLogEntry(id) {
+  const entry = (data.auditLog || []).find(e => e.id === id);
+  if (!entry) return;
+  openConfirmModal('حذف إجراء من السجل', `متأكد راح تحذف هذا الإجراء نهائياً؟ — "${entry.action}${entry.details ? ' — ' + entry.details : ''}"`, async () => {
+    data.auditLog = (data.auditLog || []).filter(e => e.id !== id);
+    try { await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); } catch (e2) {
+      if (!(e2 && (e2.code === 'permission-denied' || /permission/i.test(e2.message || '')))) console.error('Failed to persist audit log deletion:', e2);
+    }
+    await logAudit('حذف إجراء من سجل التدقيق', `${entry.action}${entry.details ? ' — ' + entry.details : ''} (بتاريخ ${new Date(entry.ts).toLocaleString('ar-IQ')})`);
+    showToast('تم حذف الإجراء من السجل');
+    renderAuditLog();
+  });
+}
+
+// Wipes the whole log, then immediately writes one fresh entry recording the wipe itself —
+// so "من مسح السجل ومتى" stays known even after everything before it is gone.
+function clearAuditLog() {
+  const count = (data.auditLog || []).length;
+  if (count === 0) { showToast('السجل فاضي أصلاً'); return; }
+  openConfirmModal('مسح السجل بالكامل', `متأكد راح تمسح كل السجل نهائياً؟ (${count} إجراء) — هذا الإجراء لا يمكن التراجع عنه.`, async () => {
+    data.auditLog = [];
+    try { await window.storage.set('audit-log', JSON.stringify(data.auditLog), true); } catch (e) {
+      if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) console.error('Failed to persist audit log clear:', e);
+    }
+    await logAudit('مسح سجل التدقيق بالكامل', `${count} إجراء`);
+    showToast('تم مسح السجل بالكامل');
+    renderAuditLog();
+  });
+}
+
+let auditLogPage = 1;
+const AUDIT_LOG_PAGE_SIZE = 10;
+function changeAuditLogPage(page) {
+  auditLogPage = page;
+  renderAuditLog();
+}
+function renderAuditLog() {
+  const el = document.getElementById('audit-log-list');
+  if (!el) return;
+  const log = data.auditLog || [];
+  if (log.length === 0) { el.innerHTML = '<div class="empty">ما فيه أي إجراءات مسجلة بعد</div>'; return; }
+  const totalPages = Math.max(1, Math.ceil(log.length / AUDIT_LOG_PAGE_SIZE));
+  if (auditLogPage > totalPages) auditLogPage = totalPages;
+  if (auditLogPage < 1) auditLogPage = 1;
+  const start = (auditLogPage - 1) * AUDIT_LOG_PAGE_SIZE;
+  const pageEntries = log.slice(start, start + AUDIT_LOG_PAGE_SIZE);
+  const rows = pageEntries.map(entry => `
+    <div class="list-item" style="align-items:flex-start;">
+      <span>${esc(entry.action)}${entry.details ? ' — ' + esc(entry.details) : ''}<br>
+      <span style="color:var(--text-mute); font-size:11px;">${esc(entry.actor)} · ${new Date(entry.ts).toLocaleString('ar-IQ')}</span></span>
+      <button class="btn danger small" onclick="deleteAuditLogEntry('${entry.id}')">حذف</button>
+    </div>`).join('');
+  const pager = totalPages > 1 ? `
+    <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:12px;">
+      <button class="btn secondary small" ${auditLogPage <= 1 ? 'disabled' : ''} onclick="changeAuditLogPage(${auditLogPage - 1})">‹ السابق</button>
+      <span style="font-size:11.5px; color:var(--text-mute);">صفحة ${auditLogPage} من ${totalPages} (${log.length} إجراء)</span>
+      <button class="btn secondary small" ${auditLogPage >= totalPages ? 'disabled' : ''} onclick="changeAuditLogPage(${auditLogPage + 1})">التالي ›</button>
+    </div>` : '';
+  el.innerHTML = rows + pager;
+}
+
+// ---------- MERCHANT / DELIVERY-AGENT SUPPORT CHAT ----------
+// One thread per merchant OR per delivery agent, stored as its own Firestore doc
+// (collection 'support_chats', doc id = that party's authUid — same key
+// merchants/merchant_private/employees already use). ownerType ('merchant' | 'agent')
+// tells the two apart; a merchant sends from the floating button same as an agent does —
+// both use the exact same button/modal/functions, just scoped to whichever role is logged
+// in. The admin replies from view-support, where BOTH kinds of threads are listed together.
+// Ending the session (admin-only) deletes the doc outright, wiping the thread for both sides.
+//
+// Firestore rule deployed for this — see match /support_chats/{uid} in firestore.rules:
+// the merchant/agent reads/creates/updates only their own doc (authUid must match), admin
+// (or an admin-team employee granted the 'support' permission) can read/update any doc, and
+// only admin/that employee can delete a doc at all (= "end session" in the UI).
+let supportChatOpenAuthUid = null; // which thread the modal is currently showing
+
+async function saveSupportChatDoc(chat) {
+  if (!window.authApi || !chat || !chat.authUid) return;
+  try {
+    await window.authApi.saveDoc('support_chats', chat.authUid, chat);
+  } catch (e) {
+    if (!(e && (e.code === 'permission-denied' || /permission/i.test(e.message || '')))) {
+      console.error('Support chat sync failed:', e);
+    }
+  }
+}
+
+function getOrCreateMerchantChat(merchantId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (!m || !m.authUid) return null;
+  let chat = data.supportChats.find(c => c.authUid === m.authUid);
+  if (!chat) {
+    chat = { authUid: m.authUid, ownerType: 'merchant', merchantId: m.id, merchantShop: m.shop, messages: [], unreadForAdmin: false, unreadForMerchant: false, updatedAt: new Date().toISOString() };
+    data.supportChats.push(chat);
+  } else {
+    chat.ownerType = 'merchant';
+    chat.merchantShop = m.shop; // keep the cached name fresh if the merchant renamed their shop
+  }
+  return chat;
+}
+
+// Same idea as getOrCreateMerchantChat, for a delivery agent's own thread (ownerType
+// 'agent', agentId/agentName instead of merchantId/merchantShop, unreadForAgent instead of
+// unreadForMerchant). Only ever called for the real agent (ownerType 'delivery_agent'
+// employee doc) — an employee working FOR an agent (ownerType 'agent_employee') never gets
+// here, exact same restriction as a merchant's own employees not getting the merchant chat.
+function getOrCreateAgentChat(agentId) {
+  const a = data.employees.find(x => x.id === agentId && x.ownerType === 'delivery_agent');
+  if (!a || !a.authUid) return null;
+  const label = a.name + (a.companyName ? ' — ' + a.companyName : '');
+  let chat = data.supportChats.find(c => c.authUid === a.authUid);
+  if (!chat) {
+    chat = { authUid: a.authUid, ownerType: 'agent', agentId: a.id, agentName: label, messages: [], unreadForAdmin: false, unreadForAgent: false, updatedAt: new Date().toISOString() };
+    data.supportChats.push(chat);
+  } else {
+    chat.ownerType = 'agent';
+    chat.agentName = label; // keep the cached name fresh if the agent's name/company changed
+  }
+  return chat;
+}
+
+// Merchant OR delivery-agent side: opened from the floating button. Employees (of either
+// a merchant or an agent) don't get this — it's the account owner's own line to the admin,
+// same scope as the request that asked for it.
+async function openSupportChat() {
+  const isMerchant = currentRole === 'merchant' && !!loggedInMerchantId;
+  const emp = currentEmployee();
+  const isAgent = currentRole === 'employee' && emp && emp.ownerType === 'delivery_agent';
+  if (!isMerchant && !isAgent) return;
+  const ownAuthUid = isMerchant ? (data.merchants.find(x => x.id === loggedInMerchantId) || {}).authUid : emp.authUid;
+  // Pull the party's own thread fresh before rendering — the regular 5s poll can only
+  // do this for whichever thread the modal already has open (see pollForUpdates), so a
+  // brand new session (or one from another device) needs this explicit fetch here first.
+  if (ownAuthUid && window.authApi) {
+    try {
+      const own = await window.authApi.getPrivateDoc('support_chats', ownAuthUid);
+      if (own) {
+        const idx = data.supportChats.findIndex(c => c.authUid === ownAuthUid);
+        if (idx >= 0) data.supportChats[idx] = { ...own, authUid: ownAuthUid };
+        else data.supportChats.push({ ...own, authUid: ownAuthUid });
+      } else {
+        // Doc is really gone (e.g. the admin just ended the session) — drop any stale local
+        // copy instead of leaving it in place, same fix as in fetchRemoteData() above.
+        // Otherwise reopening the chat kept showing the old, already-ended conversation.
+        data.supportChats = data.supportChats.filter(c => c.authUid !== ownAuthUid);
+      }
+    } catch (e) { /* offline or a real error — getOrCreate*Chat below falls back to whatever's cached */ }
+  }
+  const chat = isMerchant ? getOrCreateMerchantChat(loggedInMerchantId) : getOrCreateAgentChat(emp.id);
+  if (!chat) return;
+  supportChatOpenAuthUid = chat.authUid;
+  if (isMerchant) chat.unreadForMerchant = false; else chat.unreadForAgent = false;
+  document.getElementById('support-chat-title').textContent = isMerchant ? 'دعم التاجر' : 'دعم المندوب';
+  document.getElementById('support-chat-end-row').style.display = 'none';
+  document.getElementById('support-chat-modal').classList.add('show');
+  document.getElementById('support-chat-input').value = '';
+  renderSupportChatMessages();
+  updateSupportFab();
+  saveSupportChatDoc(chat);
+}
+
+// Admin side: opened from a row in view-support (which mixes merchant and agent threads).
+function openAdminSupportChat(authUid) {
+  if (currentRole !== 'admin') return;
+  const chat = data.supportChats.find(c => c.authUid === authUid);
+  if (!chat) return;
+  supportChatOpenAuthUid = authUid;
+  chat.unreadForAdmin = false;
+  document.getElementById('support-chat-title').textContent = chat.ownerType === 'agent' ? (chat.agentName || 'مندوب') : (chat.merchantShop || 'تاجر');
+  document.getElementById('support-chat-end-row').style.display = 'block';
+  document.getElementById('support-chat-modal').classList.add('show');
+  document.getElementById('support-chat-input').value = '';
+  renderSupportChatMessages();
+  updateSupportNavBadge();
+  renderAdminSupportList();
+  saveSupportChatDoc(chat);
+}
+
+function closeSupportChatModal() {
+  document.getElementById('support-chat-modal').classList.remove('show');
+  supportChatOpenAuthUid = null;
+}
+
+// keepScrollIfNearBottom: when the live-refresh poll calls this because a reply just came
+// in, only auto-scroll if the person was already near the bottom — otherwise it would yank
+// them away from a message they scrolled up to re-read.
+function renderSupportChatMessages(keepScrollIfNearBottom) {
+  const box = document.getElementById('support-chat-messages');
+  if (!box || !supportChatOpenAuthUid) return;
+  const chat = data.supportChats.find(c => c.authUid === supportChatOpenAuthUid);
+  const wasNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  if (!chat || chat.messages.length === 0) {
+    box.innerHTML = '<div class="empty">ما فيه رسائل بعد — اكتب مشكلتك وراح توصل للإدارة</div>';
+    return;
+  }
+  const mineFrom = currentRole === 'admin' ? 'admin' : (chat.ownerType === 'agent' ? 'agent' : 'merchant');
+  box.innerHTML = chat.messages.map(msg => `
+    <div class="support-msg ${msg.from === mineFrom ? 'mine' : 'theirs'}">
+      ${esc(msg.text)}
+      <span class="support-msg-time">${new Date(msg.ts).toLocaleString('ar-IQ', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}</span>
+    </div>`).join('');
+  if (!keepScrollIfNearBottom || wasNearBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function sendSupportChatMessage() {
+  if (!supportChatOpenAuthUid) return;
+  const input = document.getElementById('support-chat-input');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  const chat = data.supportChats.find(c => c.authUid === supportChatOpenAuthUid);
+  if (!chat) return;
+  const isAgentChat = chat.ownerType === 'agent';
+  const from = currentRole === 'admin' ? 'admin' : (isAgentChat ? 'agent' : 'merchant');
+  chat.messages.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 7), from, text, ts: new Date().toISOString() });
+  chat.updatedAt = new Date().toISOString();
+  if (from === 'admin') {
+    if (isAgentChat) chat.unreadForAgent = true; else chat.unreadForMerchant = true;
+    chat.unreadForAdmin = false;
+  } else {
+    chat.unreadForAdmin = true;
+    if (isAgentChat) chat.unreadForAgent = false; else chat.unreadForMerchant = false;
+  }
+  input.value = '';
+  renderSupportChatMessages();
+  await saveSupportChatDoc(chat);
+  if (currentRole === 'admin') { renderAdminSupportList(); updateSupportNavBadge(); }
+}
+
+// Admin's list of every merchant AND delivery-agent thread — newest activity first,
+// unread ones flagged, each tagged with an icon so the admin can tell the two apart at a
+// glance without opening it.
+function renderAdminSupportList() {
+  const el = document.getElementById('admin-support-list');
+  if (!el || currentRole !== 'admin') return;
+  const chats = [...(data.supportChats || [])]
+    .filter(c => c.messages && c.messages.length > 0)
+    .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+  if (chats.length === 0) { el.innerHTML = '<div class="empty">ما فيه محادثات دعم حالياً</div>'; return; }
+  el.innerHTML = chats.map(c => {
+    const last = c.messages[c.messages.length - 1];
+    const isAgentChat = c.ownerType === 'agent';
+    const label = (isAgentChat ? '🚚 ' : '🏪 ') + esc(isAgentChat ? (c.agentName || 'مندوب') : (c.merchantShop || 'تاجر'));
+    return `<div class="list-item support-chat-list-item" onclick="openAdminSupportChat('${esc(c.authUid)}')">
+      <span>${label}<br><span style="color:var(--text-mute); font-size:11px;">${esc((last.text || '').slice(0, 40))}${(last.text || '').length > 40 ? '…' : ''}</span></span>
+      ${c.unreadForAdmin ? '<span class="support-unread-badge">جديد</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function endSupportSession() {
+  if (currentRole !== 'admin' || !supportChatOpenAuthUid) return;
+  const authUid = supportChatOpenAuthUid;
+  const chat = data.supportChats.find(c => c.authUid === authUid);
+  const partyLabel = chat ? (chat.ownerType === 'agent' ? (chat.agentName || 'المندوب') : (chat.merchantShop || 'التاجر')) : 'الطرف';
+  openConfirmModal('إنهاء الجلسة', `راح تنحذف كل رسائل هذه المحادثة مع ${partyLabel} نهائياً. متأكد؟`, async () => {
+    data.supportChats = data.supportChats.filter(c => c.authUid !== authUid);
+    closeSupportChatModal();
+    renderAdminSupportList();
+    updateSupportNavBadge();
+    if (window.authApi) {
+      try { await window.authApi.deleteDoc('support_chats', authUid); } catch (e) { console.error('Failed to delete support chat:', e); }
+    }
+    showToast('تم إنهاء الجلسة وحذف الرسائل');
+  });
+}
+
+// Shows/hides the floating chat button + its unread dot, for a merchant OR a delivery
+// agent (whichever is logged in). An employee of either one doesn't get this (see
+// openSupportChat above) — same "account owner only" scope.
+function updateSupportFab() {
+  const fab = document.getElementById('support-fab');
+  if (!fab) return;
+  const isMerchant = currentRole === 'merchant' && !!loggedInMerchantId;
+  const emp = currentEmployee();
+  const isAgent = currentRole === 'employee' && emp && emp.ownerType === 'delivery_agent';
+  const show = isMerchant || isAgent;
+  fab.classList.toggle('show', show);
+  if (!show) return;
+  if (isMerchant) {
+    const m = data.merchants.find(x => x.id === loggedInMerchantId);
+    const chat = m && m.authUid ? data.supportChats.find(c => c.authUid === m.authUid) : null;
+    document.getElementById('support-fab-badge').style.display = (chat && chat.unreadForMerchant) ? 'flex' : 'none';
+  } else {
+    const chat = emp.authUid ? data.supportChats.find(c => c.authUid === emp.authUid) : null;
+    document.getElementById('support-fab-badge').style.display = (chat && chat.unreadForAgent) ? 'flex' : 'none';
+  }
+}
+
+// Small red dot on the admin's "دعم التجار والمندوبين" nav button when at least one
+// thread (merchant or agent) has an unread message. Called after buildNav() rebuilds the
+// nav and after anything that can change unread state.
+function updateSupportNavBadge() {
+  const btn = document.querySelector('#nav button[data-view="support"]');
+  if (!btn) return;
+  const hasUnread = (data.supportChats || []).some(c => c.unreadForAdmin);
+  let dot = btn.querySelector('.nav-badge-dot');
+  if (hasUnread && !dot) { dot = document.createElement('span'); dot.className = 'nav-badge-dot'; btn.appendChild(dot); }
+  else if (!hasUnread && dot) { dot.remove(); }
+}
+
+function openLegalModal() { document.getElementById('legal-modal').classList.add('show'); }
+function closeLegalModal() { document.getElementById('legal-modal').classList.remove('show'); }
+function openAboutModal() { document.getElementById('about-modal').classList.add('show'); }
+function closeAboutModal() { document.getElementById('about-modal').classList.remove('show'); }
+// Shows a customer the store-specific terms a merchant wrote (see setMerchantCustomTerms).
+// Only ever called from a link that's itself only rendered when the merchant turned it on
+// and actually wrote something — but we guard here too in case it's called some other way.
+function openMerchantTermsModal(merchantId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (!m || !m.theme || !m.theme.customTerms || !m.theme.customTerms.text) return;
+  document.getElementById('merchant-terms-title').textContent = `شروط وأحكام متجر ${m.shop}`;
+  document.getElementById('merchant-terms-body').textContent = m.theme.customTerms.text;
+  document.getElementById('merchant-terms-modal').classList.add('show');
+}
+function closeMerchantTermsModal() { document.getElementById('merchant-terms-modal').classList.remove('show'); }
+
+function showToast(msg, duration) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration || 1800);
+}
+

@@ -1,0 +1,845 @@
+rules_version = '2';
+
+// =====================================================================================
+// قواعد أمان Firestore لمنصة "تاجرلي" — متوافقة مع بنية البيانات الموجودة في index.html
+//
+// ⚠️ اقرأ ملاحظتين مهمتين قبل النشر (موجودتين بالتفصيل بالرسالة المرافقة):
+// 1) الأدمن حالياً يسجّل دخوله بفحص محلي (كلمة سر مقارنة بالجافاسكربت) وليس عبر
+//    Firebase Authentication. عشان isAdmin() تشتغل، لازم تسوي حساب Firebase Auth حقيقي
+//    لليوزر نيم/الباسورد نفسه تبع الأدمن (نفس البريد المولّد بدالة emailFor في الكود:
+//    username.toLowerCase() + "@billionaire.local")، وبعدها تضيف وثيقة يدوياً بمجموعة
+//    admins بمعرّف = الـ UID الناتج (عبر Firebase Console أو Admin SDK — ليس من الكود).
+// 2) بيانات دخول الأدمن (يوزر نيم + هاش الباسورد) بوثيقة منفصلة storage/admin-credentials
+//    عن باقي الإعدادات (storage/platform-settings) — الكتابة عليها محصورة بالأدمن الحقيقي
+//    فقط (isAdmin())، حتى لا يقدر موظف عنده صلاحية settings أو shipping يغيّرها، لا من
+//    الواجهة ولا حتى عبر استدعاء مباشر لـ SDK.
+// 3) الكود يقرأ 5 مجموعات دفعة وحدة (merchants, orders, join_requests, employees,
+//    employee_requests). بعد تحديث الكود ليستخدم Promise.allSettled بدل Promise.all، صار
+//    فشل قراءة مجموعة وحدة ما يوقف تحميل باقي البيانات — فصار ممكن نقيّد كل شي إلا
+//    merchants (يبقى عام لأن المتجر العام لازم يعرض بيانات كل التجار لزوار غير مسجلين،
+//    والزبون بالتشيك أوت يحتاج يتحقق من وجود التاجر). orders و employees صارت مقيّدة
+//    بالكامل (أدمن/تاجر لبياناته هو بس) — بدون أي حاجة لـ Cloud Functions، لأنه ولا مكان
+//    بالتطبيق يحتاج زائر غير مسجل يقرا هاتين المجموعتين. المهم: هذا التقييد يعتمد بشكل
+//    كامل على أن platformLogin() يعيد تحميل البيانات (fetchRemoteData) فور نجاح تسجيل
+//    الدخول عبر Firebase Auth — وإلا أول محاولة دخول موظف تفشل بالخطأ (شفها بالكود).
+// 4) [تحديث] أُضيفت قاعدة storage/audit-log لدعم ميزة سجل التدقيق الجديدة بالكود —
+//    شوف تفاصيلها بالتعليق فوق القاعدة نفسها بالأسفل.
+// 5) [تحديث] أُضيف فرع جديد بقاعدة update تبع orders يسمح لزائر غير مسجل دخول (زبون
+//    بصفحة "تتبع طلبي") يعدّل بس 3 حقول طلب الإلغاء (cancelStage/cancelRequestReason/
+//    cancelRequestedAt) على مستند طلب حقيقي يعرف رقمه — نفس مستوى الثقة الممنوح أصلاً
+//    لإنشاء orders من متصفح غير موثوق. شوف تفاصيلها بالتعليق فوق الفرع نفسه بالأسفل.
+// 6) [تحديث] خصم المخزون وزيادة عداد الكوبون صارا فعليين الآن، بدون أي Cloud Function —
+//    الخصم انتقل زمنياً من لحظة تشيك أوت الزبون (غير مسجل دخول، ما يقدر يكتب على وثيقة
+//    التاجر أصلاً حسب هذي القواعد) لحظة قبول التاجر نفسه للفاتورة (acceptInvoice بـ
+//    index.html)، وهذا يصير بجلسة التاجر المسجّل دخوله، فله صلاحية الكتابة الطبيعية على
+//    وثيقته هو أصلاً (نفس قاعدة merchants/{merchantUid} أدناه، بدون أي تعديل إضافي عليها).
+//    الأثر الوحيد: رقم المخزون ما ينزل لحظة الطلب نفسه، ينزل لحظة ما التاجر يوافق عليه —
+//    نفس مبدأ أي متجر تقليدي (الطلب "معلّق" لغاية التأكيد).
+// 7) [تحديث أمني] الرصيد يُحتسب سيرفرياً عند التسليم فقط (syncMerchantBalance)، وكل طلب جديد يُعاد
+//    تسعيره سيرفرياً (validateNewOrder). شوف SECURITY-DEPLOY.md لترتيب النشر.
+// 8) [تحديث أمني] إعفاء العمولة: الموافقات انتقلت لمجموعة commission_exemptions (الأدمن وحده يكتب approved)،
+//    وحقل commissionRequests القديم بوثيقة التاجر مقفول. شغّل migrate-commission-exemptions.js قبل النشر.
+// 9) [تحديث أمني] حقول المندوب/الشحن بالطلب مقفولة على التاجر؛ تُختم سيرفرياً عند التسليم للشحن (stampAgentOnHandover).
+// =====================================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------------------
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // الأدمن الحقيقي = عندهم وثيقة بمجموعة admins بنفس الـ UID. هذي المجموعة ما ينكتب
+    // فيها من الكود إطلاقاً (allow write: if false تحت) — تنضاف يدوياً فقط.
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function employeeDoc() {
+      return get(/databases/$(database)/documents/employees/$(request.auth.uid)).data;
+    }
+
+    // موظف تابع للإدارة (ownerType: 'admin') وعنده صلاحية معيّنة ونشط.
+    function isAdminEmployee(perm) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && employeeDoc().ownerType == 'admin'
+        && employeeDoc().status == 'active'
+        && perm in employeeDoc().permissions;
+    }
+
+    function isAnyAdminEmployee() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && employeeDoc().ownerType == 'admin'
+        && employeeDoc().status == 'active';
+    }
+
+    // مندوب توصيل — نفس مجموعة employees، ownerType مختلف. عنده حساب دخول (يعينه الأدمن
+    // مباشرة، نفس آلية موظف الإدارة) لكن ما يشوف/يعدّل إلا الطلبات المخصصة له تحديداً
+    // (orders.deliveryAgentId == معرّفه المحلي، شوف isAssignedAgentForOrder تحت).
+    function isDeliveryAgent() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && employeeDoc().ownerType == 'delivery_agent'
+        && employeeDoc().status == 'active';
+    }
+
+    // هل نفس المندوب المسجل دخوله هو المكلّف بهذا الطلب تحديداً (orderDoc.deliveryAgentId
+    // = رقم موظف/مندوب محلي، مو uid). لا تستخدم إلا مع isDeliveryAgent() أولاً.
+    function isAssignedAgentForOrder(orderDoc) {
+      return isDeliveryAgent() && orderDoc.deliveryAgentId == employeeDoc().id;
+    }
+
+    // موظف تابع لمندوب توصيل معيّن (ownerType: 'agent_employee') — نفس مجموعة employees،
+    // عنده صلاحية معيّنة من صلاحيات AGENT_EMPLOYEE_PERMS ونشط. لا حاجة هنا لأي get() إضافي
+    // (خلاف isMerchantEmployee تحت): agentId المخزّن بوثيقة الموظف هو نفسه الحقل المحلي "id"
+    // تاع وثيقة المندوب الحقيقي، فتتم كل المطابقة مباشرة من وثيقة الموظف نفسه.
+    function isAgentEmployeeWithAny(perms) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && employeeDoc().ownerType == 'agent_employee'
+        && employeeDoc().status == 'active'
+        && employeeDoc().permissions.hasAny(perms);
+    }
+
+    // هل نفس موظف المندوب المسجل دخوله (بأي صلاحية من اللي مررناها) تابع لنفس المندوب
+    // المكلّف بهذا الطلب تحديداً.
+    function isAssignedAgentEmployeeForOrder(orderDoc, perms) {
+      return isAgentEmployeeWithAny(perms) && orderDoc.deliveryAgentId == employeeDoc().agentId;
+    }
+
+    // هل نفس التاجر مسجّل دخوله (uid المسجل = uid وثيقة التاجر نفسها).
+    function isMerchantSelf(merchantUid) {
+      return signedIn() && request.auth.uid == merchantUid;
+    }
+
+    // موظف تابع لتاجر معيّن (ownerType: 'merchant') وعنده صلاحية معيّنة ونشط —
+    // نتحقق أنه فعلاً موظف *نفس* التاجر عن طريق مطابقة merchantId (رقم محلي)
+    // بوثيقة الموظف مع الحقل id بوثيقة التاجر.
+    function isMerchantEmployee(merchantUid, perm) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/merchants/$(merchantUid))
+        && employeeDoc().ownerType == 'merchant'
+        && employeeDoc().status == 'active'
+        && perm in employeeDoc().permissions
+        && employeeDoc().merchantId ==
+             get(/databases/$(database)/documents/merchants/$(merchantUid)).data.id;
+    }
+
+    function isMerchantOrItsEmployee(merchantUid, perm) {
+      return isMerchantSelf(merchantUid) || isMerchantEmployee(merchantUid, perm);
+    }
+
+    // حقل مقفول على التاجر (ما يقدر يغيّره): القيمة الجديدة لازم تساوي القديمة. لو الحقل
+    // غير موجود بالوثيقة (تاجر قديم) نعامله بقيمته الافتراضية نفسها اللي يحطها الكود
+    // (ensureMerchantTheme) — هيچ أول حفظ يضيف الحقل بقيمته الافتراضية يعدّي، وأي تغيير
+    // فعلي يترفض. بدون .get() الحقل الناقص يسبب خطأ بالقاعدة = رفض كل الحفظ (منتجات تختفي).
+    function merchantFieldUnchanged(field, def) {
+      return request.resource.data.get(field, def) == resource.data.get(field, def);
+    }
+
+    // نسخة تقبل أكثر من صلاحية ممكنة (مثلاً موظف عنده "الرسوم البيانية" بس، بدون
+    // "الطلبات" نفسها، لازم يقدر يقرا الطلبات لأن الرسوم البيانية محسوبة منها).
+    function isMerchantEmployeeWithAny(merchantUid, perms) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/merchants/$(merchantUid))
+        && employeeDoc().ownerType == 'merchant'
+        && employeeDoc().status == 'active'
+        && employeeDoc().permissions.hasAny(perms)
+        && employeeDoc().merchantId ==
+             get(/databases/$(database)/documents/merchants/$(merchantUid)).data.id;
+    }
+
+    // التاجر صاحب موظف معيّن (تُستخدم بس بقواعد /employees، تعتمد على resource
+    // الوثيقة الحالية بالسياق اللي تنستدعى فيه).
+    function isOwningMerchantOfEmployee() {
+      return signedIn() &&
+        resource.data.ownerType == 'merchant' &&
+        exists(/databases/$(database)/documents/merchants/$(request.auth.uid)) &&
+        resource.data.merchantId ==
+          get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id;
+    }
+
+    // نفس فكرة isOwningMerchantOfEmployee فوق بس لمندوب توصيل صاحب موظف تابع له
+    // (resource.data.ownerType == 'agent_employee'). ما تحتاج get() إضافي — agentId
+    // بوثيقة الموظف يطابق مباشرة الحقل المحلي "id" تاع وثيقة المندوب نفسه (employeeDoc()).
+    function isOwningAgentOfEmployee() {
+      return signedIn() &&
+        resource.data.ownerType == 'agent_employee' &&
+        isDeliveryAgent() &&
+        resource.data.agentId == employeeDoc().id;
+    }
+
+    // ---------------------------------------------------------------------------------
+    // admins — لا يُكتب فيها إطلاقاً من التطبيق، فقط تُضاف يدوياً (Console / Admin SDK)
+    // ---------------------------------------------------------------------------------
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------------------
+    // storage/platform-settings — إعدادات الأسعار/الشحن + عداد nextId فقط (بدون بيانات
+    // دخول الأدمن — تلك انتقلت لوثيقة منفصلة تحتها، شوف admin-credentials). قابلة للتفويض
+    // لموظف عنده صلاحية "settings" — لكن ليس "shipping"، عشان موظف التوصيل ما يقدر يلمس
+    // حتى إعدادات التسعير.
+    // ---------------------------------------------------------------------------------
+    match /storage/platform-settings {
+      allow read: if true;
+      allow write: if isAdmin() || isAdminEmployee('settings');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // storage/admin-credentials — يوزر نيم + هاش باسورد الأدمن فقط. مقروءة من الجميع
+    // (شاشة تسجيل الدخول تتحقق منها محلياً قبل أي مصادقة Firebase)، لكن الكتابة محصورة
+    // بالأدمن الحقيقي فقط (isAdmin()) — ولا حتى موظف عنده صلاحية "settings" أو "shipping"
+    // يقدر يغيّرها، مهما كانت صلاحياته. هذا يمنع أي موظف من تغيير بيانات دخول الأدمن
+    // حتى عبر استدعاء مباشر لـ Firestore SDK يتجاوز واجهة التطبيق.
+    // ---------------------------------------------------------------------------------
+    match /storage/admin-credentials {
+      // بعد أول دخول للأدمن عبر Firebase Auth يُحذف الهاش من هذي الوثيقة ويبقى فيها اسم المستخدم
+      // فقط (غير سري) — فالقراءة العامة لم تعد تكشف شيئاً يمكن كسره.
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------------------
+    // storage/audit-log — سجل تدقيق الإجراءات الحساسة (قبول/رفض/حذف تاجر، تصفير كلمة
+    // مرور، تغيير بيانات دخول الأدمن، قبول/رفض موظف، الرد على طلبات إعفاء العمولة،
+    // تسليم/إرجاع فاتورة من مندوب توصيل...). مقروءة من الجميع (نفس نمط admin-credentials
+    // أعلاه — تسهيلاً لعرضها بأي شاشة إدارية بدون تعقيد إضافي)، لكن الكتابة محصورة بـ:
+    //   • الأدمن الحقيقي (isAdmin()) — يقدر يسجل أي إجراء.
+    //   • موظف إدارة عنده صلاحية "requests" (isAdminEmployee('requests')) فقط — لأنه
+    //     الوحيد المفوَّض أصلاً بقبول/رفض تجار والرد على طلبات إعفاء العمولة (شوف
+    //     ADMIN_EMPLOYEE_PERMS بالكود)؛ باقي الإجراءات الحساسة (حذف تاجر، تصفير كلمة
+    //     مرور، تغيير بيانات الأدمن...) أصلاً غير قابلة للتفويض ولا تصل أي شاشة موظف
+    //     لها إطلاقاً، فمحاولة أي حساب غير هذين تُرفض بصمت (best-effort بالكود، لا
+    //     توقف الإجراء الأساسي نفسه لو فشل تسجيله بالسجل).
+    //   • مندوب توصيل نشط (isDeliveryAgent()) — يقدر يسجل بس إجراءات تسليمه هو (مستلم
+    //     من شركة الشحن/واصل/غير واصل) عن نفس الفاتورة اللي شغّالة بلوحته — logAudit()
+    //     بالكود يستدعى من نفس الدوال اللي يشغّلها زر المندوب بلوحته (markInvoiceDelivered/
+    //     markInvoiceReceivedByShipping/confirmReturnOrderGroup)، ما فيه أي إجراء حساس
+    //     ثاني يوصله المندوب أصلاً حتى يستغل هذي الصلاحية.
+    //   • موظف تابع لمندوب (isAgentEmployeeWithAny(['orders'])) — نفس الشي بالضبط، لأنه
+    //     يقدر يضغط نفس الأزرار (واصل/استلمتها/غير واصل) إذا عنده صلاحية "orders".
+    // ---------------------------------------------------------------------------------
+    match /storage/audit-log {
+      // [أمان] كانت مقروءة للجميع — وهي تكشف أسماء التجار والمندوبين وإجراءات الإدارة الحساسة
+      // لأي زائر. صارت مقروءة فقط للأدمن وموظفي الإدارة (شاشة السجل داخل لوحة الإدارة أصلاً).
+      allow read: if isAdmin() || isAnyAdminEmployee();
+      allow write: if isAdmin() || isAdminEmployee('requests') || isDeliveryAgent() || isAgentEmployeeWithAny(['orders']);
+    }
+
+    // ---------------------------------------------------------------------------------
+    // merchants/{uid} — الملف العام للتاجر (منتجات، تصنيفات، مظهر المتجر...)
+    // ---------------------------------------------------------------------------------
+    match /merchants/{merchantUid} {
+      allow read: if true;
+
+      // الموافقة على تاجر جديد = الأدمن فقط ينشئ الوثيقة (بعد إنشاء حساب Firebase Auth).
+      allow create: if isAdmin() || isAdminEmployee('requests');
+
+      allow update: if isAdmin() || isAdminEmployee('requests') ||
+        (
+          isMerchantOrItsEmployee(merchantUid, 'store') ||
+          isMerchantOrItsEmployee(merchantUid, 'products') ||
+          isMerchantOrItsEmployee(merchantUid, 'appearance')
+        ) &&
+        // التاجر/موظفه ما يقدر يغيّر حالته، هويته، ولا نسب العمولة المفروضة عليه من الإدارة
+        merchantFieldUnchanged('status', null) &&
+        merchantFieldUnchanged('id', null) &&
+        merchantFieldUnchanged('feeSource', null) &&
+        merchantFieldUnchanged('feeType', 'fixed') &&
+        merchantFieldUnchanged('feeAmount', null) &&
+        merchantFieldUnchanged('feeCustomer', null) &&
+        merchantFieldUnchanged('feeMerchant', null) &&
+        merchantFieldUnchanged('itemDeduction', 0) &&
+        // [أمان] نسبة استقطاع القطعة وحد الإعفاء من الرسوم تؤثر مباشرة على عمولة المنصة — قرار أدمن فقط.
+        merchantFieldUnchanged('itemDeductionPercent', 0) &&
+        merchantFieldUnchanged('feeExemptMaxPrice', 0) &&
+        // مصدر سعر التوصيل اللي يشوفه الزبون (سعر التاجر / سعر المنصة / سعر المندوب) وكل
+        // حقول "التوصيل الخاص" المرتبطة فيه — قرار أدمن حصراً (شوف openOwnDeliveryModal بـ
+        // js/15-admin-tools.js). بدون هذا القفل، تاجر أو موظفه بصلاحية store/products/
+        // appearance يقدر يغيّر مصدر السعر أو يرفع سعر توصيله الخاص بنفسه ويحمّل الزبون
+        // فرق ما هو مصرّح فيه من الإدارة.
+        (resource.data.get('deliveryPriceSource', null) == null
+          ? request.resource.data.get('deliveryPriceSource', null) == (resource.data.get('ownDelivery', false) ? 'merchant' : 'platform')
+          : request.resource.data.get('deliveryPriceSource', null) == resource.data.get('deliveryPriceSource', null)) &&
+        merchantFieldUnchanged('ownDelivery', false) &&
+        merchantFieldUnchanged('ownDeliveryPrice', 0) &&
+        merchantFieldUnchanged('ownDeliveryDays', '') &&
+        merchantFieldUnchanged('ownDeliveryGovernorates', []) &&
+        merchantFieldUnchanged('ownDeliveryAreaPrices', {}) &&
+        // [أمان] سعر التوصيل الافتراضي للتاجر (shippingAmount) والسرعات المتاحة (deliverySpeeds) تدخل بإعادة حساب
+        // shippingFee سيرفرياً (enforceShippingFee) — فتُقفل على التاجر. shippingAmount يُسمح بكتابته فقط لو الوثيقة
+        // ما فيها قيمة أصلاً (تاجر قديم تُملأ له القيمة الافتراضية مرة وحدة بالواجهة، شوف 04-session-routing.js).
+        (resource.data.get('shippingAmount', null) == null || merchantFieldUnchanged('shippingAmount', null)) &&
+        merchantFieldUnchanged('deliverySpeeds', []) &&
+        // ظهور/إخفاء منتجات التاجر بصفحة السوق العام قرار أدمن بس — التاجر أو موظفه ما
+        // يقدر يفعّله لنفسه حتى لو كان معه صلاحية تعديل المتجر/المنتجات.
+        // الاشتراك الشهري (مبلغ/مدة/تاريخ الانتهاء/التفعيل) قرار أدمن حصراً — بدون هذا القفل تاجر
+        // يقدر يمدّد اشتراكه أو يصفّر مبلغه بنفسه عبر الـ SDK. شوف js/22-subscriptions.js.
+        merchantFieldUnchanged('subscriptionEnabled', false) &&
+        merchantFieldUnchanged('subscriptionPrice', 0) &&
+        merchantFieldUnchanged('subscriptionDays', 30) &&
+        merchantFieldUnchanged('subscriptionEndsAt', 0) &&
+        merchantFieldUnchanged('hiddenFromMarket', false) &&
+        // تصنيف "ماركت / مطعم" (type) يقرر أي صفحة سوق عام يظهر بها التاجر — نفس مستوى
+        // حساسية hiddenFromMarket فوق، فقفلها أدمن بس بنفس المنطق (تاجر ما يقدر يحوّل
+        // نفسه من ماركت لمطعم أو العكس بنفسه).
+        merchantFieldUnchanged('type', 'market') &&
+        // [أمان] موافقات إعفاء العمولة صارت بمجموعة commission_exemptions (يكتب 'approved' فيها الأدمن فقط).
+        // الحقل القديم commissionRequests داخل وثيقة التاجر مقفول: لا يُقرأ سيرفرياً ولا يقدر التاجر يغيّره.
+        merchantFieldUnchanged('commissionRequests', []);
+
+      allow delete: if isAdmin() || isAdminEmployee('requests');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // merchant_private/{uid} — الرصيد وعدد المبيعات (حساسة، خاصة بكل تاجر)
+    // ---------------------------------------------------------------------------------
+    match /merchant_private/{merchantUid} {
+      allow read: if isAdmin() || isAnyAdminEmployee() ||
+        isMerchantOrItsEmployee(merchantUid, 'earnings') ||
+        isMerchantOrItsEmployee(merchantUid, 'orders');
+
+      // ⚠️ التاجر/موظفه يكتب رصيده بنفسه لحظة قبول/رفض الفاتورة (متل الكود الحالي
+      // بالضبط) — هذا يعني تاجر خبيث نظرياً يقدر يعدّل رصيده مباشرة عبر الـ SDK.
+      // الحل الحقيقي لهذي الثغرة هو نقل حساب الرصيد لسحابة Cloud Function موثوقة
+      // بدل ما يصير من متصفح التاجر. تركتها متوافقة مع الكود الحالي بدون تعديل.
+      // [أمان] التاجر/موظفه لم يعودوا قادرين على الكتابة هنا: الرصيد وعدد المبيعات تُحسب
+      // سيرفرياً بدالة syncMerchantBalance (functions/index.js) من تغيّر حالة الطلبات. الأدمن
+      // وموظف المحاسبة فقط (تصفير الرصيد عند التسوية). ⚠️ انشر الدالة قبل نشر هذه القاعدة.
+      allow write: if isAdmin() || isAdminEmployee('accounting');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // support_chats/{uid} — محادثة دعم بين طرف واحد (تاجر أو مندوب توصيل) والإدارة
+    // ("دعم التاجر" / "دعم المندوب" بالكود). مفتاح الوثيقة = نفس authUid تبع الطرف
+    // (متل merchants/merchant_private، أو employees بالنسبة لمندوب توصيل). موظفي
+    // التاجر وموظفي المندوب غير مشمولين عمداً — هذا خط تواصل صاحب الحساب نفسه (تاجر
+    // أو مندوب) مع الإدارة بس، غير قابل للتفويض حالياً (isMerchantSelf/isDeliveryAgent
+    // بس، مو isMerchantOrItsEmployee/isAgentEmployeeWithAny).
+    // صلاحية 'support' الإدارية مضافة تلقائياً لأي موظف إدارة (ADMIN_EMPLOYEE_PERMS
+    // بالكود يشتق من ADMIN_VIEWS)، فموظف إدارة عنده هذي الصلاحية يقدر يرد بدل الأدمن.
+    // إنهاء الجلسة بالكود = حذف الوثيقة كاملة (يمسح الرسائل من الطرفين) — نفس صلاحية
+    // القراءة/الكتابة تكفي، ما نحتاج قاعدة delete منفصلة أشد.
+    // ---------------------------------------------------------------------------------
+    match /support_chats/{ownerUid} {
+      // مندوب التوصيل صاحب هذي الوثيقة بالذات (نفس فكرة isMerchantSelf، بس عن طريق
+      // isDeliveryAgent() اللي أصلاً تتحقق إن employees/{request.auth.uid} = مندوب فعّال،
+      // فتأكيد request.auth.uid == ownerUid يثبّت إنها وثيقته هو تحديداً).
+      function isAgentSelf() { return isDeliveryAgent() && request.auth.uid == ownerUid; }
+
+      // get على وثيقة محددة (يفتحها التاجر/المندوب أو الأدمن بمعرّف واحد) مسموح بنفس شرط الكتابة.
+      allow get: if isAdmin() || isAdminEmployee('support') || isMerchantSelf(ownerUid) || isAgentSelf();
+
+      // list (شاشة "دعم التجار والمندوبين" بلوحة الأدمن تسرد كل المحادثات دفعة وحدة) —
+      // للأدمن/موظف الدعم بس. لو احتجنا مستقبلاً تاجر/مندوب يسرد نفسه (list بدل get)،
+      // نضيف شرط يطابق resource.data.authUid == request.auth.uid متل تعليق الكود بالضبط.
+      allow list: if isAdmin() || isAdminEmployee('support');
+
+      // نفس شرط الهوية فوق، بلوس تحقق تكامل البيانات حسب نوع الطرف (ownerType): تاجر
+      // (الافتراضي، ولحد الوثائق القديمة قبل إضافة الحقل) لازم merchantId يطابق وثيقة
+      // التاجر الحقيقية، ومندوب لازم agentId يطابق وثيقة الموظف/المندوب الحقيقية.
+      allow create, update: if (isAdmin() || isAdminEmployee('support') || isMerchantSelf(ownerUid) || isAgentSelf()) &&
+        request.resource.data.authUid == ownerUid &&
+        (
+          (request.resource.data.get('ownerType', 'merchant') == 'agent' &&
+            exists(/databases/$(database)/documents/employees/$(ownerUid)) &&
+            get(/databases/$(database)/documents/employees/$(ownerUid)).data.ownerType == 'delivery_agent' &&
+            request.resource.data.agentId ==
+              get(/databases/$(database)/documents/employees/$(ownerUid)).data.id) ||
+          (request.resource.data.get('ownerType', 'merchant') != 'agent' &&
+            exists(/databases/$(database)/documents/merchants/$(ownerUid)) &&
+            request.resource.data.merchantId ==
+              get(/databases/$(database)/documents/merchants/$(ownerUid)).data.id)
+        );
+
+      allow delete: if isAdmin() || isAdminEmployee('support');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // join_requests/{id} — طلبات انضمام تجار جدد (من زوار غير مسجلين)
+    // ---------------------------------------------------------------------------------
+    match /join_requests/{id} {
+      // مقيّدة للأدمن بس — ولا حتى التاجر نفسه يقدر يتحقق من حالة طلبه هنا (ما عنده
+      // حساب دخول أصلاً بهذي المرحلة)، فما فيه أي وظيفة بالتطبيق تنكسر بهذا التقييد.
+      allow read: if isAdmin() || isAdminEmployee('requests');
+      // [أمان] مفتوح للزوار لكن بحدود: أطوال نصوص معقولة وبلا بيانات ثقيلة (يمنع حشو القاعدة بوثائق ضخمة).
+      allow create: if request.resource.data.status == 'pending' &&
+        request.resource.data.username == '' &&
+        request.resource.data.password == '' &&
+        request.resource.data.balance == 0 &&
+        request.resource.data.salesCount == 0 &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 120 &&
+        request.resource.data.shop is string && request.resource.data.shop.size() > 0 && request.resource.data.shop.size() <= 120 &&
+        request.resource.data.phone is string && request.resource.data.phone.size() > 0 && request.resource.data.phone.size() <= 30 &&
+        request.resource.data.get('description', '') is string && request.resource.data.get('description', '').size() <= 1500 &&
+        request.resource.data.get('area', '') is string && request.resource.data.get('area', '').size() <= 120 &&
+        // [أمان] id يدخل بـ onclick بلوحة الأدمن وexpectedDailyOrders يُعرض كما هو — لازم أرقاماً.
+        request.resource.data.id is number &&
+        (request.resource.data.get('expectedDailyOrders', null) == null || request.resource.data.get('expectedDailyOrders', null) is number) &&
+        request.resource.data.get('products', []).size() == 0;
+      allow update: if false; // غير مستخدم بالكود — يُحذف عند القبول/الرفض فقط
+      allow delete: if isAdmin() || isAdminEmployee('requests');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // employees/{uid} — نشيطين (لهم حساب دخول). إدارة الموظفين نفسها غير قابلة للتفويض
+    // (لا حتى لموظف إدارة) — لهذا الإنشاء/الحذف للأدمن الحقيقي فقط.
+    // ---------------------------------------------------------------------------------
+    match /employees/{empUid} {
+      // مقيّدة الآن: الأدمن يشوف الكل، الموظف يشوف وثيقته هو بس (لازم هذا يشتغل فور
+      // تسجيل الدخول — راجع تعديل platformLogin بالكود)، والتاجر أو المندوب يشوف موظفينه هو بس.
+      allow read: if isAdmin() ||
+        (signedIn() && request.auth.uid == empUid) ||
+        isOwningMerchantOfEmployee() ||
+        isOwningAgentOfEmployee();
+      allow create: if isAdmin();
+      allow delete: if isAdmin() || isOwningMerchantOfEmployee() || isOwningAgentOfEmployee();
+
+      // التاجر/المندوب يعدّل صلاحيات (permissions فقط) موظفه هو، الأدمن يعدّل أي شي
+      allow update: if isAdmin() ||
+        (
+          (isOwningMerchantOfEmployee() || isOwningAgentOfEmployee()) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['permissions']) &&
+          request.resource.data.authUid == resource.data.authUid &&
+          request.resource.data.status == resource.data.status
+        );
+    }
+
+    // ---------------------------------------------------------------------------------
+    // employee_requests/{id} — طلبات موظفين لتجار (بانتظار موافقة الأدمن)
+    // ---------------------------------------------------------------------------------
+    match /employee_requests/{id} {
+      // مقيّدة: الأدمن يشوف كل الطلبات، التاجر يشوف بس الطلبات اللي تخص موظفينه هو، والمندوب
+      // يشوف بس الطلبات اللي تخص موظفيه هو (Firestore يفلتر نتائج listCollection وثيقة
+      // وثيقة — ولا واحد يشوف طلبات تاجر/مندوب ثاني).
+      allow read: if isAdmin() ||
+        (signedIn() &&
+         exists(/databases/$(database)/documents/merchants/$(request.auth.uid)) &&
+         resource.data.merchantId ==
+           get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id) ||
+        (isDeliveryAgent() && resource.data.ownerType == 'agent_employee' && resource.data.agentId == employeeDoc().id);
+      allow create: if signedIn() &&
+        (
+          (
+            request.resource.data.ownerType == 'merchant' &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.authUid == null &&
+            request.resource.data.merchantId ==
+              get(/databases/$(database)/documents/merchants/$(request.auth.uid)).data.id
+          ) ||
+          (
+            request.resource.data.ownerType == 'agent_employee' &&
+            request.resource.data.status == 'pending' &&
+            request.resource.data.authUid == null &&
+            isDeliveryAgent() &&
+            request.resource.data.agentId == employeeDoc().id
+          )
+        );
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------------------
+    // orders/{id} — طلبات الزبائن. الإنشاء عام (زبون غير مسجل دخول بالتشيك أوت)، وكذلك
+    // تحديث ضيّق جداً (3 حقول إلغاء بس) لنفس الزبون غير المسجل — شوف تفاصيله بتعليق
+    // الفرع المخصص داخل allow update بالأسفل.
+    // ---------------------------------------------------------------------------------
+    match /orders/{id} {
+      // مقيّدة الآن: الأدمن/موظفي الإدارة (بأي صلاحية إدارية لها علاقة بالطلبات) يشوفون
+      // الكل؛ التاجر ونفس صلاحيات موظفيه (طلبات/رسوم بيانية/أرباح) يشوفون طلباتهم هم بس.
+      // زائر عادي غير مسجل دخول ما يحتاج يقرا هذي المجموعة أبداً بالتطبيق الحالي —
+      // فبيرجعله نتيجة فاضية بدل خطأ، وما ينكسر شي.
+      allow read: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting') ||
+        isAdminEmployee('shipping') ||
+        isMerchantSelf(resource.data.merchantAuthUid) ||
+        isMerchantEmployeeWithAny(resource.data.merchantAuthUid, ['orders', 'charts', 'earnings']) ||
+        // مندوب توصيل: يشوف بس الطلبات المخصصة له تحديداً (deliveryAgentId == معرّفه) —
+        // ما يشوف طلبات مندوبين ثانين ولا طلبات محلات ما هو مسؤول عنها.
+        isAssignedAgentForOrder(resource.data) ||
+        // موظف تابع لمندوب: نفس الشي بالضبط، بس مصرّح له فقط إذا عنده صلاحية "orders" أو
+        // "history" أو "accounts" (الثلاثة تعرض طلبات — شوف AGENT_PERM_TO_TAB بالكود).
+        isAssignedAgentEmployeeForOrder(resource.data, ['orders', 'history', 'accounts']);
+
+      // [أمان] إنشاء الطلب مفتوح للزوار، لكن بشكل ضيّق: أرقام صحيحة بحدود معقولة، نصوص بأطوال محدودة،
+      // وبدون أي حقل يخص التوصيل/النزاهة (deliveryAgentId، integrityFlags...). السعر والرسوم والكوبون
+      // يعاد حسابها سيرفرياً فور الإنشاء بدالة validateNewOrder (functions/index.js) فلا قيمة للقيم المزوّرة.
+      function orderCreateShapeOk() {
+        let d = request.resource.data;
+        return d.price is number && d.price >= 0 && d.price <= 1000000000
+          && d.feeFromCustomer is number && d.feeFromCustomer >= 0 && d.feeFromCustomer <= 1000000000
+          && d.feeFromMerchant is number && d.feeFromMerchant >= 0 && d.feeFromMerchant <= 1000000000
+          && d.itemDeduction is number && d.itemDeduction >= 0 && d.itemDeduction <= 1000000000
+          && d.get('couponDiscount', 0) is number && d.get('couponDiscount', 0) >= 0 && d.get('couponDiscount', 0) <= 1000000000
+          && d.get('shippingFee', 0) is number && d.get('shippingFee', 0) >= 0 && d.get('shippingFee', 0) <= 1000000000
+          && d.customerName is string && d.customerName.size() > 0 && d.customerName.size() <= 120
+          && d.customerPhone is string && d.customerPhone.size() > 0 && d.customerPhone.size() <= 30
+          && d.customerAddress is string && d.customerAddress.size() <= 600
+          && d.get('productName', '') is string && d.get('productName', '').size() <= 300
+          // [أمان] المعرّفات تُدمج بالواجهة داخل onclick="...(${id})" بدون تهريب، فلازم تكون أرقاماً فقط
+          // (genId() يرجع رقماً) — وإلا زبون يزرع نصاً بـ orderGroupId يتنفّذ عند التاجر/الأدمن.
+          && d.id is number && d.merchantId is number
+          && (d.get('orderGroupId', null) == null || d.get('orderGroupId', null) is number)
+          && (d.get('productId', null) == null || d.get('productId', null) is number)
+          && d.get('cancelStage', 'none') == 'none'
+          && d.get('deliveryAgentId', null) == null
+          && !('integrityFlags' in d)
+          && !('priceCorrected' in d)
+          && !('legacyCredited' in d);
+      }
+
+      allow create: if
+        request.resource.data.status == 'pending' &&
+        request.resource.data.deliveryStatus == 'none' &&
+        request.resource.data.removalStatus == null &&
+        (!('cancelled' in request.resource.data) || request.resource.data.cancelled == false) &&
+        orderCreateShapeOk() &&
+        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid));
+
+      allow update: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting') ||
+        // موظف صلاحية "shipping" فقط: يقدر يسجل الطلب واصل/غير واصل أو يلغيه مع السبب —
+        // ما يقدر يلمس السعر ولا بيانات الزبون ولا أي حقل ثاني بالطلب.
+        (
+          isAdminEmployee('shipping') &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'cancelled', 'cancelReason', 'returnReason', 'deliveryAgentId', 'agentFeeSnapshot', 'agentCommissionTypeSnapshot', 'agentCommissionValueSnapshot'])
+        ) ||
+        (
+          // مندوب التوصيل: يقدر بس يحدّث حالة التوصيل وسبب الإرجاع لطلبه هو المخصص له —
+          // ما يقدر يلمس السعر ولا بيانات الزبون ولا يحوّل الطلب لمندوب/تاجر ثاني.
+          isAssignedAgentForOrder(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
+          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
+        ) ||
+        (
+          // موظف تابع لمندوب وعنده صلاحية "orders" بس: نفس الشي بالضبط — يقدر يضغط
+          // نفس أزرار (واصل/استلمتها/غير واصل) اللي يضغطها المندوب نفسه.
+          isAssignedAgentEmployeeForOrder(resource.data, ['orders']) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
+          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
+        ) ||
+        (
+          (isMerchantSelf(resource.data.merchantAuthUid) ||
+           isMerchantEmployee(resource.data.merchantAuthUid, 'orders')) &&
+          // التاجر/موظفه يقدر يغيّر حالة الطلب والشحن فقط — مو السعر ولا بيانات
+          // الزبون ولا صاحب الطلب (يمنع تلاعب أو "سرقة" طلب تاجر ثاني).
+          request.resource.data.merchantAuthUid == resource.data.merchantAuthUid &&
+          // [أمان] الرصيد يُحتسب عند التسليم (deliveryStatus == 'delivered') — فالتاجر لا يملك أن يضع
+          // 'delivered' أو 'returned' بنفسه: يقدر فقط يسلّم للتوصيل (none <-> with_shipping). التسليم الفعلي
+          // يسجّله الأدمن أو المندوب المخصص (الفروع الأخرى بهذه القاعدة).
+          resource.data.deliveryStatus in ['none', 'with_shipping'] &&
+          request.resource.data.deliveryStatus in ['none', 'with_shipping'] &&
+          // الحالة: يقبل أو يرفض طلباً معلّقاً فقط، ولا يغيّر غيرها.
+          (request.resource.data.status == resource.data.status ||
+            (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'rejected'])) &&
+          request.resource.data.get('integrityFlags', []) == resource.data.get('integrityFlags', []) &&
+          request.resource.data.get('legacyCredited', false) == resource.data.get('legacyCredited', false) &&
+          request.resource.data.price           == resource.data.price &&
+          request.resource.data.feeFromCustomer == resource.data.feeFromCustomer &&
+          request.resource.data.feeFromMerchant == resource.data.feeFromMerchant &&
+          request.resource.data.itemDeduction   == resource.data.itemDeduction &&
+          request.resource.data.get('couponDiscount', 0) == resource.data.get('couponDiscount', 0) &&
+          // [أمان] حقول المندوب والشحن يكتبها السيرفر فقط (stampAgentOnHandover بـ functions/index.js) أو الأدمن:
+          // التاجر ما يقدر يغيّر المندوب ولا أجرته ولا عمولة المنصة عليه ولا رسم/منطقة/سرعة التوصيل.
+          request.resource.data.get('deliveryAgentId', null) == resource.data.get('deliveryAgentId', null) &&
+          request.resource.data.get('deliveryAssignedAt', null) == resource.data.get('deliveryAssignedAt', null) &&
+          request.resource.data.get('agentFeeSnapshot', 0) == resource.data.get('agentFeeSnapshot', 0) &&
+          request.resource.data.get('agentCommissionTypeSnapshot', 'fixed') == resource.data.get('agentCommissionTypeSnapshot', 'fixed') &&
+          request.resource.data.get('agentCommissionValueSnapshot', 0) == resource.data.get('agentCommissionValueSnapshot', 0) &&
+          request.resource.data.get('shippingFee', 0) == resource.data.get('shippingFee', 0) &&
+          request.resource.data.get('governorate', '') == resource.data.get('governorate', '') &&
+          request.resource.data.get('area', '') == resource.data.get('area', '') &&
+          request.resource.data.get('shippingSpeed', '') == resource.data.get('shippingSpeed', '') &&
+          request.resource.data.customerName    == resource.data.customerName &&
+          request.resource.data.customerPhone   == resource.data.customerPhone &&
+          request.resource.data.customerAddress == resource.data.customerAddress
+        ) ||
+        (
+          // زبون غير مسجل دخول (صفحة "تتبع طلبي" العامة) يطلب إلغاء طلبه هو. نفس مبدأ
+          // الثقة الممنوح أصلاً لإنشاء orders من متصفح غير موثوق — ما فيه طريقة تحقق
+          // "ملكية" حقيقية للطلب إلا معرفة رقمه (متل رقم تتبع شحنة عادي)، فهذا الفرع
+          // يقيّد الكتابة بأضيق شكل ممكن بدل ما يمنعها كلياً:
+          //   • بس هذي الحقول الثلاثة (ما يلمس السعر ولا بيانات الزبون ولا أي شي ثاني).
+          //   • بس نقلة 'none' -> 'customer_requested' (ما يقدر يفبرك موافقة تاجر/أدمن
+          //     ولا يلغي طلب إلغاء موجود أصلاً أو يعيده لـ 'none').
+          //   • الطلب نفسه لازم يكون قابل للإلغاء فعلاً وقت الكتابة (نفس شروط
+          //     customerCancelEligibility بالكود — تكرار هنا لأن الواجهة قابلة للتجاوز).
+          // ⚠️ هذا يطابق فقط أول حلقة بمنطق customerCancelEligibility؛ لو تغيّر منطق
+          // الأهلية بالكود مستقبلاً (شروط إضافية)، لازم يتحدّث هذا الفرع بنفس الوقت.
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelStage', 'cancelRequestReason', 'cancelRequestedAt']) &&
+          (!('cancelStage' in resource.data) || resource.data.cancelStage == 'none') &&
+          request.resource.data.cancelStage == 'customer_requested' &&
+          request.resource.data.cancelRequestReason is string &&
+          request.resource.data.cancelRequestReason.size() > 0 &&
+          request.resource.data.cancelRequestedAt is string &&
+          resource.data.cancelled != true &&
+          resource.data.status != 'rejected' &&
+          resource.data.status != 'removed' &&
+          resource.data.deliveryStatus != 'with_shipping' &&
+          resource.data.deliveryStatus != 'received_by_shipping' &&
+          resource.data.deliveryStatus != 'delivered'
+        );
+
+      allow delete: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // order_tracking/{trackingKey} — "نسخة عرض" مختصرة عن طلبات زبون واحد بمتجر واحد،
+    // تخدم صفحة "تتبع طلبي" العامة (بدون تسجيل دخول) بالمتجر. trackingKey ثابت ومحسوب =
+    // "{merchantAuthUid}_{رقم هاتف الزبون بعد إزالة أي رمز غير رقمي}".
+    //
+    // ⚠️ ليش هذي مجموعة منفصلة عن orders، وليش القراءة get بس (مو list):
+    // Firestore ما يقدر يقيّد نتائج استعلام list حسب رقم هاتف تعسفي داخل الـ rules —
+    // القاعدة تنطبق على *كل* الوثائق المحتملة بالاستعلام دفعة وحدة ("queries are
+    // all-or-nothing"). فلو خلّينا orders نفسها قابلة لقراءة عامة (ولو مقيّدة بشرط
+    // customerPhone==X)، أي حد يقدر يستخدم الـ SDK مباشرة (بمعزل عن واجهة الموقع)
+    // ويسحب طلبات كل الزبائن بكل المتاجر — مو بس اللي يعرف رقم هاتفه.
+    // الحل: مفتاح الوثيقة نفسه هو "الفلتر". get() على وثيقة محددة بمعرّفها مسموح
+    // للجميع، لكن list (سرد كل المفاتيح) ممنوع تماماً — فالزبون لازم "يعرف" رقم هاتفه
+    // ورابط المتجر عشان يبني نفس المفتاح ويوصل لطلباته هو بس، وما فيه طريقة يتصفح
+    // زبائن غيره. (نفس مبدأ "رقم تتبع الشحنة" بأي منصة توصيل عادية.)
+    //
+    // ⚠️ هذي وثيقة "نسخة متزامنة" من orders الحقيقية، مو مصدر بيانات جديد — لازم كود
+    // الواجهة يكتب/يحدّث هذي الوثيقة بكل مكان يلمس فيه حالة الطلب (إنشاء بالتشيك أوت،
+    // قبول/رفض التاجر، تسجيل واصل/مرجّع من الشحن، إلغاء الأدمن...) وإلا تصير غير
+    // متزامنة مع الحقيقة وتعرض حالة قديمة للزبون.
+    // ---------------------------------------------------------------------------------
+    // fn_events/{id} — سجل معالجة أحداث دالة syncMerchantBalance (منع التطبيق المزدوج). للسيرفر فقط.
+    match /fn_events/{id} {
+      allow read, write: if false;
+    }
+
+    match /order_tracking/{trackingKey} {
+      allow get: if true;
+      allow list: if false;
+
+      // إنشاء أول مرة (زبون غير مسجل، لحظة التشيك أوت) — نفس مستوى الثقة المقبول
+      // أصلاً بإنشاء orders (أي زائر يقدر يرسل طلب)، مع تأكيد إن مفتاح الوثيقة يطابق
+      // فعلاً التاجر ورقم الهاتف المذكورين بداخلها (ما ينفع حد يفبرك مفتاح لصاحب رقم
+      // هاتف ثاني)، وإن الوثيقة أساساً لتاجر موجود وبأول إنشاء (مصفوفة الطلبات فيها
+      // عنصر وحد بالضبط).
+      allow create: if
+        trackingKey == (request.resource.data.merchantAuthUid + '_' + request.resource.data.phone) &&
+        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid)) &&
+        request.resource.data.orders.size() == 1;
+
+      // تحديث لاحق: إما تاجر/موظفه أو الأدمن (أو موظف الشحن) وقت تغيير حالة طلب
+      // موجود أصلاً — أو زبون غير مسجل يسوي طلب ثاني (يرجع لنفس المتجر برقم هاتفه
+      // نفسه) فتتزاد مصفوفة الطلبات بعنصر جديد. الحالة الثانية (الزبون غير المسجل)
+      // الفرع الثالث (زبون غير مسجل) صار يتحقق إن العناصر القديمة ما تغيّرت وإن المضاف فاتورة واحدة فقط.
+      allow update: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting') || isAdminEmployee('shipping') ||
+        isMerchantOrItsEmployee(resource.data.merchantAuthUid, 'orders') ||
+        (
+          trackingKey == (request.resource.data.merchantAuthUid + '_' + request.resource.data.phone) &&
+          request.resource.data.merchantAuthUid == resource.data.merchantAuthUid &&
+          request.resource.data.phone           == resource.data.phone &&
+          // [أمان] الزبون غير المسجل يضيف فاتورة واحدة بالضبط، والعناصر القديمة لازم تبقى كما هي حرفياً
+          // (مقارنة بادئة القائمة بالتقطيع list[0:n]) — فلا يقدر يعدّل أو يحذف حالة/أسعار فواتير سابقة.
+          request.resource.data.orders.size()   ==  resource.data.orders.size() + 1 &&
+          request.resource.data.orders[0:resource.data.orders.size()] == resource.data.orders
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------------------
+    // order_lookup/{groupId} — نسخة عرض إضافية عن "فاتورة" واحدة (طلب واحد بكل قطعه)،
+    // مفتاح الوثيقة = groupId نفسه (رقم الطلب اللي يشوفه الزبون). الهدف: يقدر الزبون
+    // يبحث عن طلبه برقم الطلب لحاله، بدون لا رقم هاتف ولا رابط متجر — عكس
+    // order_tracking فوق اللي مفتاحها {merchantAuthUid}_{phone}.
+    //
+    // الأمان هنا نفس منطق order_tracking بالضبط (get على معرّف محدد مسموح، list ممنوع)،
+    // وgroupId نفسه (Date.now()*1000 + رقم عشوائي 0-999، شوف genId()) عنده مساحة قيم
+    // أكبر وأصعب تخمين من رقم هاتف عراقي عادي أصلاً — فمستوى الثقة نفسه أو أعلى.
+    // اسم الزبون نفسه ما يُخزّن هنا نص صريح أبداً — فقط customerNameHash (SHA-256)، حتى لو
+    // أحد قرأ الوثيقة الخام مباشرة بتخمين groupId ما يشوف اسم الزبون الحقيقي (شوف
+    // customerNameMatchHash بـ 13-cart-checkout.js).
+    // ---------------------------------------------------------------------------------
+    match /order_lookup/{groupId} {
+      allow get: if true;
+      allow list: if false;
+
+      // إنشاء أول مرة لحظة التشيك أوت — نفس مستوى الثقة الممنوح لإنشاء orders نفسها من
+      // متصفح زبون غير مسجل، مع تأكيد إن مفتاح الوثيقة يطابق فعلاً رقم الطلب المذكور
+      // بداخلها والمتجر موجود فعلاً.
+      allow create: if
+        groupId == request.resource.data.groupId + '' &&
+        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid));
+
+      // تحديث لاحق: أدمن/موظفه، التاجر ونفس صلاحياته، أو موظف الشحن — وقت تغيير حالة
+      // أي قطعة بهذا الطلب (نفس الجهات المسموح لها تحدّث orders الحقيقية).
+      //
+      // ⚠️ متعمّد: بعكس order_tracking فوق، هنا ما فيه أي فرع "زبون غير مسجل دخول" يسمح
+      // بالتحديث. الكتابة التفاؤلية اللي كودها بـ submitCustomerCancelRequest
+      // (13-cart-checkout.js) على هذي الوثيقة محاطة بـ .catch(()=>{}) بالضبط لهذا السبب —
+      // لو فتحنا فرع "items بس" هنا بدون أي شرط توثيق حقيقي، أي شخص يعرف/يخمّن رقم الطلب
+      // (مو حتى الاسم) يقدر يزوّر حالة الطلب أو سعره داخل items مباشرة، وهذا يلغي كل فائدة
+      // تحقق الاسم بـ customerNameMatchHash (ذلك تحقق واجهة بس، مو قاعدة أمان). التحديث
+      // الحقيقي لطلب الإلغاء يصير على orders/{id} نفسها (محمية بشروط دقيقة أعلى)، وهذي
+      // النسخة تتزامن تلقائياً أول ما يلمس الطلب أدمن أو تاجر (قبول/رفض/شحن) — تأخير
+      // بسيط مقبول، أفضل من ثغرة حقيقية.
+      allow update: if isAdmin() || isAdminEmployee('orders') || isAdminEmployee('accounting') || isAdminEmployee('shipping') ||
+        isMerchantOrItsEmployee(resource.data.merchantAuthUid, 'orders');
+
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------------------
+    // offers/{offerId} — "عروض" تديرها الإدارة: قسم إعلاني بصفحة السوق العام يجمع تحته
+    // مجموعة محلات تختارها الإدارة، بعنوان وصورة وفترة زمنية اختيارية (أو دائم لو تركت
+    // بلا تاريخ). عام بالكامل بالقراءة (يظهر لأي زائر بصفحة السوق العام)، وكتابة/تعديل/
+    // حذف أدمن أو موظف عنده صلاحية settings بس — نفس صلاحية إدارة إعدادات المنصة العامة.
+    //
+    // الشكل المتوقع للوثيقة:
+    //   { name: string, image: string (base64/url), merchantIds: [عدد صحيح,...],
+    //     startDate: string ISO أو null, endDate: string ISO أو null,
+    //     active: bool, createdAt: string ISO }
+    // انتهاء/بداية العرض فعلياً حساب بواجهة العميل (تقارن التاريخ الحالي بـ start/end) —
+    // ما فيه Cloud Function تعطّل العرض تلقائياً بدقيقتها، فبعض التأخير المؤقت بعد
+    // الانتهاء مقبول بنفس فلسفة باقي المشروع (بدون خادم دائم التشغيل).
+    // ---------------------------------------------------------------------------------
+    match /offers/{offerId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() || isAdminEmployee('settings');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // agent_payments/{payId} — دفعات مندوب التوصيل، ثلاثة أنواع (الحقل type):
+    //   'platform' = استقطاع المنصة من الطلبات، 'delivery' = عمولة التوصيل  → المندوب للأدمن (سرّية: التاجر ما يقراها)
+    //   'merchant' = تسديد المندوب لتاجر معيّن (merchantAuthUid = uid وثيقة التاجر) → التاجر يأكد الاستلام
+    // الإنشاء: المندوب لنفسه وبحالة pending، أو الأدمن/موظف الحسابات كتسجيل يدوي بحالة confirmed (لأنواع
+    // platform/delivery فقط). القراءة: الأدمن/الحسابات الكل، المندوب دفعاته (استعلام بـ agentId)،
+    // والتاجر دفعات type=merchant المخصصة له فقط (استعلام بـ type + merchantAuthUid).
+    // التحديث: تغيير الحالة فقط (status/decidedAt/decidedBy/rejectReason) وهي معلّقة —
+    // الأدمن يقرر platform/delivery، والتاجر يقرر دفعات تسديده هو. الأدمن يشوف دفعات التجار بلا ما يقرر.
+    // ---------------------------------------------------------------------------------
+    match /agent_payments/{payId} {
+      function payShapeOk() {
+        let d = request.resource.data;
+        return d.amount is int && d.amount > 0 && d.amount <= 1000000000
+          && ((d.type in ['platform', 'delivery'] && (d.merchantId == null || d.merchantId is int) && d.merchantAuthUid == null)
+              || (d.type == 'merchant' && d.merchantId is int && d.merchantAuthUid is string));
+      }
+      allow read: if isAdmin() || isAdminEmployee('accounting')
+        || (isDeliveryAgent() && resource.data.agentId == employeeDoc().id)
+        || (signedIn() && resource.data.type == 'merchant' && resource.data.merchantAuthUid == request.auth.uid);
+      allow create: if request.resource.data.keys().hasOnly(['id', 'agentId', 'agentName', 'amount', 'note', 'at', 'status',
+                         'type', 'merchantId', 'merchantAuthUid', 'requestId', 'decidedAt', 'decidedBy'])
+        && payShapeOk()
+        && ((isDeliveryAgent()
+              && request.resource.data.agentId == employeeDoc().id
+              && request.resource.data.status == 'pending')
+            || ((isAdmin() || isAdminEmployee('accounting'))
+              && request.resource.data.status == 'confirmed'
+              && request.resource.data.type in ['platform', 'delivery']));
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decidedAt', 'decidedBy', 'rejectReason'])
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['confirmed', 'rejected']
+        && (((isAdmin() || isAdminEmployee('accounting')) && resource.data.type in ['platform', 'delivery'])
+            || (signedIn() && resource.data.type == 'merchant' && resource.data.merchantAuthUid == request.auth.uid));
+      allow delete: if isAdmin() || isAdminEmployee('accounting');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // agent_payment_requests/{reqId} — طلب من الأدمن للمندوب بتسديد مبلغ معيّن (يظهر للمندوب كتنبيه
+    // مع زر "دفع الآن"). الأدمن/موظف الحسابات ينشئ ويعدّل (يعلّمه done) ويحذف؛ المندوب يقرا طلباته فقط.
+    // الشكل: { id, agentId, type: 'platform'|'delivery', amount, note, at, by, status: 'open'|'done' }.
+    // ---------------------------------------------------------------------------------
+    match /agent_payment_requests/{reqId} {
+      allow read: if isAdmin() || isAdminEmployee('accounting')
+        || (isDeliveryAgent() && resource.data.agentId == employeeDoc().id);
+      allow create, update, delete: if isAdmin() || isAdminEmployee('accounting');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // commission_exemptions/{merchantUid_productId} — طلبات إعفاء منتج من عمولة المنصة وموافقاتها.
+    // [أمان] كانت داخل وثيقة التاجر (commissionRequests) فيقدر التاجر يحوّل طلبه إلى approved بنفسه.
+    // الآن: التاجر/موظفه (صلاحية products) يقدر فقط ينشئ طلباً بحالة pending، أو يعيد فتح طلب مرفوض
+    // إلى pending. الموافقة/الرفض/الحذف للأدمن أو موظف requests فقط. معرّف الوثيقة ثابت
+    // = merchantUid + '_' + productId حتى تقدر الدالة السيرفرية وواجهة الزبون تعملان get مباشر.
+    // القراءة عامة لأن حساب رسوم الزبون بالتشيك أوت يحتاجها (نفس مستوى كشف merchants).
+    // ---------------------------------------------------------------------------------
+    match /commission_exemptions/{key} {
+      function ceCanRequest(d) {
+        return d.merchantAuthUid is string
+          && key == d.merchantAuthUid + '_' + string(d.productId)
+          && isMerchantOrItsEmployee(d.merchantAuthUid, 'products');
+      }
+      allow read: if true;
+
+      allow create: if request.resource.data.keys().hasOnly(['id', 'merchantAuthUid', 'merchantId', 'productId', 'productName', 'status', 'createdAt', 'respondedAt'])
+          && request.resource.data.productId is number
+          && request.resource.data.status == 'pending'
+          && request.resource.data.respondedAt == null
+          && request.resource.data.get('productName', '') is string
+          && request.resource.data.get('productName', '').size() <= 300
+          && ceCanRequest(request.resource.data)
+          && get(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid)).data.id == request.resource.data.merchantId;
+
+      allow update: if isAdmin() || isAdminEmployee('requests') ||
+        (
+          // التاجر: فقط يعيد فتح طلب مرفوض (rejected -> pending)؛ لا يلمس approved أبداً
+          resource.data.status == 'rejected'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.respondedAt == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'createdAt', 'respondedAt'])
+          && isMerchantOrItsEmployee(resource.data.merchantAuthUid, 'products')
+        );
+
+      allow delete: if isAdmin() || isAdminEmployee('requests');
+    }
+
+    // ---------------------------------------------------------------------------------
+    // product_reviews/{reviewId} — تقييمات الزبائن على منتج معيّن (نجوم 1-5 + تعليق
+    // اختياري). في وثيقة منفصلة عمداً، مو مضمّنة داخل مصفوفة products بوثيقة التاجر:
+    // زائر غير مسجل دخول (أي زبون بصفحة المتجر) ما يملك صلاحية الكتابة على وثيقة التاجر
+    // إطلاقاً (شوف قاعدة merchants فوق) — تضمين التقييم هناك كان يبين محفوظ بمتصفح
+    // الزبون نفسه بس يفشل بصمت عالسيرفر (catch فاضي بـ saveData بالكود) ولا يوصل لأي
+    // زائر ثاني. هذا الحل مطابق لنفس مبدأ orders (إنشاء عام بلا تسجيل دخول)، بس بتحقق
+    // أدق على شكل الحقول لأنه ما فيه ربط بمستند طلب حقيقي كإثبات نية مثل orders.
+    //
+    // الشكل المتوقع للوثيقة: { id: عدد, merchantId: عدد (id المحلي تبع التاجر، مو الـ
+    // uid), productId: عدد, merchantAuthUid: string (uid وثيقة التاجر — يُستخدم هنا بس
+    // للتحقق/الحذف، مو معروض بالواجهة), name: string, stars: عدد صحيح 1-5,
+    // comment: string, date: ISO string }.
+    // عام بالقراءة (يبين بصفحة المتجر لأي زائر) وعام بالإنشاء بنفس ثقة orders، بس
+    // مقفولة التعديل كلياً (تقييم مو قابل للتلاعب بعد إرساله)، والحذف بس لصاحب المتجر/
+    // موظفه المخوّل بالمنتجات أو الأدمن (حالة إساءة/سبام).
+    // ---------------------------------------------------------------------------------
+    match /product_reviews/{reviewId} {
+      allow read: if true;
+
+      allow create: if
+        request.resource.data.keys().hasOnly(['id', 'merchantId', 'productId', 'merchantAuthUid', 'name', 'stars', 'comment', 'date']) &&
+        request.resource.data.id is number &&
+        request.resource.data.merchantId is number &&
+        request.resource.data.productId is number &&
+        request.resource.data.merchantAuthUid is string &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60 &&
+        request.resource.data.stars is number &&
+        request.resource.data.stars >= 1 && request.resource.data.stars <= 5 &&
+        request.resource.data.comment is string && request.resource.data.comment.size() <= 500 &&
+        request.resource.data.date is string &&
+        // merchantAuthUid لازم يطابق فعلاً وثيقة تاجر حقيقية، وmerchantId المحلي المرسل
+        // لازم يطابق الـ id الفعلي بوثيقة نفس التاجر — يمنع تلفيق merchantId ما يخص
+        // التاجر المقصود أصلاً (تقييم يظهر تحت متجر غلط).
+        exists(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid)) &&
+        get(/databases/$(database)/documents/merchants/$(request.resource.data.merchantAuthUid)).data.id == request.resource.data.merchantId;
+
+      allow update: if false; // التقييم غير قابل للتعديل بعد إرساله — إما يبقى أو يُحذف بالكامل
+
+      allow delete: if isAdmin() || isAdminEmployee('settings') ||
+        isMerchantOrItsEmployee(resource.data.merchantAuthUid, 'store') ||
+        isMerchantOrItsEmployee(resource.data.merchantAuthUid, 'products');
+    }
+  }
+}

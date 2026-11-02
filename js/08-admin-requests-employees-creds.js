@@ -1,0 +1,1998 @@
+// ---------- MERCHANT REQUESTS ----------
+const N8N_JOIN_WEBHOOK_URL = 'https://jrii849.app.n8n.cloud/webhook/16f42421-9ba4-4cc4-a6a7-daa5fce22a10';
+// ---------- EMPLOYEE REQUESTS ----------
+const N8N_EMPLOYEE_WEBHOOK_URL = 'https://jrii849.app.n8n.cloud/webhook/d88f3471-b4ae-474b-8bf8-de05ae85bfb3';
+
+async function submitRequest() {
+  const name = document.getElementById('req-name').value.trim();
+  const shop = document.getElementById('req-shop').value.trim();
+  const phone = document.getElementById('req-phone').value.trim();
+  const governorate = document.getElementById('req-governorate').value;
+  const area = document.getElementById('req-area').value.trim();
+  const category = document.getElementById('req-category').value;
+  const typeSelect = document.getElementById('req-type');
+  const type = (typeSelect && typeSelect.value === 'restaurant') ? 'restaurant' : 'market';
+  const description = document.getElementById('req-description').value.trim();
+  const expectedDailyOrdersRaw = document.getElementById('req-daily-orders').value.trim();
+  if (!name || !shop || !phone) { showToast('عبي كل الحقول'); return; }
+  if (!expectedDailyOrdersRaw) { showToast('لازم تكتب عدد الطلبات المتوقعة باليوم'); return; }
+
+  const submitBtn = document.querySelector('#join-screen .btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'جاري الإرسال...'; }
+
+  const s = data.settings;
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  data.merchants.push({
+    id: newId,
+    name, shop, phone, governorate, area,
+    category, // تصنيف المتجر — يُستخدم لفلترة صفحة "السوق العام" (كل المنتجات مع بعض)
+    // اختيار مقدّم الطلب نفسه (ماركت/مطعم) — الإدارة تراجعه وتقدر تغيّره وقت الموافقة
+    // (شوف approve-type بنافذة القبول)؛ يقرر لاحقاً أي صفحة سوق عام يظهر بها هذا التاجر.
+    type,
+    description,
+    expectedDailyOrders: Number(expectedDailyOrdersRaw),
+    status: 'pending',
+    username: '', password: '',
+    products: [],
+    theme: { primaryColor: '#C77B4A', logo: null, banner: null },
+    dashboardColor: '#10B981', visits: 0,
+    balance: 0, salesCount: 0,
+    linkSlug: '', shortSlug: '', // filled right after push (short unique code, see shortSlugFor)
+    feeSource: s.feeSource,
+    feeType: s.feeType || 'fixed',
+    feeAmount: s.feeAmount,
+    feeCustomer: s.feeCustomer,
+    feeMerchant: s.feeMerchant,
+    itemDeduction: s.itemDeduction || 0,
+    itemDeductionPercent: s.itemDeductionPercent || 0,
+    shippingAmount: s.shippingAmount,
+    deliverySpeeds: ['fast', 'slow'], // default حتى يحددها الأدمن وقت القبول — يتحكم بيها فقط من نافذة القبول
+    // كل تاجر جديد ينضم من الآن يشحن بنفسه افتراضياً (توصيل خاص بالمحل) بدل توصيل المنصة العام —
+    // الأدمن يقدر يرجّعه لتوصيل المنصة لاحقاً من "توصيل خاص بالمحل" بصفحة إدارة التجار لو احتاج.
+    ownDelivery: true,
+    deliveryPriceSource: 'merchant', // matches ownDelivery:true above — see ensureMerchantTheme
+    ownDeliveryPrice: 0,
+    ownDeliveryDays: '',
+    ownDeliveryGovernorates: [],
+    ownDeliveryAreaPrices: {}
+  });
+  { const _nm = data.merchants[data.merchants.length - 1]; _nm.linkSlug = shortSlugFor(_nm); }
+
+  // IMPORTANT: the join-request document itself is written directly here (not through the
+  // generic saveData() sweep), so we get an honest yes/no about whether it actually reached
+  // the database before telling the person it worked — a silent background failure there
+  // used to show "success" to the customer while the admin never saw the request at all.
+  let ok = false;
+  if (window.authApi) {
+    try {
+      await window.authApi.saveDoc('join_requests', String(newId), data.merchants.find(m => m.id === newId));
+      ok = true;
+    } catch (e) {
+      console.error('Join request save failed:', e);
+      ok = false;
+    }
+    // NOTE: we don't try to bump 'platform-settings' version here to wake up the admin's
+    // live-refresh poller — this person is anonymous (no account yet) and firestore.rules
+    // makes that doc admin-write-only, so the attempt would just fail silently every time.
+    // See pollForUpdates(): it no longer depends on that version field for this reason.
+  } else {
+    ok = await saveData();
+  }
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'إرسال الطلب'; }
+
+  if (!ok) {
+    // Roll back the local addition so the in-memory data doesn't drift from what's actually saved.
+    data.merchants = data.merchants.filter(m => m.id !== newId);
+    showToast('صار خطأ ولم يتم إرسال الطلب — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
+    return;
+  }
+
+  // إشعار n8n (تيليجرام) — "أرسل وانسى": يصير بعد ما تأكد حفظ الطلب بـ Firestore، وأي فشل هنا
+  // (n8n واقف، انقطاع، CORS) ما يأثر على نجاح التسجيل ولا يظهر للتاجر.
+  try {
+    fetch(N8N_JOIN_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: String(newId), shopName: shop, ownerName: name, phone,
+        governorate, area, category, type, description,
+        expectedDailyOrders: Number(expectedDailyOrdersRaw)
+      }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) { /* تجاهل */ }
+
+  document.getElementById('req-name').value = '';
+  document.getElementById('req-shop').value = '';
+  document.getElementById('req-phone').value = '';
+  document.getElementById('req-description').value = '';
+  document.getElementById('req-daily-orders').value = '';
+  document.getElementById('req-governorate').selectedIndex = 0;
+  populateAreaSelect('req-area', document.getElementById('req-governorate').value);
+  showToast('تم إرسال طلبك بنجاح راح تراجعه الإدارة وترسلك بيانات دخولك');
+  showLoginScreen();
+}
+
+let pendingApproveId = null;
+let approveModalMode = 'approve'; // 'approve' (new merchant, needs username/password) | 'editFees' (existing merchant, fees only)
+let approveFeeState = { feeSource: 'customer', feeType: 'fixed', feeAmount: 0, feeCustomer: 0, feeMerchant: 0, itemDeduction: 0, itemDeductionPercent: 0, feeExemptMaxPrice: 0 };
+
+// Opens the modal in "approve" mode: admin sets username/password AND the fee settings for this merchant in one step
+function approveMerchant(id) {
+  pendingApproveId = id;
+  approveModalMode = 'approve';
+  const m = data.merchants.find(x => x.id === id);
+  document.getElementById('approve-username').value = '';
+  document.getElementById('approve-password').value = '';
+  document.getElementById('approve-type').value = (m && m.type === 'restaurant') ? 'restaurant' : 'market';
+  document.getElementById('approve-credentials-fields').style.display = 'block';
+  document.getElementById('approve-modal-title').textContent = 'قبول التاجر — بيانات الدخول ورسوم المنصة';
+  approveFeeState = {
+    feeSource: (m && m.feeSource) || data.settings.feeSource,
+    feeType: (m && m.feeType) || data.settings.feeType || 'fixed',
+    feeAmount: (m && m.feeAmount != null) ? m.feeAmount : (data.settings.feeAmount || 0),
+    feeCustomer: (m && m.feeCustomer != null) ? m.feeCustomer : (data.settings.feeCustomer || 0),
+    feeMerchant: (m && m.feeMerchant != null) ? m.feeMerchant : (data.settings.feeMerchant || 0),
+    itemDeduction: (m && m.itemDeduction != null) ? m.itemDeduction : (data.settings.itemDeduction || 0),
+    itemDeductionPercent: (m && m.itemDeductionPercent != null) ? m.itemDeductionPercent : (data.settings.itemDeductionPercent || 0),
+    feeExemptMaxPrice: (m && m.feeExemptMaxPrice) || 0,
+    deliverySpeeds: (m && Array.isArray(m.deliverySpeeds) && m.deliverySpeeds.length) ? m.deliverySpeeds.slice() : ['fast', 'slow']
+  };
+  renderApproveFeeFields();
+  document.getElementById('approve-modal').classList.add('show');
+}
+
+// Opens the modal in "editFees" mode: an already-active merchant's login stays the same,
+// admin only adjusts the platform fee settings for that merchant.
+function editMerchantFees(id) {
+  pendingApproveId = id;
+  approveModalMode = 'editFees';
+  const m = data.merchants.find(x => x.id === id);
+  if (!m) return;
+  document.getElementById('approve-credentials-fields').style.display = 'none';
+  document.getElementById('approve-modal-title').textContent = `تعديل رسوم المنصة — ${m.shop}`;
+  approveFeeState = {
+    feeSource: m.feeSource || data.settings.feeSource,
+    feeType: m.feeType || data.settings.feeType || 'fixed',
+    feeAmount: m.feeAmount || 0,
+    feeCustomer: m.feeCustomer || 0,
+    feeMerchant: m.feeMerchant || 0,
+    itemDeduction: m.itemDeduction || 0,
+    itemDeductionPercent: m.itemDeductionPercent || 0,
+    feeExemptMaxPrice: m.feeExemptMaxPrice || 0,
+    deliverySpeeds: (Array.isArray(m.deliverySpeeds) && m.deliverySpeeds.length) ? m.deliverySpeeds.slice() : ['fast', 'slow']
+  };
+  renderApproveFeeFields();
+  document.getElementById('approve-modal').classList.add('show');
+}
+
+function closeApproveModal() {
+  pendingApproveId = null;
+  document.getElementById('approve-credentials-fields').style.display = 'block';
+  document.getElementById('approve-modal').classList.remove('show');
+}
+
+function setApproveFeeSource(src) { approveFeeState.feeSource = src; renderApproveFeeFields(); }
+function setApproveFeeType(type) { approveFeeState.feeType = type; renderApproveFeeFields(); }
+function setApproveFeeAmount(field, value) {
+  let v = parseFloat(value) || 0;
+  if (approveFeeState.feeType === 'percent') v = Math.min(100, Math.max(0, v));
+  approveFeeState[field] = v;
+}
+function setApproveItemDeduction(value) {
+  approveFeeState.itemDeduction = Math.max(0, parseFloat(value) || 0);
+}
+function setApproveItemDeductionPercent(value) {
+  approveFeeState.itemDeductionPercent = Math.min(100, Math.max(0, parseFloat(value) || 0));
+}
+function setApproveFeeExemptMax(value) {
+  approveFeeState.feeExemptMaxPrice = Math.max(0, parseFloat(value) || 0);
+}
+// mode: 'fast' فقط، 'slow' فقط، أو 'both' (الاثنين)
+function setApproveDeliverySpeed(mode) {
+  approveFeeState.deliverySpeeds = mode === 'both' ? ['fast', 'slow'] : [mode];
+  renderApproveFeeFields();
+}
+
+function renderApproveFeeFields() {
+  document.getElementById('approve-fee-source-toggles').innerHTML = `
+    <span class="toggle ${approveFeeState.feeSource==='customer'?'selected':''}" onclick="setApproveFeeSource('customer')">من الزبون</span>
+    <span class="toggle ${approveFeeState.feeSource==='merchant'?'selected':''}" onclick="setApproveFeeSource('merchant')">من التاجر</span>
+    <span class="toggle ${approveFeeState.feeSource==='both'?'selected':''}" onclick="setApproveFeeSource('both')">من الاثنين</span>
+  `;
+  document.getElementById('approve-fee-type-toggles').innerHTML = `
+    <span class="toggle ${approveFeeState.feeType==='fixed'?'selected':''}" onclick="setApproveFeeType('fixed')">مبلغ ثابت (دينار)</span>
+    <span class="toggle ${approveFeeState.feeType==='percent'?'selected':''}" onclick="setApproveFeeType('percent')">نسبة مئوية (%)</span>
+  `;
+  const unit = approveFeeState.feeType === 'percent' ? '%' : 'د';
+  const amountFieldsEl = document.getElementById('approve-fee-amount-fields');
+  if (approveFeeState.feeSource === 'both') {
+    amountFieldsEl.innerHTML = `
+      <div class="row2" style="margin-top:8px;">
+        <div><label>من الزبون (${unit})</label><input type="number" value="${approveFeeState.feeCustomer}" onchange="setApproveFeeAmount('feeCustomer', this.value)"></div>
+        <div><label>من التاجر (${unit})</label><input type="number" value="${approveFeeState.feeMerchant}" onchange="setApproveFeeAmount('feeMerchant', this.value)"></div>
+      </div>`;
+  } else {
+    amountFieldsEl.innerHTML = `<label style="margin-top:8px;">مبلغ الرسم (${unit})</label><input type="number" value="${approveFeeState.feeAmount}" onchange="setApproveFeeAmount('feeAmount', this.value)">`;
+  }
+  const itemDeductionEl = document.getElementById('approve-item-deduction');
+  if (itemDeductionEl) itemDeductionEl.value = approveFeeState.itemDeduction;
+  const itemDeductionPctEl = document.getElementById('approve-item-deduction-percent');
+  if (itemDeductionPctEl) itemDeductionPctEl.value = approveFeeState.itemDeductionPercent || 0;
+  const feeExemptMaxEl = document.getElementById('approve-fee-exempt-max');
+  if (feeExemptMaxEl) feeExemptMaxEl.value = approveFeeState.feeExemptMaxPrice;
+
+  const speeds = approveFeeState.deliverySpeeds || ['fast', 'slow'];
+  const speedMode = (speeds.includes('fast') && speeds.includes('slow')) ? 'both' : (speeds.includes('fast') ? 'fast' : 'slow');
+  const speedToggleEl = document.getElementById('approve-delivery-speed-toggles');
+  if (speedToggleEl) {
+    speedToggleEl.innerHTML = `
+      <span class="toggle ${speedMode==='fast'?'selected':''}" onclick="setApproveDeliverySpeed('fast')">سريع فقط</span>
+      <span class="toggle ${speedMode==='slow'?'selected':''}" onclick="setApproveDeliverySpeed('slow')">بطيء فقط</span>
+      <span class="toggle ${speedMode==='both'?'selected':''}" onclick="setApproveDeliverySpeed('both')">الاثنين</span>
+    `;
+  }
+}
+
+async function confirmApprove() {
+  const m = data.merchants.find(x => x.id === pendingApproveId);
+  if (!m) return;
+  if (approveModalMode === 'approve') {
+    const username = document.getElementById('approve-username').value.trim();
+    const password = document.getElementById('approve-password').value.trim();
+    if (!username || !password) { showToast('عبي اليوزر نيم والباسورد'); return; }
+    if (password.length < 6) { showToast('لازم كلمة المرور ٦ خانات أو أكثر (شرط Firebase)'); return; }
+
+    // Real account creation (Firebase Authentication) — this is the new, secure path.
+    // If Firebase itself failed to load (offline fallback mode), we skip straight to the
+    // legacy hash-based credential so the app keeps working instead of getting stuck.
+    if (window.authApi) {
+      const approveBtn = document.querySelector('#approve-modal .btn:not(.secondary)');
+      if (approveBtn) { approveBtn.disabled = true; approveBtn.textContent = 'جاري إنشاء الحساب...'; }
+      try {
+        const uid = await window.authApi.createAccount(username, password);
+        m.authUid = uid;
+      } catch (e) {
+        if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = 'تأكيد'; }
+        if (e && e.code === 'auth/email-already-in-use') {
+          showToast('اليوزرنيم هذا مستخدم من قبل — جرب يوزرنيم ثاني');
+        } else {
+          console.error('Account creation failed:', e);
+          showToast('تعذر إنشاء حساب الدخول — تأكد من الاتصال وحاول مرة ثانية');
+        }
+        return; // stop here — never approve without a working login account
+      }
+      if (approveBtn) { approveBtn.disabled = false; approveBtn.textContent = 'تأكيد'; }
+    }
+
+    m.username = username; m.password = await hashPasswordStrong(password); m.status = 'active';
+    // الإدارة تقدر تراجع/تغيّر اختيار التاجر (ماركت/مطعم) هنا قبل الموافقة النهائية —
+    // نفس الحقل المقفول لاحقاً بـ firestore.rules (التاجر ما يقدر يبدّله بنفسه بعد هذا).
+    const approveTypeSelect = document.getElementById('approve-type');
+    m.type = (approveTypeSelect && approveTypeSelect.value === 'restaurant') ? 'restaurant' : 'market';
+  }
+  m.feeSource = approveFeeState.feeSource;
+  m.feeType = approveFeeState.feeType;
+  m.feeAmount = approveFeeState.feeAmount;
+  m.feeCustomer = approveFeeState.feeCustomer;
+  m.feeMerchant = approveFeeState.feeMerchant;
+  m.itemDeduction = approveFeeState.itemDeduction;
+  m.itemDeductionPercent = approveFeeState.itemDeductionPercent || 0;
+  m.feeExemptMaxPrice = approveFeeState.feeExemptMaxPrice;
+  m.deliverySpeeds = approveFeeState.deliverySpeeds;
+
+  // Mirror the sensitive/public split into the new per-merchant Firestore documents too,
+  // so Firestore Security Rules (once published) can protect this merchant's data
+  // individually — separately from every other merchant's.
+  if (window.authApi && m.authUid) {
+    try {
+      const { password: _pw, _docId: _dId, ...publicFields } = m;
+      await window.authApi.saveDoc('merchants', m.authUid, publicFields);
+      await window.authApi.saveDoc('merchant_private', m.authUid, { balance: m.balance || 0, salesCount: m.salesCount || 0 });
+      // The old pending-request document (keyed by the local id, not the new uid) is now
+      // fully superseded by the two documents above — remove it so it doesn't linger.
+      await window.authApi.deleteDoc('join_requests', m._docId || String(m.id)).catch(() => {});
+    } catch (e) {
+      console.error('Could not write the new secure merchant document (approval still saved to the main record):', e);
+    }
+  }
+
+  const approveOk = await saveData();
+  closeApproveModal();
+  if (!approveOk) {
+    showToast('الموافقة صارت بالشاشة بس ما انحفظت بقاعدة البيانات — جرب اضغط قبول مرة ثانية بعد لحظات، وإلا التاجر ما راح يوصله شي');
+  } else {
+    showToast(approveModalMode === 'approve' ? 'تم القبول — لا تنسى ترسل بيانات الدخول للتاجر يدوياً' : 'تم تحديث رسوم المنصة لهذا التاجر');
+    logAudit(approveModalMode === 'approve' ? 'قبول طلب انضمام تاجر' : 'تعديل رسوم تاجر', m.shop);
+  }
+  renderAll();
+}
+
+async function rejectMerchant(id) {
+  const m = data.merchants.find(x => x.id === id);
+  const shopName = m ? m.shop : `#${id}`;
+  // نحذف بمعرّف الوثيقة الحقيقي (_docId) — وإذا فشل الحذف من قاعدة البيانات نوقف ونبلّغ
+  // بدل ما نخفي الطلب من الشاشة ويرجع بعد التحديث.
+  if (window.authApi) {
+    try { await window.authApi.deleteDoc('join_requests', (m && m._docId) || String(id)); }
+    catch (e) {
+      console.error('Reject/delete join request failed:', e);
+      showToast('ما انحذف الطلب من قاعدة البيانات — تأكد إنك داخل بحساب الأدمن وجرب مرة ثانية');
+      return;
+    }
+  }
+  data.merchants = data.merchants.filter(x => x.id !== id);
+  saveData();
+  logAudit('رفض طلب انضمام تاجر', shopName);
+  showToast('تم رفض الطلب');
+  renderAll();
+}
+
+// Generic confirm modal helper
+let confirmCallback = null;
+function openConfirmModal(title, text, onConfirm) {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-text').textContent = text;
+  confirmCallback = onConfirm;
+  document.getElementById('confirm-modal').classList.add('show');
+}
+function closeConfirmModal() {
+  document.getElementById('confirm-modal').classList.remove('show');
+  confirmCallback = null;
+}
+document.getElementById('confirm-yes-btn').addEventListener('click', () => {
+  if (confirmCallback) confirmCallback();
+  closeConfirmModal();
+});
+
+function renderRequests() {
+  const joinChip = document.getElementById('join-link-chip');
+  if (joinChip) joinChip.textContent = joinLinkUrl();
+
+  const pendingList = document.getElementById('pending-list');
+  const pending = data.merchants.filter(m => m.status === 'pending');
+  pendingList.innerHTML = pending.length === 0 ? '<div class="empty">ما فيه طلبات حالياً</div>' : pending.map(m => `
+    <div class="list-item">
+      <span>${esc(m.name)} — ${esc(m.shop)} — ${esc(m.governorate)}${m.area ? ' / ' + esc(m.area) : ''}<br><span style="color:var(--text-mute); font-size:11px;">${esc(m.phone) || '—'}${(m.expectedDailyOrders !== null && m.expectedDailyOrders !== undefined) ? ` — توقعه: ${esc(m.expectedDailyOrders)} طلب/يوم` : ''}</span>${(currentRole === 'admin' && m.description) ? `<br><span style="color:var(--text-mute); font-size:11px;">${esc(m.description)}</span>` : ''}</span>
+      <span>
+        <button class="btn small" onclick="approveMerchant(${m.id})">قبول</button>
+        <button class="btn danger small" onclick="rejectMerchant(${m.id})">رفض</button>
+      </span>
+    </div>
+  `).join('');
+
+  const removalList = document.getElementById('removal-requests-list');
+  if (!removalList) return;
+  const removalRequests = data.orders.filter(o => o.removalStatus === 'requested');
+  removalList.innerHTML = removalRequests.length === 0 ? '<div class="empty">ما فيه طلبات حذف حالياً</div>' : removalRequests.map(o => {
+    const m = data.merchants.find(x => x.id === o.merchantId);
+    return `<div class="list-item" style="align-items:flex-start;">
+      <span>${m ? esc(m.shop) : 'تاجر محذوف'} — ${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د
+      <br><span style="color:var(--text-mute); font-size:11px;">${orderDateTimeLabel(o.date)}</span>
+      <br><span style="color:var(--text-mute); font-size:11px;">${esc(o.customerName) || '—'} — ${esc(o.customerPhone) || ''}</span></span>
+      <span>
+        <button class="btn small" onclick="approveOrderRemoval(${o.id})">موافقة على الحذف</button>
+        <button class="btn danger small" onclick="denyOrderRemoval(${o.id})">رفض الحذف</button>
+      </span>
+    </div>`;
+  }).join('');
+
+  renderCancelRequestsAdmin();
+}
+
+// Admin queue for customer-initiated cancellation requests — shows BOTH stages so the admin
+// has visibility the moment a customer asks (even before the merchant has acted), but the
+// final-approval button only appears once the merchant has confirmed with the customer and
+// forwarded it (cancelStage === 'merchant_approved'). Full customer phone + product details
+// are shown here, same as everywhere else the admin reviews an order.
+function renderCancelRequestsAdmin() {
+  const list = document.getElementById('cancel-requests-admin-list');
+  if (!list) return;
+  const requests = data.orders.filter(o => !o.cancelled && (o.cancelStage === 'customer_requested' || o.cancelStage === 'merchant_approved')).slice().reverse();
+  if (requests.length === 0) { list.innerHTML = '<div class="empty">ما فيه طلبات إلغاء حالياً</div>'; return; }
+  const groups = groupOrders(requests);
+  list.innerHTML = groups.map(g => {
+    const items = g.orders;
+    const first = items[0];
+    const m = data.merchants.find(x => x.id === first.merchantId);
+    const itemsHtml = items.map(o => `<div class="invoice-line"><span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د</span></div>`).join('');
+    const stageBadge = first.cancelStage === 'merchant_approved'
+      ? '<span class="badge pending">تمت المراجعة والموافقة من قبل التاجر — بانتظار موافقة الإدارة</span>'
+      : '<span class="badge pending">الزبون طلب الإلغاء — بانتظار تأكيد التاجر</span>';
+    return `
+    <div class="list-item" style="align-items:flex-start; flex-direction:column; gap:8px;">
+      <div style="width:100%;">
+        <b>${m ? esc(m.shop) : 'تاجر محذوف'}${items.length > 1 ? ' (' + items.length + ' قطع)' : ''}</b>
+        <div style="margin-top:4px;">${stageBadge}</div>
+        <div style="color:var(--text-mute); font-size:11px; margin-top:4px;">${orderDateTimeLabel(first.date)}</div>
+        ${orderCustomerLine(first)}
+        <div style="margin-top:6px;">${itemsHtml}</div>
+        <div style="font-size:11px; color:#B3261E; margin-top:6px; border-top:1px dashed #EEC9C6; padding-top:6px;">
+          سبب الزبون: ${esc(first.cancelRequestReason) || '—'}
+        </div>
+        ${first.cancelStage === 'merchant_approved' ? `<div style="font-size:11px; color:#92400E; margin-top:4px;">ملاحظة التاجر: ${esc(first.merchantCancelNote) || '—'}</div>` : ''}
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
+        <button class="btn secondary small" onclick="rejectCustomerCancelRequest(${g.groupId}, 'admin')">رفض — إبقاء الطلب</button>
+        ${first.cancelStage === 'merchant_approved' ? `<button class="btn danger small" onclick="finalizeCustomerCancel(${g.groupId})">الموافقة النهائية على الإلغاء</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Admin's final approval — this is the point the order actually becomes cancelled
+// (mirrors confirmCancelOrderGroup's fields exactly, so it displays identically everywhere
+// via cancelReasonLine), attributed to the customer since it was their request all along;
+// the merchant's confirmation note stays attached and shown alongside it.
+function finalizeCustomerCancel(groupId) {
+  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && !o.cancelled && o.cancelStage === 'merchant_approved');
+  if (items.length === 0) return;
+  openConfirmModal('الموافقة النهائية على الإلغاء', 'راح ينلغي هذا الطلب نهائياً ولا يمكن التراجع بعدها. متأكد؟', () => {
+    const now = new Date().toISOString();
+    items.forEach(o => {
+      reverseOrderEffectsOnCancel(o); // restore stock, and refund the merchant's balance if this had already been accepted
+      o.cancelled = true;
+      o.cancelReason = o.cancelRequestReason || '—';
+      o.cancelBy = 'customer';
+      o.cancelByName = 'الزبون';
+      o.cancelAt = now;
+      o.cancelStage = 'none';
+    });
+    saveData();
+    showToast('تم إلغاء الطلب نهائياً');
+    renderAll();
+  });
+}
+
+function activeMerchants() { return data.merchants.filter(m => m.status !== 'pending'); }
+
+// ---------- EMPLOYEES ----------
+// Two independent ways an employee account gets created:
+//  1) A merchant clicks "إضافة موظف" inside their panel, fills the employee's info and
+//     picks which of their own tabs to delegate. That becomes a *pending request* — no
+//     login exists yet — which lands in the admin's "الموظفين" queue. The admin is the one
+//     who actually sets the username/password (status becomes 'active' only then).
+//  2) The admin adds a member of their own team directly: no request/approval step,
+//     since the admin IS the approver — name, phone, permissions, username and password
+//     are all set in one go and the account is active immediately.
+// Either way, once active, an employee can only ever see/use the tabs listed in their own
+// `permissions` array — never more than what the merchant (or admin) granted them.
+
+function labelForPerm(list, id) { const p = list.find(x => x.id === id); return p ? t(p.labelKey) : id; }
+
+// ---- Merchant side: request a new employee, or edit an existing one's permissions ----
+let editingEmployeeId = null; // non-null while the "add/edit employee" modal is open for an edit
+
+function openAddEmployeeModal(existingId) {
+  editingEmployeeId = existingId || null;
+  const emp = editingEmployeeId ? data.employees.find(e => e.id === editingEmployeeId) : null;
+  document.getElementById('emp-modal-title').textContent = emp ? 'تعديل صلاحيات الموظف' : 'إضافة موظف جديد';
+  document.getElementById('emp-name-fields').style.display = emp ? 'none' : 'block';
+  document.getElementById('emp-name').value = emp ? emp.name : '';
+  document.getElementById('emp-phone').value = emp ? emp.phone : '';
+  const permsBox = document.getElementById('emp-permissions-box');
+  const currentPerms = emp ? emp.permissions : [];
+  permsBox.innerHTML = MERCHANT_EMPLOYEE_PERMS.map(p => `
+    <label style="display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12.5px; cursor:pointer;">
+      <input type="checkbox" value="${p.id}" ${currentPerms.includes(p.id) ? 'checked' : ''} style="width:auto;"> ${t(p.labelKey)}
+    </label>`).join('');
+  document.getElementById('employee-modal').classList.add('show');
+}
+function closeEmployeeModal() {
+  editingEmployeeId = null;
+  document.getElementById('employee-modal').classList.remove('show');
+}
+async function submitEmployeeModal() {
+  const perms = Array.from(document.querySelectorAll('#emp-permissions-box input:checked')).map(c => c.value);
+  if (perms.length === 0) { showToast('حدد صلاحية وحدة على الأقل'); return; }
+
+  if (editingEmployeeId) {
+    const emp = data.employees.find(e => e.id === editingEmployeeId);
+    if (!emp) return;
+    emp.permissions = perms;
+    saveData();
+    closeEmployeeModal();
+    showToast('تم تحديث صلاحيات الموظف');
+    renderAll();
+    return;
+  }
+
+  const name = document.getElementById('emp-name').value.trim();
+  const phone = document.getElementById('emp-phone').value.trim();
+  if (!name || !phone) { showToast('عبي الاسم والهاتف'); return; }
+
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const emp = {
+    id: newId, name, phone, permissions: perms,
+    ownerType: 'merchant', merchantId: loggedInMerchantId,
+    username: '', password: '', status: 'pending', authUid: null
+  };
+  data.employees.push(emp);
+
+  let ok = false;
+  if (window.authApi) {
+    try { await window.authApi.saveDoc('employee_requests', String(newId), emp); ok = true; }
+    catch (e) { console.error('Employee request save failed:', e); ok = false; }
+    // Same reasoning as the merchant join request above — this merchant may well have
+    // 'settings' permission and might succeed at bumping the version, but plenty of
+    // merchants won't, so we can't depend on it. See pollForUpdates().
+  } else {
+    ok = await saveData();
+  }
+  if (!ok) {
+    data.employees = data.employees.filter(e => e.id !== newId);
+    showToast('صار خطأ ولم يتم إرسال الطلب — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
+    return;
+  }
+
+  // إشعار n8n (تيليجرام) لطلبات التوظيف — "أرسل وانسى": يصير بعد ما تأكد حفظ الطلب
+  try {
+    fetch(N8N_EMPLOYEE_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: String(newId), 
+        fullName: name, 
+        phone,
+        position: '', 
+        location: '', 
+        email: '', 
+        message: 'طلب توظيف من التاجر'
+      }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) { /* تجاهل */ }
+
+  closeEmployeeModal();
+  showToast('تم إرسال طلبك بنجاح راح يجهز الأدمن للموظف يوزر نيم وباسورد دخول');
+  renderAll();
+}
+
+function renderMerchantEmployeesList(merchantId) {
+  const list = data.employees.filter(e => e.ownerType === 'merchant' && e.merchantId === merchantId);
+  if (list.length === 0) return '<div class="empty">ما ضفت موظفين بعد</div>';
+  return list.map(e => `
+    <div class="list-item" style="align-items:flex-start;">
+      <span>${esc(e.name)}<br>
+        <span style="color:var(--text-mute); font-size:11px;">${esc(e.phone) || '—'}</span><br>
+        <span class="badge ${e.status === 'active' ? 'active' : 'disabled'}">${e.status === 'active' ? 'نشط — يكدر يسجل دخول' : 'بانتظار الأدمن يجهزله بيانات الدخول'}</span><br>
+        <span style="color:var(--text-mute); font-size:11px;">الصلاحيات: ${e.permissions.map(id => labelForPerm(MERCHANT_EMPLOYEE_PERMS, id)).join('، ') || '—'}</span>
+      </span>
+      <span>
+        <button class="btn small secondary" onclick="openAddEmployeeModal(${e.id})">تعديل الصلاحيات</button>
+        <button class="btn danger small" onclick="deleteEmployee(${e.id})">حذف</button>
+      </span>
+    </div>`).join('');
+}
+
+function deleteEmployee(id) {
+  const emp = data.employees.find(e => e.id === id);
+  if (!emp) return;
+  openConfirmModal('حذف الموظف', `متأكد تريد تحذف "${emp.name}"؟ راح ينحذف حسابه ولا يكدر يسجل دخول بعدها.`, async () => {
+    data.employees = data.employees.filter(e => e.id !== id);
+    if (window.authApi) {
+      if (emp.authUid) window.authApi.deleteDoc('employees', emp.authUid).catch(() => {});
+      else window.authApi.deleteDoc('employee_requests', String(id)).catch(() => {});
+    }
+    saveData();
+    logAudit('حذف موظف', emp.name);
+    showToast('تم حذف الموظف');
+    renderAll();
+  });
+}
+
+// ---- Delivery agent side: request a new employee of their own, or edit an existing one's
+// permissions. Exact mirror of the merchant flow above (openAddEmployeeModal/
+// submitEmployeeModal/renderMerchantEmployeesList) — same pending->admin-approval->active
+// lifecycle, just ownerType 'agent_employee' + agentId instead of 'merchant' + merchantId,
+// and AGENT_EMPLOYEE_PERMS instead of MERCHANT_EMPLOYEE_PERMS. ----
+let editingAgentEmployeeId = null; // non-null while the "add/edit agent employee" modal is open for an edit
+
+function openAddAgentEmployeeModal(existingId) {
+  editingAgentEmployeeId = existingId || null;
+  const emp = editingAgentEmployeeId ? data.employees.find(e => e.id === editingAgentEmployeeId) : null;
+  document.getElementById('agent-emp-modal-title').textContent = emp ? 'تعديل صلاحيات الموظف' : 'إضافة موظف جديد';
+  document.getElementById('agent-emp-name-fields').style.display = emp ? 'none' : 'block';
+  document.getElementById('agent-emp-name').value = emp ? emp.name : '';
+  document.getElementById('agent-emp-phone').value = emp ? emp.phone : '';
+  const permsBox = document.getElementById('agent-emp-permissions-box');
+  const currentPerms = emp ? emp.permissions : [];
+  permsBox.innerHTML = AGENT_EMPLOYEE_PERMS.map(p => `
+    <label style="display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12.5px; cursor:pointer;">
+      <input type="checkbox" value="${p.id}" ${currentPerms.includes(p.id) ? 'checked' : ''} style="width:auto;"> ${t(p.labelKey)}
+    </label>`).join('');
+  document.getElementById('agent-employee-modal').classList.add('show');
+}
+function closeAgentEmployeeModal() {
+  editingAgentEmployeeId = null;
+  document.getElementById('agent-employee-modal').classList.remove('show');
+}
+async function submitAgentEmployeeModal() {
+  const perms = Array.from(document.querySelectorAll('#agent-emp-permissions-box input:checked')).map(c => c.value);
+  if (perms.length === 0) { showToast('حدد صلاحية وحدة على الأقل'); return; }
+
+  if (editingAgentEmployeeId) {
+    const emp = data.employees.find(e => e.id === editingAgentEmployeeId);
+    if (!emp) return;
+    emp.permissions = perms;
+    saveData();
+    closeAgentEmployeeModal();
+    showToast('تم تحديث صلاحيات الموظف');
+    renderAll();
+    return;
+  }
+
+  const emp0 = currentEmployee();
+  if (!emp0 || emp0.ownerType !== 'delivery_agent') return; // نفس ما فوق: يمنع أي محاولة استدعاء خارج سياق لوحة المندوب
+  const name = document.getElementById('agent-emp-name').value.trim();
+  const phone = document.getElementById('agent-emp-phone').value.trim();
+  if (!name || !phone) { showToast('عبي الاسم والهاتف'); return; }
+
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const emp = {
+    id: newId, name, phone, permissions: perms,
+    ownerType: 'agent_employee', agentId: emp0.id,
+    username: '', password: '', status: 'pending', authUid: null
+  };
+  data.employees.push(emp);
+
+  let ok = false;
+  if (window.authApi) {
+    try { await window.authApi.saveDoc('employee_requests', String(newId), emp); ok = true; }
+    catch (e) { console.error('Agent employee request save failed:', e); ok = false; }
+  } else {
+    ok = await saveData();
+  }
+  if (!ok) {
+    data.employees = data.employees.filter(e => e.id !== newId);
+    showToast('صار خطأ ولم يتم إرسال الطلب — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
+    return;
+  }
+  closeAgentEmployeeModal();
+  showToast('تم إرسال طلبك بنجاح راح يجهز الأدمن للموظف يوزر نيم وباسورد دخول');
+  renderAll();
+}
+
+function renderAgentOwnEmployeesList(agentId) {
+  const list = data.employees.filter(e => e.ownerType === 'agent_employee' && e.agentId === agentId);
+  if (list.length === 0) return '<div class="empty">ما ضفت موظفين بعد</div>';
+  return list.map(e => `
+    <div class="list-item" style="align-items:flex-start;">
+      <span>${esc(e.name)}<br>
+        <span style="color:var(--text-mute); font-size:11px;">${esc(e.phone) || '—'}</span><br>
+        <span class="badge ${e.status === 'active' ? 'active' : 'disabled'}">${e.status === 'active' ? 'نشط — يكدر يسجل دخول' : 'بانتظار الأدمن يجهزله بيانات الدخول'}</span><br>
+        <span style="color:var(--text-mute); font-size:11px;">الصلاحيات: ${e.permissions.map(id => labelForPerm(AGENT_EMPLOYEE_PERMS, id)).join('، ') || '—'}</span>
+      </span>
+      <span>
+        <button class="btn small secondary" onclick="openAddAgentEmployeeModal(${e.id})">تعديل الصلاحيات</button>
+        <button class="btn danger small" onclick="deleteEmployee(${e.id})">حذف</button>
+      </span>
+    </div>`).join('');
+}
+
+// ---- Admin side: approve/reject a merchant's employee request, or manage the admin's own team ----
+let pendingApproveEmployeeId = null;
+
+function openApproveEmployeeModal(id) {
+  pendingApproveEmployeeId = id;
+  document.getElementById('approve-emp-username').value = '';
+  document.getElementById('approve-emp-password').value = '';
+  document.getElementById('employee-approve-modal').classList.add('show');
+}
+function closeApproveEmployeeModal() {
+  pendingApproveEmployeeId = null;
+  document.getElementById('employee-approve-modal').classList.remove('show');
+}
+async function confirmApproveEmployee() {
+  const e = data.employees.find(x => x.id === pendingApproveEmployeeId);
+  if (!e) return;
+  const username = document.getElementById('approve-emp-username').value.trim();
+  const password = document.getElementById('approve-emp-password').value.trim();
+  if (!username || !password) { showToast('عبي اليوزر نيم والباسورد'); return; }
+  if (password.length < 6) { showToast('لازم كلمة المرور ٦ خانات أو أكثر (شرط Firebase)'); return; }
+
+  if (window.authApi) {
+    const btn = document.querySelector('#employee-approve-modal .btn:not(.secondary)');
+    if (btn) { btn.disabled = true; btn.textContent = 'جاري إنشاء الحساب...'; }
+    try {
+      const uid = await window.authApi.createAccount(username, password);
+      e.authUid = uid;
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'تأكيد'; }
+      if (err && err.code === 'auth/email-already-in-use') showToast('اليوزرنيم هذا مستخدم من قبل — جرب يوزرنيم ثاني');
+      else { console.error('Employee account creation failed:', err); showToast('تعذر إنشاء حساب الدخول — تأكد من الاتصال وحاول مرة ثانية'); }
+      return;
+    }
+  }
+
+  e.username = username;
+  e.password = await hashPasswordStrong(password);
+  e.status = 'active';
+
+  if (window.authApi) {
+    const btn = document.querySelector('#employee-approve-modal .btn:not(.secondary)');
+    // IMPORTANT: only delete the pending request — and only tell the admin it worked —
+    // once the 'employees' document has actually been written. The old code swallowed any
+    // failure here with .catch(() => {}) and deleted employee_requests unconditionally, so
+    // a single failed/denied write meant the employee ended up saved NOWHERE: not in
+    // 'employees' (write failed) and not in 'employee_requests' (deleted anyway) — exactly
+    // the "admin approves but the employee never actually gets added" bug.
+    try {
+      await window.authApi.saveDoc('employees', e.authUid, e);
+    } catch (err) {
+      console.error('Employee approval could not be saved:', err);
+      if (btn) { btn.disabled = false; btn.textContent = 'تأكيد'; }
+      showToast('تم إنشاء حساب الدخول بس صار خطأ بحفظ بيانات الموظف — جرب اضغط تأكيد مرة ثانية');
+      return; // keep the pending request intact so the admin can retry instead of losing it
+    }
+    await window.authApi.deleteDoc('employee_requests', String(e.id)).catch(() => {});
+  }
+
+  const ok = await saveData();
+  closeApproveEmployeeModal();
+  if (!ok) {
+    showToast('الموافقة صارت بالشاشة بس ما انحفظت بالكامل بقاعدة البيانات — تحقق بعد لحظات وحاول مرة ثانية لو ما ظهر الموظف');
+  } else {
+    logAudit('قبول طلب انضمام موظف', e.name);
+    showToast('تم قبول الموظف — لا تنسى ترسل بيانات الدخول له يدوياً');
+  }
+  renderAll();
+}
+
+function rejectEmployee(id) {
+  const emp = data.employees.find(x => x.id === id);
+  const empName = emp ? emp.name : `#${id}`;
+  data.employees = data.employees.filter(x => x.id !== id);
+  if (window.authApi) window.authApi.deleteDoc('employee_requests', String(id)).catch(() => {});
+  saveData();
+  logAudit('رفض طلب انضمام موظف', empName);
+  showToast('تم رفض طلب الموظف');
+  renderAll();
+}
+
+let editingAdminEmployeeId = null;
+
+function openAdminEmployeeModal(existingId) {
+  editingAdminEmployeeId = existingId || null;
+  const e = editingAdminEmployeeId ? data.employees.find(x => x.id === editingAdminEmployeeId) : null;
+  document.getElementById('admin-emp-modal-title').textContent = e ? 'تعديل موظف الإدارة' : 'إضافة موظف للإدارة';
+  document.getElementById('admin-emp-name').value = e ? e.name : '';
+  document.getElementById('admin-emp-phone').value = e ? e.phone : '';
+  document.getElementById('admin-emp-name').disabled = !!e;
+  document.getElementById('admin-emp-phone').disabled = !!e;
+  document.getElementById('admin-emp-credentials-fields').style.display = e ? 'none' : 'block';
+  document.getElementById('admin-emp-username').value = '';
+  document.getElementById('admin-emp-password').value = '';
+  const permsBox = document.getElementById('admin-emp-permissions-box');
+  const currentPerms = e ? e.permissions : [];
+  permsBox.innerHTML = ADMIN_EMPLOYEE_PERMS.map(p => `
+    <label style="display:flex; align-items:center; gap:6px; margin-bottom:8px; font-size:12.5px; cursor:pointer;">
+      <input type="checkbox" value="${p.id}" ${currentPerms.includes(p.id) ? 'checked' : ''} style="width:auto;"> ${t(p.labelKey)}
+    </label>`).join('');
+  document.getElementById('admin-employee-modal').classList.add('show');
+}
+function closeAdminEmployeeModal() {
+  editingAdminEmployeeId = null;
+  document.getElementById('admin-employee-modal').classList.remove('show');
+}
+async function submitAdminEmployeeModal() {
+  const perms = Array.from(document.querySelectorAll('#admin-emp-permissions-box input:checked')).map(c => c.value);
+  if (perms.length === 0) { showToast('حدد صلاحية وحدة على الأقل'); return; }
+  const name = document.getElementById('admin-emp-name').value.trim();
+  const phone = document.getElementById('admin-emp-phone').value.trim();
+  if (!name || !phone) { showToast('عبي الاسم والهاتف'); return; }
+
+  if (editingAdminEmployeeId) {
+    const e = data.employees.find(x => x.id === editingAdminEmployeeId);
+    if (!e) return;
+    e.permissions = perms;
+    saveData();
+    closeAdminEmployeeModal();
+    showToast('تم تحديث صلاحيات الموظف');
+    renderAll();
+    return;
+  }
+
+  const username = document.getElementById('admin-emp-username').value.trim();
+  const password = document.getElementById('admin-emp-password').value.trim();
+  if (!username || !password) { showToast('عبي اليوزر نيم والباسورد'); return; }
+  if (password.length < 6) { showToast('لازم كلمة المرور ٦ خانات أو أكثر (شرط Firebase)'); return; }
+
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const emp = { id: newId, name, phone, permissions: perms, ownerType: 'admin', merchantId: null, username: '', password: '', status: 'active', authUid: null };
+
+  if (window.authApi) {
+    const btn = document.querySelector('#admin-employee-modal .btn:not(.secondary)');
+    if (btn) { btn.disabled = true; btn.textContent = 'جاري إنشاء الحساب...'; }
+    try {
+      const uid = await window.authApi.createAccount(username, password);
+      emp.authUid = uid;
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'إضافة'; }
+      if (err && err.code === 'auth/email-already-in-use') showToast('اليوزرنيم هذا مستخدم من قبل — جرب يوزرنيم ثاني');
+      else { console.error('Employee account creation failed:', err); showToast('تعذر إنشاء حساب الدخول — تأكد من الاتصال وحاول مرة ثانية'); }
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'إضافة'; }
+  }
+
+  emp.username = username;
+  emp.password = await hashPasswordStrong(password);
+  data.employees.push(emp);
+
+  if (window.authApi && emp.authUid) await window.authApi.saveDoc('employees', emp.authUid, emp).catch(() => {});
+  saveData();
+  closeAdminEmployeeModal();
+  showToast('تمت إضافة الموظف ');
+  renderAll();
+}
+
+// ---------------------------------------------------------------------------------
+// DELIVERY AGENTS ("مندوبين التوصيل") — admin-only, created directly (same pattern as an
+// admin-team employee above: name+company set once on creation, login created immediately,
+// nothing goes through the employee_requests approval queue). Stored in the exact same
+// data.employees array with ownerType: 'delivery_agent' — see ensureEmployeeDefaults() in
+// 03-storage-firebase.js for the extra fields (companyName, merchantIds, deliveryFee,
+// commissionType, commissionValue) and firestore.rules' isDeliveryAgent()/
+// isAssignedAgentForOrder() for how their access to `orders` is scoped down to only the
+// invoices assigned to them.
+// ---------------------------------------------------------------------------------
+let editingAgentId = null;
+
+// Renders the "assign shops" checkbox list inside the agent modal. A shop already assigned
+// to ANOTHER active agent is shown but disabled with a note — a shop can only ever belong to
+// one agent at a time (see submitAgentModal), so silently letting two agents "share" a shop
+// would make renderAgentAccounts()'s per-agent totals double-count that shop's orders.
+function renderAgentMerchantPicker(currentAgentId, selectedIds) {
+  const box = document.getElementById('agent-merchant-picker');
+  if (!box) return;
+  const merchants = data.merchants.filter(m => m.status === 'active');
+  if (merchants.length === 0) { box.innerHTML = '<div class="empty">ما فيه محلات نشطة حالياً</div>'; return; }
+  box.innerHTML = merchants.map(m => {
+    const owner = deliveryAgentForMerchant(m.id);
+    const ownedByOther = owner && owner.id !== currentAgentId;
+    const checked = selectedIds.includes(m.id) ? 'checked' : '';
+    return `<label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-weight:400; ${ownedByOther ? 'opacity:.55;' : ''}">
+      <input type="checkbox" class="agent-merchant-check" value="${m.id}" ${checked} ${ownedByOther ? 'disabled' : ''} style="width:auto;">
+      ${esc(m.shop)}${ownedByOther ? ' <span style="font-size:11px; color:#94A3B8;">(مسؤول عنه المندوب: ' + esc(owner.name) + ')</span>' : ''}
+    </label>`;
+  }).join('');
+}
+
+// ---- Per-agent delivery zone pricing (allowed governorates/areas + fast/slow price + ETA) ----
+// Admin-only (same screen as the rest of this agent's data, itself excluded from employee
+// delegation — see ADMIN_EMPLOYEE_PERMS above). Adding a zone here is what grants this agent
+// permission to deliver to that governorate/area at all; deleting it revokes that permission.
+// Saved immediately (its own button), same pattern as addShippingZone/deleteShippingZone in
+// js/14-shipping-pricing.js, instead of waiting on the modal's general "حفظ" button.
+function currentEditingAgent() {
+  return editingAgentId ? data.employees.find(x => x.id === editingAgentId && x.ownerType === 'delivery_agent') : null;
+}
+function renderAgentZoneGovernorateSelect() {
+  const sel = document.getElementById('agent-zone-governorate');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = IRAQ_GOVERNORATES.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  if (current && IRAQ_GOVERNORATES.includes(current)) sel.value = current;
+  renderAgentZoneAreaSelect();
+}
+function renderAgentZoneAreaSelect() {
+  const govSel = document.getElementById('agent-zone-governorate');
+  const areaSel = document.getElementById('agent-zone-area');
+  if (!govSel || !areaSel) return;
+  const current = areaSel.value;
+  const areas = allAreasForGovernorate(govSel.value);
+  areaSel.innerHTML = `<option value="">كل مناطق المحافظة</option>${areas.map(a => `<option value="${esc(a)}">${esc(a)}</option>`).join('')}`;
+  if (current && areas.includes(current)) areaSel.value = current;
+  renderAgentZonesList();
+}
+function renderAgentZonesList() {
+  const list = document.getElementById('agent-zones-list');
+  const a = currentEditingAgent();
+  if (!list || !a) return;
+  const zones = a.deliveryZones || [];
+  if (zones.length === 0) { list.innerHTML = '<div class="empty">ما فيه مناطق توصيل مضافة لهذا المندوب بعد — بدون مناطق، يوصل بأي مكان بالأجرة الافتراضية أعلاه</div>'; return; }
+  list.innerHTML = zones.map(z => `
+    <div class="list-item">
+      <span>${esc(z.governorate)}${z.area ? ' — ' + esc(z.area) : ' (كل المناطق)'} — سريع: ${z.fastEnabled !== false ? fmtNum(z.fastPrice) + ' د' + (z.fastDays ? ' (' + esc(z.fastDays) + ')' : '') : 'غير متوفر'} / بطيء: ${z.slowEnabled !== false ? fmtNum(z.slowPrice) + ' د' + (z.slowDays ? ' (' + esc(z.slowDays) + ')' : '') : 'غير متوفر'}</span>
+      <span>
+        <button class="btn secondary small" onclick="editAgentZone('${z.id}')">تعديل</button>
+        <button class="btn danger small" onclick="deleteAgentZone('${z.id}')">حذف</button>
+      </span>
+    </div>
+  `).join('');
+}
+// إضافة منطقة جديدة (غير موجودة بالقائمة) للمحافظة المختارة، تنحفظ بقائمة المناطق العامة وتنختار تلقائياً
+function addNewAreaForAgentZone() {
+  const gov = document.getElementById('agent-zone-governorate').value;
+  const input = document.getElementById('agent-zone-new-area');
+  const name = (input.value || '').trim();
+  if (!gov) { showToast('اختر المحافظة أول'); return; }
+  if (!name) { showToast('اكتب اسم المنطقة'); return; }
+  const added = registerCustomArea(gov, name);
+  if (added) { saveData(); showToast(`تمت إضافة منطقة "${name}" لمحافظة ${gov}`); }
+  else showToast('هذي المنطقة موجودة أصلاً — تم اختيارها');
+  input.value = '';
+  renderAgentZoneAreaSelect();
+  document.getElementById('agent-zone-area').value = name;
+}
+function addAgentZone() {
+  const a = currentEditingAgent();
+  if (!a) return;
+  const governorate = document.getElementById('agent-zone-governorate').value;
+  const area = document.getElementById('agent-zone-area').value;
+  const fastEnabled = document.getElementById('agent-zone-fast-enabled').checked;
+  const slowEnabled = document.getElementById('agent-zone-slow-enabled').checked;
+  const fastPrice = parseFloat(document.getElementById('agent-zone-fast-price').value) || 0;
+  const slowPrice = parseFloat(document.getElementById('agent-zone-slow-price').value) || 0;
+  const fastDays = document.getElementById('agent-zone-fast-days').value.trim();
+  const slowDays = document.getElementById('agent-zone-slow-days').value.trim();
+  if (!governorate) { showToast('اختر المحافظة'); return; }
+  if (!fastEnabled && !slowEnabled) { showToast('لازم يتوفر نوع توصيل واحد على الأقل (سريع أو بطيء)'); return; }
+  if (!a.deliveryZones) a.deliveryZones = [];
+  const existing = a.deliveryZones.find(z => z.governorate === governorate && (z.area || '') === (area || ''));
+  if (existing) {
+    existing.fastEnabled = fastEnabled; existing.slowEnabled = slowEnabled;
+    existing.fastPrice = fastPrice; existing.slowPrice = slowPrice;
+    existing.fastDays = fastDays; existing.slowDays = slowDays;
+    showToast('تم تحديث سعر هذي المنطقة لهذا المندوب');
+  } else {
+    a.deliveryZones.push({ id: 'az' + genId(), governorate, area, fastEnabled, slowEnabled, fastPrice, slowPrice, fastDays, slowDays });
+    showToast('تمت إضافة المنطقة لهذا المندوب');
+  }
+  saveData();
+  if (window.authApi && a.authUid) window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+  document.getElementById('agent-zone-fast-price').value = '';
+  document.getElementById('agent-zone-slow-price').value = '';
+  document.getElementById('agent-zone-fast-days').value = '';
+  document.getElementById('agent-zone-slow-days').value = '';
+  document.getElementById('agent-zone-fast-enabled').checked = true;
+  document.getElementById('agent-zone-slow-enabled').checked = true;
+  renderAgentZonesList();
+  renderDeliveryAgentsList();
+}
+function editAgentZone(id) {
+  const a = currentEditingAgent();
+  const z = a && a.deliveryZones.find(x => x.id === id);
+  if (!z) return;
+  document.getElementById('agent-zone-governorate').value = z.governorate;
+  renderAgentZoneAreaSelect();
+  document.getElementById('agent-zone-area').value = z.area || '';
+  document.getElementById('agent-zone-fast-enabled').checked = z.fastEnabled !== false;
+  document.getElementById('agent-zone-slow-enabled').checked = z.slowEnabled !== false;
+  document.getElementById('agent-zone-fast-price').value = z.fastPrice;
+  document.getElementById('agent-zone-slow-price').value = z.slowPrice;
+  document.getElementById('agent-zone-fast-days').value = z.fastDays || '';
+  document.getElementById('agent-zone-slow-days').value = z.slowDays || '';
+}
+function deleteAgentZone(id) {
+  const a = currentEditingAgent();
+  if (!a) return;
+  openConfirmModal('حذف منطقة توصيل', 'متأكد تحذف هذي المنطقة من مناطق هذا المندوب؟ ما بعدها يقدر يوصل لها (إلا لو رجعت وأضفتها).', () => {
+    a.deliveryZones = a.deliveryZones.filter(z => z.id !== id);
+    saveData();
+    if (window.authApi && a.authUid) window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+    renderAgentZonesList();
+    renderDeliveryAgentsList();
+    showToast('تم حذف المنطقة');
+  });
+}
+
+function openAgentModal(existingId) {
+  editingAgentId = existingId || null;
+  const a = editingAgentId ? data.employees.find(x => x.id === editingAgentId && x.ownerType === 'delivery_agent') : null;
+  document.getElementById('agent-modal-title').textContent = a ? 'تعديل مندوب التوصيل' : 'إضافة مندوب توصيل';
+  document.getElementById('agent-name').value = a ? a.name : '';
+  document.getElementById('agent-company').value = a ? a.companyName : '';
+  document.getElementById('agent-credentials-fields').style.display = a ? 'none' : 'block';
+  document.getElementById('agent-username').value = '';
+  document.getElementById('agent-password').value = '';
+  document.getElementById('agent-delivery-fee').value = a ? a.deliveryFee : '';
+  document.getElementById('agent-commission-type').value = a ? a.commissionType : 'fixed';
+  document.getElementById('agent-commission-value').value = a ? a.commissionValue : '';
+  renderAgentMerchantPicker(editingAgentId, a ? a.merchantIds : []);
+
+  // مناطق التوصيل (deliveryZones) تحتاج id فعلي للمندوب تُخزَّن تحته، فما تظهر إلا بعد
+  // ما يُحفظ المندوب أول مرة — نفس مبدأ قائمة "المحلات المسؤول عنها" لكن هذي تُحفظ فوراً
+  // بضغطة زر خاصة بها (مثل مناطق الشحن العامة بـ 14-shipping-pricing.js) بدل انتظار زر
+  // "حفظ" العام تاع المودال.
+  const zonesSection = document.getElementById('agent-zones-section');
+  const feeHint = document.getElementById('agent-delivery-fee-hint');
+  if (a) {
+    zonesSection.style.display = 'block';
+    feeHint.textContent = a.deliveryZones.length
+      ? 'هذا المندوب مسعّر حسب المنطقة أدناه — الأجرة هذي تُستخدم فقط كافتراضي إذا حذفت كل مناطقه.'
+      : 'ما فيه مناطق مضافة لهذا المندوب بعد — هذا الرقم يُستخدم حالياً كأجرة ثابتة بأي مكان.';
+    renderAgentZoneGovernorateSelect();
+  } else {
+    zonesSection.style.display = 'none';
+    feeHint.textContent = 'احفظ المندوب أولاً، بعدين تكدر تعدله لتحديد مناطق توصيل مسعّرة له.';
+  }
+  document.getElementById('agent-modal').classList.add('show');
+}
+function closeAgentModal() {
+  editingAgentId = null;
+  document.getElementById('agent-modal').classList.remove('show');
+}
+async function submitAgentModal() {
+  const name = document.getElementById('agent-name').value.trim();
+  const companyName = document.getElementById('agent-company').value.trim();
+  const deliveryFee = parseInt(document.getElementById('agent-delivery-fee').value, 10);
+  const commissionType = document.getElementById('agent-commission-type').value === 'percentage' ? 'percentage' : 'fixed';
+  const commissionValue = parseFloat(document.getElementById('agent-commission-value').value);
+  const merchantIds = Array.from(document.querySelectorAll('.agent-merchant-check:checked')).map(c => parseInt(c.value, 10));
+
+  if (!name) { showToast('عبي اسم المندوب'); return; }
+  if (isNaN(deliveryFee) || deliveryFee < 0) { showToast('عبي أجرة التوصيل (رقم صحيح)'); return; }
+  if (isNaN(commissionValue) || commissionValue < 0) { showToast('عبي قيمة عمولة المنصة'); return; }
+  if (commissionType === 'percentage' && commissionValue > 100) { showToast('النسبة المئوية ما تكدر تتجاوز 100%'); return; }
+
+  if (editingAgentId) {
+    const a = data.employees.find(x => x.id === editingAgentId);
+    if (!a) return;
+    a.name = name;
+    a.companyName = companyName;
+    a.deliveryFee = deliveryFee;
+    a.commissionType = commissionType;
+    a.commissionValue = commissionValue;
+    a.merchantIds = merchantIds;
+    if (window.authApi && a.authUid) await window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+    saveData();
+    closeAgentModal();
+    showToast('تم تحديث بيانات المندوب');
+    renderAll();
+    return;
+  }
+
+  const username = document.getElementById('agent-username').value.trim();
+  const password = document.getElementById('agent-password').value.trim();
+  if (!username || !password) { showToast('عبي اليوزر نيم والباسورد'); return; }
+  if (password.length < 6) { showToast('لازم كلمة المرور ٦ خانات أو أكثر (شرط Firebase)'); return; }
+
+  const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const agent = {
+    id: newId, name, companyName, phone: '', permissions: [],
+    ownerType: 'delivery_agent', merchantId: null, merchantIds, deliveryFee, commissionType, commissionValue,
+    username: '', password: '', status: 'active', authUid: null
+  };
+
+  if (window.authApi) {
+    const btn = document.querySelector('#agent-modal .btn:not(.secondary)');
+    if (btn) { btn.disabled = true; btn.textContent = 'جاري إنشاء الحساب...'; }
+    try {
+      const uid = await window.authApi.createAccount(username, password);
+      agent.authUid = uid;
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'إضافة'; }
+      if (err && err.code === 'auth/email-already-in-use') showToast('اليوزرنيم هذا مستخدم من قبل — جرب يوزرنيم ثاني');
+      else { console.error('Agent account creation failed:', err); showToast('تعذر إنشاء حساب الدخول — تأكد من الاتصال وحاول مرة ثانية'); }
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'إضافة'; }
+  }
+
+  agent.username = username;
+  agent.password = await hashPasswordStrong(password);
+  data.employees.push(agent);
+
+  if (window.authApi && agent.authUid) await window.authApi.saveDoc('employees', agent.authUid, agent).catch(() => {});
+  saveData();
+  closeAgentModal();
+  logAudit('إضافة مندوب توصيل', name);
+  showToast('تمت إضافة مندوب التوصيل');
+  renderAll();
+}
+
+function renderDeliveryAgentsList() {
+  const el = document.getElementById('delivery-agents-list');
+  if (!el) return;
+  const agents = data.employees.filter(e => e.ownerType === 'delivery_agent');
+  if (agents.length === 0) { el.innerHTML = '<div class="empty">ما ضفت مندوبين توصيل بعد</div>'; return; }
+  el.innerHTML = agents.map(a => {
+    const shopsCount = a.merchantIds.length;
+    const commissionLabel = a.commissionType === 'percentage' ? `${a.commissionValue}% من كل طلب` : `${fmtNum(a.commissionValue)} د لكل طلب`;
+    // مؤشر أداء بسيط: نسبة الإرجاع من كل تاريخ هذا المندوب (موصلة + راجعة، بدون الطلبات
+    // اللي لسا بعهدته) — تنبيه بصري بس لو النسبة عالية، مو حكم قاطع على أداء المندوب.
+    const finished = data.orders.filter(o => o.deliveryAgentId === a.id && (o.deliveryStatus === 'delivered' || o.deliveryStatus === 'returned'));
+    const returnedCount = finished.filter(o => o.deliveryStatus === 'returned').length;
+    const returnRate = finished.length > 0 ? Math.round((returnedCount / finished.length) * 100) : null;
+    const pendingCount = agentPendingCustodyOrders(a.id).length;
+    const ukey = 'agent-' + a.id;
+    const revealed = revealedUsernames.has(ukey);
+    const usernameDisplay = a.username ? (revealed ? a.username : '•'.repeat(Math.max(6, a.username.length))) : '—';
+    const totals = agentAllTimeTotals(a.id);
+    return `<div class="list-item" style="align-items:flex-start; flex-direction:column; gap:6px;">
+      <div style="width:100%;">
+        <b>${esc(a.name)}</b>${a.companyName ? ' — ' + esc(a.companyName) : ''}
+        <span class="badge ${a.status === 'active' ? 'active' : 'rejected'}" style="margin-right:6px;">${a.status === 'active' ? 'نشط' : 'موقوف مؤقتاً'}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">عدد التجار المسؤول عنهم: <b>${shopsCount}</b> — أجرة التوصيل: ${a.deliveryZones.length ? `مسعّرة حسب المنطقة (${a.deliveryZones.length} منطقة)` : fmtNum(a.deliveryFee) + ' د (بأي مكان)'} — عمولة المنصة منه: ${commissionLabel}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">طلبات بعهدته حالياً: ${pendingCount}${returnRate != null ? ` — نسبة الإرجاع (من كامل تاريخه): <span style="color:${returnRate >= 20 ? '#B3261E' : 'inherit'}; font-weight:${returnRate >= 20 ? '700' : '400'};">${returnRate}%</span>` : ''}</span>
+        <br><span style="color:var(--text-mute); font-size:11px;">
+          مستحقات المنصة عليه من عمولته (كل الوقت): <b>${fmtNum(totals.totalCommission)} د</b>
+          — منها غير مسدَّد حالياً: <b style="color:${totals.unsettled > 0 ? '#B3261E' : 'inherit'};">${fmtNum(totals.unsettled)} د</b>
+        </span>
+        <br><span style="color:var(--text-mute); font-size:11px;">
+          مسدَّد نقداً: <b>${fmtNum(totals.balance.paid)} د</b>
+          — المتبقي: <b style="color:${totals.balance.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(totals.balance.remaining)} د</b>${totals.balance.overpaid ? ` <span style="color:#065F46;">(زيادة مسدَّدة ${fmtNum(totals.balance.overpaid)} د)</span>` : ''}
+        </span>
+        <br><span style="color:var(--text-mute); font-size:11px;">
+          عمولة التوصيل — مسدَّد: <b>${fmtNum(totals.deliveryBalance.paid)} د</b> — المتبقي: <b style="color:${totals.deliveryBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(totals.deliveryBalance.remaining)} د</b>
+          — حق التجار عنده (متبقي): <b style="color:${totals.merchantBalance.remaining > 0 ? '#B3261E' : '#065F46'};">${fmtNum(totals.merchantBalance.remaining)} د</b>
+        </span>
+        ${renderAgentPendingPayments(a.id, false)}
+        <br><span style="color:var(--text-mute); font-size:11px;">
+          يوزر: ${esc(usernameDisplay)}
+          ${a.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('${ukey}')">${revealed ? 'إخفاء' : 'إظهار'}</span>` : ''}
+        </span>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn small secondary" onclick="openAgentModal(${a.id})">تعديل</button>
+        <button class="btn small secondary" onclick="toggleAgentStatus(${a.id})">${a.status === 'active' ? 'إيقاف مؤقت' : 'إعادة تفعيل'}</button>
+        <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${a.id})">تصفير كلمة المرور</button>
+        <button class="btn small" onclick="openAgentCashLogModal(${a.id}, true)">+ تسجيل دفعة</button>
+        <button class="btn small secondary" onclick="openPayRequestModal(${a.id})">📨 طلب دفعة</button>
+        <button class="btn small secondary" onclick="exportAgentAccountingExcel(${a.id})">تصدير حسابات هذا المندوب</button>
+        ${pendingCount > 0 ? `<button class="btn small secondary" onclick="openReassignAgentOrdersModal(${a.id})">إعادة توجيه الطلبات المفتوحة (${pendingCount})</button>` : ''}
+        <button class="btn danger small" onclick="deleteAgent(${a.id})">حذف</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---- Pause/resume — status flips between 'active' and 'paused'. A paused agent can't log
+// in (platformLogin only accepts status === 'active') and stops getting new orders auto-
+// assigned to them (deliveryAgentForMerchant only matches active agents) — but nothing about
+// their history, accounts, or already-assigned orders changes. Re-activating just flips it
+// back; nothing needs to be "restored".
+async function toggleAgentStatus(id) {
+  const a = data.employees.find(x => x.id === id);
+  if (!a) return;
+  a.status = a.status === 'active' ? 'paused' : 'active';
+  if (window.authApi && a.authUid) await window.authApi.saveDoc('employees', a.authUid, a).catch(() => {});
+  saveData();
+  logAudit(a.status === 'active' ? 'إعادة تفعيل مندوب توصيل' : 'إيقاف مؤقت لمندوب توصيل', a.name);
+  showToast(a.status === 'active' ? 'تم تفعيل المندوب' : 'تم إيقاف المندوب مؤقتاً — ما يكدر يسجل دخول ولا توصله طلبات جديدة');
+  renderAll();
+}
+
+// ---- Bulk-reassign an agent's currently-open (with_shipping/received_by_shipping) orders
+// to another active agent — needed before deleteAgent() will allow removing someone who
+// still has orders "in the air" (see the guard inside deleteAgent below). Re-snapshots the
+// fee/commission fields to the NEW agent's current values, exactly like a fresh
+// handOverInvoiceToShipping assignment would.
+let reassignSourceAgentId = null;
+function openReassignAgentOrdersModal(agentId) {
+  reassignSourceAgentId = agentId;
+  const sel = document.getElementById('reassign-target-agent');
+  const others = data.employees.filter(e => e.ownerType === 'delivery_agent' && e.id !== agentId && e.status === 'active');
+  sel.innerHTML = others.length === 0
+    ? '<option value="">ما فيه مندوب نشط ثاني تنقلها له</option>'
+    : others.map(a => `<option value="${a.id}">${esc(a.name)}${a.companyName ? ' — ' + esc(a.companyName) : ''}</option>`).join('');
+  const count = agentPendingCustodyOrders(agentId).length;
+  document.getElementById('reassign-text').textContent = `عندك ${count} فاتورة بعهدة هذا المندوب لسا ما وصلت ولا رجعت. اختر مندوب ثاني تنقلها له:`;
+  document.getElementById('reassign-agent-modal').classList.add('show');
+}
+function closeReassignAgentOrdersModal() {
+  reassignSourceAgentId = null;
+  document.getElementById('reassign-agent-modal').classList.remove('show');
+}
+async function confirmReassignAgentOrders() {
+  if (reassignSourceAgentId == null) return;
+  const targetId = parseInt(document.getElementById('reassign-target-agent').value, 10);
+  if (isNaN(targetId)) { showToast('ما فيه مندوب لتنقل له الطلبات'); return; }
+  const target = data.employees.find(x => x.id === targetId);
+  if (!target) return;
+  const items = agentPendingCustodyOrders(reassignSourceAgentId);
+  items.forEach(o => {
+    o.deliveryAgentId = target.id;
+    o.agentFeeSnapshot = agentDeliveryQuote(target, o.governorate, o.area, o.shippingSpeed).fee;
+    o.agentCommissionTypeSnapshot = target.commissionType;
+    o.agentCommissionValueSnapshot = target.commissionValue;
+    o.deliveryAssignedAt = new Date().toISOString();
+  });
+  saveData();
+  if (window.authApi) await Promise.allSettled(items.map(o => window.authApi.saveDoc('orders', String(o.id), o)));
+  logAudit('إعادة توجيه طلبات مندوب', `${items.length} فاتورة إلى ${target.name}`);
+  showToast(`تم نقل ${items.length} فاتورة إلى ${target.name}`);
+  closeReassignAgentOrdersModal();
+  renderAll();
+}
+
+// ---- Move ONE merchant from its current delivery agent/company to another (or unassign it
+// entirely) in a single action, instead of the admin having to open the old agent's modal to
+// uncheck the shop then the new agent's modal to check it. Also carries over any orders of
+// THIS merchant currently in custody of the old agent (not yet delivered/returned) to the new
+// one — same re-snapshot logic as confirmReassignAgentOrders() above, just merchant-scoped.
+let reassignMerchantTargetId = null;
+function openReassignMerchantAgentModal(merchantId) {
+  reassignMerchantTargetId = merchantId;
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (!m) return;
+  const currentAgent = deliveryAgentForMerchant(merchantId);
+  const others = data.employees.filter(e => e.ownerType === 'delivery_agent' && e.status === 'active' && e.id !== (currentAgent ? currentAgent.id : null));
+  const sel = document.getElementById('reassign-merchant-target-agent');
+  sel.innerHTML = '<option value="">بدون مندوب (إلغاء الربط)</option>' +
+    others.map(a => `<option value="${a.id}">${esc(a.name)}${a.companyName ? ' — ' + esc(a.companyName) : ''}</option>`).join('');
+  const pendingCount = currentAgent ? data.orders.filter(o => o.merchantId === merchantId && o.deliveryAgentId === currentAgent.id && !o.cancelled && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping')).length : 0;
+  document.getElementById('reassign-merchant-agent-text').textContent =
+    `التاجر "${m.shop}" — المندوب/الشركة الحالية: ${currentAgent ? (currentAgent.name + (currentAgent.companyName ? ' — ' + currentAgent.companyName : '')) : 'ما فيه مندوب مخصص حالياً'}${pendingCount > 0 ? ` — عنده ${pendingCount} فاتورة لسا بعهدة المندوب الحالي` : ''}. اختر الوجهة الجديدة:`;
+  document.getElementById('reassign-merchant-agent-modal').classList.add('show');
+}
+function closeReassignMerchantAgentModal() {
+  reassignMerchantTargetId = null;
+  document.getElementById('reassign-merchant-agent-modal').classList.remove('show');
+}
+async function confirmReassignMerchantAgent() {
+  if (reassignMerchantTargetId == null) return;
+  const merchantId = reassignMerchantTargetId;
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (!m) return;
+  const sel = document.getElementById('reassign-merchant-target-agent');
+  const targetId = sel.value ? parseInt(sel.value, 10) : null;
+  const newAgent = targetId != null ? data.employees.find(x => x.id === targetId && x.ownerType === 'delivery_agent') : null;
+  if (targetId != null && !newAgent) { showToast('تعذر إيجاد المندوب المختار'); return; }
+
+  const oldAgent = deliveryAgentForMerchant(merchantId);
+  if (oldAgent && oldAgent.id !== (newAgent ? newAgent.id : null)) {
+    oldAgent.merchantIds = oldAgent.merchantIds.filter(id => id !== merchantId);
+  }
+  if (newAgent && !newAgent.merchantIds.includes(merchantId)) {
+    newAgent.merchantIds.push(merchantId);
+  }
+
+  // Carry over this merchant's orders currently in the OLD agent's custody (not yet
+  // delivered/returned) to the new agent — or un-assign them if there's no new agent.
+  const pending = oldAgent ? data.orders.filter(o => o.merchantId === merchantId && o.deliveryAgentId === oldAgent.id && !o.cancelled && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping')) : [];
+  pending.forEach(o => {
+    o.deliveryAgentId = newAgent ? newAgent.id : null;
+    o.agentFeeSnapshot = newAgent ? agentDeliveryQuote(newAgent, o.governorate, o.area, o.shippingSpeed).fee : 0;
+    o.agentCommissionTypeSnapshot = newAgent ? newAgent.commissionType : 'fixed';
+    o.agentCommissionValueSnapshot = newAgent ? newAgent.commissionValue : 0;
+    o.deliveryAssignedAt = new Date().toISOString();
+  });
+
+  saveData();
+  const savePromises = [];
+  if (window.authApi) {
+    if (oldAgent && oldAgent.authUid) savePromises.push(window.authApi.saveDoc('employees', oldAgent.authUid, oldAgent).catch(() => {}));
+    if (newAgent && newAgent.authUid) savePromises.push(window.authApi.saveDoc('employees', newAgent.authUid, newAgent).catch(() => {}));
+    pending.forEach(o => savePromises.push(window.authApi.saveDoc('orders', String(o.id), o).catch(() => {})));
+    await Promise.allSettled(savePromises);
+  }
+
+  logAudit('نقل تاجر بين مناديب التوصيل', `${m.shop}: ${oldAgent ? oldAgent.name : 'بدون مندوب'} ← ${newAgent ? (newAgent.name + (newAgent.companyName ? ' (' + newAgent.companyName + ')' : '')) : 'بدون مندوب'}${pending.length > 0 ? ` — ${pending.length} فاتورة انتقلت معه` : ''}`);
+  showToast(newAgent ? `تم نقل "${m.shop}" إلى ${newAgent.name}` : `تم إلغاء ربط "${m.shop}" بأي مندوب`);
+  closeReassignMerchantAgentModal();
+  renderAll();
+}
+
+// ---- Delete — blocked while the agent still has open (not yet delivered/returned) orders,
+// so a deletion never leaves orders silently orphaned with no one responsible for them. The
+// admin has to reassign those first (see openReassignAgentOrdersModal above).
+function deleteAgent(id) {
+  const a = data.employees.find(e => e.id === id);
+  if (!a) return;
+  const pendingCount = agentPendingCustodyOrders(id).length;
+  if (pendingCount > 0) {
+    showToast(`ما تكدر تحذف "${a.name}" — عنده ${pendingCount} فاتورة لسا بعهدته. سوّي "إعادة توجيه الطلبات المفتوحة" أول`);
+    return;
+  }
+  openConfirmModal('حذف مندوب التوصيل', `متأكد تريد تحذف "${a.name}"؟ الطلبات اللي وصّلها سابقاً تضل مسجلة بالحسابات، بس ما يكدر يسجل دخول بعدها ولا توصله طلبات جديدة.`, async () => {
+    data.employees = data.employees.filter(e => e.id !== id);
+    if (window.authApi) {
+      if (a.authUid) window.authApi.deleteDoc('employees', a.authUid).catch(() => {});
+    }
+    saveData();
+    logAudit('حذف مندوب توصيل', a.name);
+    showToast('تم حذف المندوب');
+    renderAll();
+  });
+}
+
+// ---------- ANNOUNCEMENTS (admin broadcasts messages to merchants) ----------
+// Toggles the multi-select merchant checkbox list on/off depending on whether "كل التجار"
+// or "تجار محددين" is chosen in the composer above.
+function renderAnnouncementTargetPicker() {
+  const targetSel = document.getElementById('ann-target');
+  const box = document.getElementById('ann-target-picker');
+  if (!targetSel || !box) return;
+  if (targetSel.value !== 'specific') { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const merchants = data.merchants.filter(m => m.status === 'active');
+  box.innerHTML = merchants.length
+    ? merchants.map(m => `
+        <label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-weight:400;">
+          <input type="checkbox" class="ann-target-check" value="${m.id}"> ${esc(m.shop)}
+        </label>`).join('')
+    : '<div class="empty">ما فيه تجار نشطين حالياً</div>';
+}
+
+// Sends a new broadcast: reads the composer, validates it, appends to data.announcements
+// (persisted inside the shared platform-settings doc — see saveData/fetchRemoteData), then
+// resets the form and re-renders the sent-messages list.
+async function sendAnnouncement() {
+  const textEl = document.getElementById('ann-text');
+  const text = (textEl.value || '').trim();
+  if (!text) { showToast('اكتب نص الرسالة أولاً'); return; }
+
+  const targetSel = document.getElementById('ann-target');
+  let target = 'all';
+  if (targetSel.value === 'specific') {
+    const ids = Array.from(document.querySelectorAll('.ann-target-check:checked')).map(cb => parseInt(cb.value));
+    if (ids.length === 0) { showToast('اختر تاجر واحد على الأقل'); return; }
+    target = ids;
+  }
+
+  data.announcements.unshift({
+    id: genId(),
+    text,
+    createdAt: new Date().toISOString(),
+    target,
+    readBy: []
+  });
+  await saveData();
+
+  textEl.value = '';
+  targetSel.value = 'all';
+  renderAnnouncementTargetPicker();
+  renderAnnouncementsAdmin();
+  showToast('تم إرسال الرسالة ');
+}
+
+async function deleteAnnouncement(id) {
+  data.announcements = data.announcements.filter(a => a.id !== id);
+  await saveData();
+  renderAnnouncementsAdmin();
+}
+
+// Describes who an announcement went to + how many of them have opened it, for the admin's
+// "sent messages" list.
+function announcementRecipients(a) {
+  return a.target === 'all' ? data.merchants.filter(m => m.status === 'active') : data.merchants.filter(m => a.target.includes(m.id));
+}
+function renderAnnouncementsAdmin() {
+  const list = document.getElementById('ann-sent-list');
+  if (!list) return;
+  if (!data.announcements.length) { list.innerHTML = '<div class="empty">ما أرسلت أي رسالة بعد</div>'; return; }
+  list.innerHTML = data.announcements.map(a => {
+    const recipients = announcementRecipients(a);
+    const readCount = recipients.filter(m => (a.readBy || []).includes(m.id)).length;
+    const targetLabel = a.target === 'all' ? 'كل التجار' : `تجار محددين (${recipients.length})`;
+    const date = new Date(a.createdAt).toLocaleString('ar-IQ', { dateStyle: 'medium', timeStyle: 'short' });
+    return `
+      <div class="card" style="margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <div style="flex:1;">
+            <div style="white-space:pre-wrap;">${esc(a.text)}</div>
+            <div class="subtitle" style="margin-top:6px;">${date} · ${targetLabel} · قُرئت من ${readCount}/${recipients.length}</div>
+          </div>
+          <button class="btn danger small" onclick="deleteAnnouncement(${a.id})"></button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderEmployees() {
+  const pendingBox = document.getElementById('pending-employee-list');
+  if (pendingBox) {
+    // طلبات موظفين جدد — من التجار (ownerType 'merchant') أو من مناديب التوصيل
+    // (ownerType 'agent_employee') — نفس مسار القبول/الرفض بالضبط (openApproveEmployeeModal/
+    // confirmApproveEmployee/rejectEmployee فوق تعمل بأي ownerType بدون أي تعديل عليها).
+    const pending = data.employees.filter(e => (e.ownerType === 'merchant' || e.ownerType === 'agent_employee') && e.status === 'pending');
+    pendingBox.innerHTML = pending.length === 0 ? '<div class="empty">ما فيه طلبات موظفين حالياً</div>' : pending.map(e => {
+      const isAgentEmp = e.ownerType === 'agent_employee';
+      const owner = isAgentEmp ? data.employees.find(x => x.id === e.agentId && x.ownerType === 'delivery_agent') : data.merchants.find(x => x.id === e.merchantId);
+      const ownerLabel = isAgentEmp
+        ? `موظف عند مندوب توصيل ${owner ? esc(owner.companyName || owner.name) : 'محذوف'}`
+        : `موظف عند ${owner ? esc(owner.shop) : 'تاجر محذوف'}`;
+      const permsList = isAgentEmp ? AGENT_EMPLOYEE_PERMS : MERCHANT_EMPLOYEE_PERMS;
+      return `<div class="list-item" style="align-items:flex-start;">
+        <span>${esc(e.name)} — ${ownerLabel}<br>
+          <span style="color:var(--text-mute); font-size:11px;">${esc(e.phone) || '—'}</span><br>
+          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات المطلوبة: ${e.permissions.map(id => labelForPerm(permsList, id)).join('، ') || '—'}</span>
+        </span>
+        <span>
+          <button class="btn small" onclick="openApproveEmployeeModal(${e.id})">قبول وتحديد بيانات الدخول</button>
+          <button class="btn danger small" onclick="rejectEmployee(${e.id})">رفض</button>
+        </span>
+      </div>`;
+    }).join('');
+  }
+
+  const adminEmpBox = document.getElementById('admin-employee-list');
+  if (adminEmpBox) {
+    const list = data.employees.filter(e => e.ownerType === 'admin');
+    adminEmpBox.innerHTML = list.length === 0 ? '<div class="empty">ما ضفت موظفين للإدارة بعد</div>' : list.map(e => `
+      <div class="list-item" style="align-items:flex-start;">
+        <span>${esc(e.name)}<br>
+          <span style="color:var(--text-mute); font-size:11px;">${esc(e.phone) || '—'}</span><br>
+          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات: ${e.permissions.map(id => labelForPerm(ADMIN_EMPLOYEE_PERMS, id)).join('، ') || '—'}</span>
+        </span>
+        <span>
+          <button class="btn small secondary" onclick="openAdminEmployeeModal(${e.id})">تعديل الصلاحيات</button>
+          <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${e.id})">تصفير كلمة المرور</button>
+          <button class="btn danger small" onclick="deleteEmployee(${e.id})">حذف</button>
+        </span>
+      </div>`).join('');
+  }
+
+  const activeBox = document.getElementById('active-merchant-employee-list');
+  if (activeBox) {
+    // موظفين نشطين — عند تجار أو عند مناديب توصيل (نفس منطق قائمة الطلبات فوق).
+    const list = data.employees.filter(e => (e.ownerType === 'merchant' || e.ownerType === 'agent_employee') && e.status === 'active');
+    activeBox.innerHTML = list.length === 0 ? '<div class="empty">ما فيه موظفين نشطين حالياً</div>' : list.map(e => {
+      const isAgentEmp = e.ownerType === 'agent_employee';
+      const owner = isAgentEmp ? data.employees.find(x => x.id === e.agentId && x.ownerType === 'delivery_agent') : data.merchants.find(x => x.id === e.merchantId);
+      const ownerLabel = isAgentEmp
+        ? `عند مندوب توصيل ${owner ? esc(owner.companyName || owner.name) : 'محذوف'}`
+        : `عند ${owner ? esc(owner.shop) : 'تاجر محذوف'}`;
+      const permsList = isAgentEmp ? AGENT_EMPLOYEE_PERMS : MERCHANT_EMPLOYEE_PERMS;
+      const ownerNoun = isAgentEmp ? 'المندوب' : 'التاجر';
+      return `<div class="list-item" style="align-items:flex-start;">
+        <span>${esc(e.name)} — ${ownerLabel}<br>
+          <span style="color:var(--text-mute); font-size:11px;">الصلاحيات (يحددها ${ownerNoun}): ${e.permissions.map(id => labelForPerm(permsList, id)).join('، ') || '—'}</span>
+        </span>
+        <span>
+          <button class="btn small secondary" onclick="openResetPasswordModal('employee', ${e.id})">تصفير كلمة المرور</button>
+          <button class="btn danger small" onclick="deleteEmployee(${e.id})">حذف</button>
+        </span>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ---------- RESET PASSWORD (merchant) ----------
+// Passwords are hashed, so there is no "original" to show — the admin can only set a new one.
+let resetPasswordTarget = null; // { type: 'merchant' | 'employee', id }
+
+function openResetPasswordModal(type, id) {
+  resetPasswordTarget = { type, id };
+  const target = type === 'employee' ? data.employees.find(x => x.id === id) : data.merchants.find(x => x.id === id);
+  document.getElementById('reset-password-title').textContent =
+    `تصفير كلمة مرور: ${target ? (type === 'employee' ? target.name : target.shop) : ''}`;
+  document.getElementById('reset-password-input').value = '';
+  document.getElementById('reset-password-modal').classList.add('show');
+}
+function closeResetPasswordModal() {
+  resetPasswordTarget = null;
+  document.getElementById('reset-password-modal').classList.remove('show');
+}
+async function confirmResetPassword() {
+  if (!resetPasswordTarget) return;
+  const newPassword = document.getElementById('reset-password-input').value.trim();
+  if (!newPassword) { showToast('اكتب كلمة مرور جديدة'); return; }
+  if (newPassword.length < 6) { showToast('لازم كلمة المرور ٦ خانات أو أكثر (شرط Firebase)'); return; }
+
+  const target = resetPasswordTarget.type === 'employee'
+    ? data.employees.find(x => x.id === resetPasswordTarget.id)
+    : data.merchants.find(x => x.id === resetPasswordTarget.id);
+  if (!target) return;
+
+  // IMPORTANT: target.password (the hash below) is only ever checked as a LEGACY fallback —
+  // platformLogin() always tries real Firebase Auth first. So for any account that already has
+  // a real account (target.authUid set), updating just the hash here would silently do nothing:
+  // the person could still log in with their OLD password forever, and the admin would wrongly
+  // believe access was cut off. For those accounts we must also update the REAL Firebase Auth
+  // password via the resetUserPassword Cloud Function (Admin SDK — the only thing that's
+  // allowed to change another user's password). See /functions in the project.
+  if (target.authUid && window.authApi && window.authApi.resetAuthPassword) {
+    if (!adminSessionCreds) {
+      showToast('انتهت صلاحية جلستك — سجل خروج ودخول من جديد قبل تصفير كلمة المرور');
+      return;
+    }
+    const saveBtn = document.querySelector('#reset-password-modal .btn:not(.secondary)');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'جاري التغيير...'; }
+    try {
+      const targetUsername = target.username;
+      const result = await window.authApi.resetAuthPassword(targetUsername, newPassword);
+      if (!result || !result.updatedAuth) {
+        // No real Firebase Auth account found for this username after all — fall through and
+        // just update the local hash below, same as a legacy account.
+        console.warn('resetUserPassword: no matching Firebase Auth account, only updating local hash.');
+      }
+    } catch (err) {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'حفظ'; }
+      console.error('Real password reset failed:', err);
+      // Do NOT tell the admin the reset succeeded — the old password still works.
+      showToast('تعذر تغيير كلمة الدخول الفعلية (تأكد إن الخدمة السحابية مفعّلة بالمشروع) — كلمة المرور القديمة لسا شغالة، لم يتم تغيير شي');
+      return;
+    }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'حفظ'; }
+  }
+
+  target.password = await hashPasswordStrong(newPassword);
+  const resetTargetType = resetPasswordTarget.type; // captured before closeResetPasswordModal() clears resetPasswordTarget
+  const resetOk = await saveData();
+  closeResetPasswordModal();
+  if (!resetOk) {
+    showToast('تعذر حفظ كلمة المرور الجديدة — جرب مرة ثانية بعد لحظات، وإلا القديمة تضل شغالة');
+  } else {
+    showToast('تم تصفير كلمة المرور فعلياً — لا تنسى ترسلها للحساب يدوياً');
+    logAudit('تصفير كلمة مرور', `${resetTargetType === 'employee' ? 'موظف' : 'تاجر'}: ${resetTargetType === 'employee' ? target.name : target.shop}`);
+  }
+  renderAll();
+}
+
+// Masked username display with a per-row show/hide toggle — kept out of view by default.
+let revealedUsernames = new Set();
+function toggleUsernameReveal(key) {
+  if (revealedUsernames.has(key)) revealedUsernames.delete(key);
+  else revealedUsernames.add(key);
+  renderAll();
+}
+
+// ---------- ADMIN CREDENTIALS ----------
+async function changeAdminPassword() {
+  const oldUserInput = document.getElementById('old-admin-username');
+  const oldPassInput = document.getElementById('old-admin-password');
+  const userInput = document.getElementById('new-admin-username');
+  const passInput = document.getElementById('new-admin-password');
+  const errorBox = document.getElementById('admin-cred-error');
+  const oldUsername = oldUserInput.value.trim();
+  const oldPassword = oldPassInput.value;
+  const newUsername = userInput.value.trim();
+  const newPassword = passInput.value.trim();
+
+  errorBox.textContent = '';
+
+  let oldOk = false;
+  if (oldUsername === data.settings.adminUsername) {
+    if (data.settings.adminPassword) oldOk = await verifyPassword(oldPassword, data.settings.adminPassword);
+    else if (window.authApi && window.authApi.verifyAdminPassword) oldOk = await window.authApi.verifyAdminPassword(oldPassword); // Firebase-only mode
+  }
+  if (!oldOk) {
+    errorBox.textContent = 'اسم المستخدم أو كلمة المرور الحاليين غير صحيحين';
+    return;
+  }
+  if (!newUsername && !newPassword) { errorBox.textContent = 'اكتب اسم مستخدم جديد أو كلمة مرور جديدة'; return; }
+
+  // Sync the REAL Firebase Auth password FIRST, before touching anything local. If this step
+  // fails, we bail out completely rather than changing the local password — otherwise the
+  // admin's local password and their real Firebase Auth password would drift apart, and their
+  // very next login would be blocked by the mismatch check in platformLogin().
+  if (newPassword && window.authApi && window.authApi.syncAdminAuthPassword) {
+    try {
+      const synced = await window.authApi.syncAdminAuthPassword(newPassword);
+      if (!synced) {
+        errorBox.textContent = 'انتهت صلاحية جلستك — سجل خروج ودخول من جديد قبل تغيير كلمة المرور';
+        return;
+      }
+    } catch (e) {
+      console.error('Failed to sync admin Firebase Auth password:', e);
+      errorBox.textContent = 'تعذر تحديث كلمة الدخول الفعلية — تأكد من الاتصال وحاول مرة ثانية';
+      return;
+    }
+  }
+
+  const prevUsername = data.settings.adminUsername;
+  const prevPassword = data.settings.adminPassword;
+  if (newUsername) data.settings.adminUsername = newUsername;
+  if (newPassword && data.settings.adminPassword) data.settings.adminPassword = await hashPasswordStrong(newPassword); // in Firebase-only mode no hash is stored at all
+
+  // Saved to its own protected doc (storage/admin-credentials) — NOT via the general
+  // saveData(), which no longer writes these fields at all (see fetchRemoteData/saveData
+  // above). This is what actually enforces "only the real admin can change this", since
+  // firestore.rules restricts that doc's write to isAdmin() regardless of what any
+  // employee permission is set to.
+  const credsOk = await saveAdminCredentials();
+  if (!credsOk) {
+    data.settings.adminUsername = prevUsername;
+    data.settings.adminPassword = prevPassword;
+    errorBox.textContent = 'تعذر حفظ التغيير — جرب مرة ثانية بعد لحظات';
+    return;
+  }
+  await saveData(); // persists the version bump / anything else pending as usual
+
+  adminSessionCreds = { username: data.settings.adminUsername };
+  oldUserInput.value = ''; oldPassInput.value = '';
+  userInput.value = ''; passInput.value = '';
+  document.getElementById('topbar-name').textContent = data.settings.adminUsername;
+  showToast('تم تحديث بيانات دخول الأدمن — لا تنساها!');
+  logAudit('تغيير بيانات دخول الأدمن', newUsername ? `اسم مستخدم جديد: ${newUsername}` : 'تغيير كلمة المرور فقط');
+}
+
+// Builds the real, shareable link for a merchant's storefront. If the admin has assigned
+// this merchant a custom domain (see assignCustomDomain), that official domain IS the link —
+// otherwise it falls back to the shared platform link with the merchant's own slug. Nothing
+// about the merchant's products/orders/data changes either way; this only changes which URL
+// customers use to reach the exact same storefront.
+function storeLinkUrl(m) {
+  if (m && m.customDomain) return `https://${m.customDomain}`;
+  const slug = typeof m === 'string' ? m : shortSlugFor(m);
+  return `${location.origin}${location.pathname}?s=${encodeURIComponent(slug)}`;
+}
+
+function copyStoreLink(merchantId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  const url = storeLinkUrl(m);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => showToast('تم نسخ رابط المتجر'),
+      () => showToast('تعذر نسخ الرابط، انسخه يدوياً')
+    );
+  } else {
+    showToast('تعذر نسخ الرابط، انسخه يدوياً');
+  }
+}
+// Opens the merchant's real storefront link (custom domain if assigned, otherwise the
+// shared platform link) in a new tab — same URL customers actually use.
+function openStoreLinkInNewTab(merchantId) {
+  const m = data.merchants.find(x => x.id === merchantId);
+  if (m) window.open(storeLinkUrl(m), '_blank');
+}
+
+// Builds the shareable link that takes any new merchant straight to the "طلب انضمام" form
+function joinLinkUrl() {
+  return `${location.origin}${location.pathname}?join=1`;
+}
+
+function copyJoinLink() {
+  const url = joinLinkUrl();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => showToast('تم نسخ رابط انضمام التجار'),
+      () => showToast('تعذر نسخ الرابط، انسخه يدوياً')
+    );
+  } else {
+    showToast('تعذر نسخ الرابط، انسخه يدوياً');
+  }
+}
+
+let loggedInMerchantId = null;
+
+function renderMerchantPanel() {
+  if (!loggedInMerchantId) return;
+  const m = data.merchants.find(x => x.id === loggedInMerchantId);
+  const panel = document.getElementById('merchant-panel');
+  if (!m) { panel.innerHTML = ''; return; }
+  ensureMerchantTheme(m);
+  recomputeMerchantBestSellers(m);
+  // أول مرة نعرض لوحة هذا التاجر بهذي الجلسة (تسجيل دخول جديد أو تبديل حساب) — نأخذ
+  // "صورة" من الطلبات الحالية بدون أي تنبيه، حتى ما يرن الإنذار على طلبات قديمة أصلاً.
+  if (newOrderTrackedMerchantId !== m.id) seedNewOrderTracking(m);
+
+  panel.innerHTML = `
+    <div id="merchant-subscription-banner">${currentRole === 'merchant' ? renderMerchantSubscriptionBanner(m) : ''}</div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <button class="btn small ${newOrderSoundEnabled ? '' : 'secondary'}" onclick="toggleNewOrderSound()">${newOrderSoundEnabled ? '🔔 التنبيه الصوتي مفعّل' : '🔕 فعّل تنبيه الطلبات الصوتي'}</button>
+    </div>
+    <div class="toggle-group" id="merchant-dash-subnav">
+      <div class="toggle" data-mdashtab="store" onclick="showMerchantDashTab('store')">المتجر</div>
+      <div class="toggle" data-mdashtab="orders" onclick="showMerchantDashTab('orders')">الطلبات</div>
+      <div class="toggle" data-mdashtab="earnings" onclick="showMerchantDashTab('earnings')">الأرباح والحسابات</div>
+      <div class="toggle" data-mdashtab="products" onclick="showMerchantDashTab('products')">${lowStockBadgeHtml(m)}المنتجات</div>
+      <div class="toggle" data-mdashtab="appearance" onclick="showMerchantDashTab('appearance')">المظهر</div>
+      <div class="toggle" data-mdashtab="charts" onclick="showMerchantDashTab('charts')">الرسوم البيانية</div>
+      <div class="toggle" data-mdashtab="messages" onclick="showMerchantDashTab('messages')">${unreadAnnouncementsBadgeHtml(m)}رسائل الإدارة</div>
+      <div class="toggle" data-mdashtab="employees" onclick="showMerchantDashTab('employees')">الموظفين</div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="store">
+      <div class="card">
+        <div class="card-title">حالة المتجر: <span class="badge ${m.status === 'active' ? 'active' : 'disabled'}">${m.status === 'active' ? 'نشط' : 'معطل'}</span></div>
+        ${m.customDomain ? `
+        <div class="card-title" style="margin-top:8px;">دومينك الرسمي (هدية من الإدارة)</div>
+        <div class="link-chip" onclick="copyStoreLink(${m.id})">${storeLinkUrl(m)}</div>
+        <div class="subtitle" style="margin-top:6px;">هذا الدومين صار العنوان الرسمي لمتجرك — أرسله لزبائنك. متجرك ومنتجاتك وطلباتك ما تغيرت أبداً، بس تغيّر العنوان اللي يوصلون بيه.</div>
+        ` : `
+        <div class="card-title" style="margin-top:8px;">رابط متجرك الفريد — أرسله لزبائنك</div>
+        <div class="link-chip" onclick="copyStoreLink(${m.id})">${storeLinkUrl(m)}</div>
+        `}
+        ${m.status === 'active'
+          ? `<button class="btn secondary small" style="margin-top:8px;" onclick="openStoreLinkInNewTab(${m.id})">فتح المتجر بصفحة جديدة</button>`
+          : `<div class="subtitle" style="margin-top:8px;">الرابط اعلاه يشتغل بعد ما يفعّل الأدمن متجرك. لين هسه استخدم زر المعاينة تحت لتشوف شكل متجرك.</div>`}
+        <button class="btn small" style="margin-top:8px;" onclick="openMerchantPreview(${m.id})">عاين متجرك متل ما راح يشوفه الزبون</button>
+      </div>
+      ${m.type === 'restaurant' ? `
+      <div class="card">
+        <div class="card-title">ساعات عمل المطعم</div>
+        <div class="subtitle" style="margin-bottom:8px;">فعّلها إذا تريد متجرك يبين "مغلق الآن" تلقائياً خارج أوقات دوامك، وما يقدر الزبون يطلب بهذي الفترة. تركها معطّلة يخليه مفتوح دايماً متل باقي المتاجر.</div>
+        <div class="toggle-group" style="margin-bottom:10px;">${renderWorkingHoursEnabledToggle(m)}</div>
+        <div id="working-hours-rows-${m.id}">${renderWorkingHoursRows(m)}</div>
+        <button class="btn secondary small" style="margin-top:8px;" onclick="saveWorkingHours(${m.id})">حفظ ساعات العمل</button>
+      </div>
+      ` : ''}
+      ${!m.ownDelivery ? `<div class="card">
+        <div class="card-title">شركة التوصيل المسؤولة عن طلباتك</div>
+        ${(() => {
+          const agent = deliveryAgentForMerchant(m.id);
+          return agent
+            ? `<div class="subtitle" style="margin-bottom:0;">طلباتك الجاهزة تتوجه تلقائياً لشركة <b style="color:var(--ink);">${esc(agent.companyName || agent.name)}</b> للتوصيل.</div>`
+            : `<div class="subtitle" style="margin-bottom:0;">ما فيه شركة توصيل مخصصة لمتجرك حالياً — تواصل مع الإدارة.</div>`;
+        })()}
+      </div>` : ''}
+      <div class="card" id="own-credentials-card-${m.id}">
+        <div class="card-title">بيانات حسابي (خاصة بيك انت بس)</div>
+        <div class="subtitle" style="margin-bottom:8px;">هاي البيانات ما يشوفها أي تاجر ثاني — يشوفها الأدمن وانت بس</div>
+        <div style="font-size:12.5px; color:var(--text-mute);">
+          اسم المستخدم: <b style="color:var(--ink);">${(revealedUsernames.has('own-'+m.id) ? esc(m.username) : '•'.repeat(Math.max(6, (m.username||'').length))) || '—'}</b>
+          ${m.username ? `<span class="link-chip" style="padding:2px 6px; font-size:10px;" onclick="toggleUsernameReveal('own-${m.id}')">${revealedUsernames.has('own-'+m.id) ? 'إخفاء' : 'إظهار'}</span>` : ''}
+          <br>كلمة المرور: مخفية لحمايتك — إذا نسيتها اطلب من الأدمن يصفرها ويعطيك وحدة جديدة
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="orders">
+      <div class="card">
+        <div class="card-title">طلبات جديدة بانتظار ردك</div>
+        <div id="pending-orders-${m.id}">${renderPendingOrders(m)}</div>
+      </div>
+      <div class="card" id="merchant-cancel-requests-card-${m.id}">
+        <div class="card-title">طلبات إلغاء من الزبائن</div>
+        <div class="subtitle" style="margin-bottom:8px;">اتصل بالزبون لتأكيد سبب الإلغاء قبل ما توافق عليه — بعد موافقتك ينتقل الطلب للإدارة للموافقة النهائية</div>
+        <div id="merchant-cancel-requests-${m.id}">${renderMerchantCancelRequests(m)}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">تجهيز الطلبات للتوصيل</div>
+        <div id="ready-shipping-${m.id}">${m.ownDelivery
+          ? '<div class="subtitle">متجرك مستثنى من توصيل المنصة (توصيلك خاص بيك) — الطلبات المقبولة ما تحتاج تجهيز لفريق توصيل المنصة.</div>'
+          : renderReadyForShipping(m)}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">سجل الطلبات (الكل)</div>
+        <input type="text" id="merchant-orders-search-${m.id}" placeholder="بحث برقم الطلب، اسم المنتج، أو الزبون..." style="margin-bottom:8px;" oninput="onMerchantOrdersSearchInput(${m.id})">
+        <div id="merchant-orders-${m.id}">${renderMerchantOrders(m)}</div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="products">
+      <div class="card">
+        <div class="card-title">تنبيهات المخزون — الكمية قربت تخلص</div>
+        <div class="subtitle" style="margin-bottom:8px;">نعرضلك هنا أي مقاس، لون، أو منتج وصلت كميته للحد اللي تحدده تحت (أو نفدت خلص)</div>
+        <div class="row2" style="margin-bottom:10px;">
+          <div><label>نبهني لما توصل الكمية إلى (أو أقل من)</label><input type="number" id="low-stock-threshold-${m.id}" value="${getLowStockThreshold(m)}" min="0"></div>
+          <div style="flex:0 0 auto; display:flex; align-items:flex-end;"><button class="btn secondary small" style="margin-top:0;" onclick="saveLowStockThreshold(${m.id})">حفظ الحد</button></div>
+        </div>
+        <div id="low-stock-list-${m.id}">${renderLowStockAlerts(m)}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">أقسام متجرك (اختياري)</div>
+        <div class="subtitle" style="margin-bottom:8px;">مثل: تيشيرتات، أحذية، اكسسوارات... تكدر تربط أي منتج بقسم لما تضيفه، وتظهر بمتجرك مقسّمة لزبونك مع صورة كل قسم لو ضفتها</div>
+        <div id="merchant-categories-${m.id}">${renderCategoryList(m)}</div>
+        <div class="row2">
+          <div><input id="new-category-${m.id}" placeholder="اسم القسم — مثلاً: أحذية"></div>
+          <div style="flex:0 0 auto;"><button class="btn secondary" style="margin-top:0;" onclick="addCategory(${m.id})">إضافة قسم</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">كوبونات الخصم</div>
+        <div class="subtitle" style="margin-bottom:8px;">أنشئ كود خصم يقدر زبونك يطبّقه بالسلة — نسبة مئوية أو مبلغ ثابت، وبإمكانك تحدد حد أدنى للطلب (اختياري). قيمة الكوبون تُخصم من صافي أرباحك انت، وما تأثر على رسوم المنصة</div>
+        <div id="coupons-list-${m.id}" style="margin-bottom:10px;">${renderCouponsList(m)}</div>
+        <label>كود الكوبون</label><input id="coupon-code-${m.id}" placeholder="مثلاً: EID25" style="text-transform:uppercase;">
+        <div class="row2">
+          <div>
+            <label>نوع الخصم</label>
+            <select id="coupon-type-${m.id}">
+              <option value="percent">نسبة مئوية %</option>
+              <option value="fixed">مبلغ ثابت (د)</option>
+            </select>
+          </div>
+          <div><label>القيمة</label><input type="number" id="coupon-value-${m.id}" placeholder="مثلاً: 10"></div>
+        </div>
+        <label>حد أدنى لقيمة الطلب (اختياري)</label><input type="number" id="coupon-min-${m.id}" placeholder="اتركه فارغ لعدم وجود حد أدنى">
+        <div class="row2">
+          <div><label>تاريخ الانتهاء (اختياري)</label><input type="date" id="coupon-expiry-${m.id}"></div>
+          <div><label>أقصى عدد استخدام (اختياري)</label><input type="number" id="coupon-maxuses-${m.id}" placeholder="اتركه فارغ لعدم وجود حد"></div>
+        </div>
+        <label>أقصى مبلغ خصم بالدينار (اختياري — يفيد مع النسبة المئوية حتى ما ينفلت الخصم بطلب كبير)</label>
+        <input type="number" id="coupon-maxdiscount-${m.id}" placeholder="اتركه فارغ لعدم وجود حد أقصى">
+        <button class="btn secondary" onclick="addCoupon(${m.id})">إضافة كوبون</button>
+      </div>
+      <div class="card">
+        <div class="card-title">إضافة منتج</div>
+        <label>اسم المنتج</label><input id="p-name-${m.id}" placeholder="قميص قطن">
+        <label>السعر (دينار)</label><input type="number" id="p-price-${m.id}" placeholder="15000">
+        <label>وصف القطعة (اختياري)</label><textarea id="p-desc-${m.id}" placeholder="مثلاً: قماش قطن 100%، صناعة تركية، مناسب لكل الفصول"></textarea>
+        <label>المقاسات المتوفرة (اختياري) — أضف أي عدد تريده، مقاسات أحذية أو ملابس أو أي شي، وحط كمية كل مقاس</label>
+        <div class="size-chip-add-row">
+          <input id="p-size-input-${m.id}" placeholder="مثلاً: 42 أو L أو XL" onkeydown="if(event.key==='Enter'){event.preventDefault();addSizeChipDraft(${m.id});}">
+          <input type="number" id="p-size-stock-input-${m.id}" placeholder="الكمية (اختياري)" style="max-width:120px;">
+          <button type="button" class="btn secondary small" onclick="addSizeChipDraft(${m.id})">إضافة</button>
+        </div>
+        <div class="size-chip-row" id="p-sizes-chips-${m.id}">${sizeChipsHtml(draftProductSizes[m.id] || [], (i) => `removeSizeChipDraft(${m.id}, ${i})`)}</div>
+        <label>الألوان المتوفرة (اختياري) — اختر لون، اكتب اسمه، وحط كمية كل لون</label>
+        <div class="color-chip-add-row">
+          <input type="color" id="p-color-hex-${m.id}" value="#10B981">
+          <input type="text" id="p-color-name-${m.id}" placeholder="مثلاً: أحمر" onkeydown="if(event.key==='Enter'){event.preventDefault();addColorChipDraft(${m.id});}">
+          <input type="number" id="p-color-stock-${m.id}" placeholder="الكمية (اختياري)">
+          <button type="button" class="btn secondary small" onclick="addColorChipDraft(${m.id})">إضافة</button>
+        </div>
+        <div class="color-chip-row" id="p-colors-chips-${m.id}">${colorChipsHtml(draftProductColors[m.id] || [], (i) => `removeColorChipDraft(${m.id}, ${i})`)}</div>
+        <label>الكمية المتوفرة الإجمالية (اختياري — تُستخدم فقط لو ما أضفت مقاسات أو ألوان، اتركها فارغة لو غير محدودة)</label><input type="number" id="p-stock-${m.id}" placeholder="مثلاً: 20">
+        ${m.categories.length > 0 ? `
+        <label>القسم (اختياري)</label>
+        <select id="p-category-${m.id}">
+          <option value="">بدون قسم</option>
+          ${m.categories.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+        </select>` : ''}
+        <label>صور المنتج (اختياري) — تكدر تختار أكثر من صورة مرة وحدة (حتى 5 صور)</label>
+        <input type="file" accept="image/*" multiple id="p-image-${m.id}">
+        <button class="btn" onclick="addProduct(${m.id})">إضافة المنتج</button>
+      </div>
+      <div class="card">
+        <div class="card-title">استيراد منتجات بالجملة</div>
+        <div class="subtitle" style="margin-bottom:8px;">عندك قائمة منتجات جاهزة؟ حمّل القالب، عبّيه، وارفعه هنا بدل ما تضيف كل منتج يدوياً. الصور تنضاف بعدين لكل منتج من "منتجاتي" بالأسفل.</div>
+        <button class="btn secondary small" onclick="downloadProductImportTemplate()">تحميل قالب Excel فاضي</button>
+        <label style="margin-top:10px;">اختر ملف Excel أو CSV المعبّى</label>
+        <input type="file" accept=".xlsx,.xls,.csv" id="p-import-file-${m.id}">
+        <button class="btn" onclick="importProductsFromFile(${m.id})">استيراد المنتجات من الملف</button>
+        ${renderImportResultsBox(m.id)}
+      </div>
+      <div class="card">
+        <div class="card-title">منتجاتي</div>
+        <div id="products-list-${m.id}">${renderProductList(m)}</div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="appearance">
+      <div class="card">
+        <div class="card-title">لون لوحة تحكمك</div>
+        <div class="subtitle" style="margin-bottom:8px;">هذا اللون يخص شكل لوحتك انت بس (الأزرار والعناوين هنا بلوحة التحكم) — منفصل تماماً عن شكل متجرك اللي يشوفه الزبون</div>
+        <div class="theme-row">
+          <input type="color" id="dash-color-${m.id}" value="${safeColor(m.dashboardColor, '#10B981')}" onchange="setDashboardColor(${m.id}, this.value)">
+          <span style="font-size:12px; color:#475569;">اختر اللون المفضل لواجهتك</span>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">ثيم المتجر</div>
+        <div class="subtitle" style="margin-bottom:10px;">اختر شكل جاهز لمتجرك — تكدر تغيّره بأي وقت</div>
+        ${renderStoreThemePicker(m)}
+      </div>
+      <div class="card">
+        <div class="card-title">تخصيص شكل متجرك</div>
+        <div class="subtitle" style="margin-bottom:8px;">هذا الشكل يظهر للزبون بالضبط بصفحة متجرك</div>
+
+        <label>اللون الرئيسي (للأزرار والعناوين)</label>
+        <div class="theme-row">
+          <input type="color" id="theme-color-${m.id}" value="${safeColor(m.theme.primaryColor)}" onchange="setThemeColor(${m.id}, this.value)">
+          <span style="font-size:12px; color:#475569;">اختر لون يمثل هوية محلك</span>
+        </div>
+
+        <label>شعار المحل (لوگو)</label>
+        <div class="theme-row">
+          ${m.theme.logo
+            ? `<img class="logo-preview" src="${imgSrc(m.theme.logo)}">`
+            : `<div class="thumb-placeholder" style="width:56px;height:56px;"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 9l1-5h14l1 5" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9a2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0 2 2 0 0 0 4 0" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9" stroke="#94A3B8" stroke-width="1.6"/><path d="M9.5 19v-4a1.5 1.5 0 0 1 1.5-1.5h2a1.5 1.5 0 0 1 1.5 1.5v4" stroke="#94A3B8" stroke-width="1.6"/></svg></div>`}
+          <div style="flex:1;">
+            <input type="file" accept="image/*" id="theme-logo-${m.id}" onchange="setThemeLogo(${m.id}, this)">
+            ${m.theme.logo ? `<span class="link-chip" style="margin-top:6px;" onclick="removeThemeImage(${m.id},'logo')">إزالة الشعار</span>` : ''}
+          </div>
+        </div>
+
+        <label>صورة غلاف المتجر (اختياري)</label>
+        <input type="file" accept="image/*" id="theme-banner-${m.id}" onchange="setThemeBanner(${m.id}, this)">
+        ${m.theme.banner
+          ? `<img class="banner-preview" src="${imgSrc(m.theme.banner)}"><span class="link-chip" style="margin-top:6px;" onclick="removeThemeImage(${m.id},'banner')">إزالة صورة الغلاف</span>`
+          : ''}
+
+        <label>سلايدر العروض (حتى ${MAX_THEME_BANNERS} صور تتحرك تلقائياً أعلى متجرك — اختياري)</label>
+        <input type="file" accept="image/*" multiple id="theme-banners-${m.id}" onchange="addThemeBanners(${m.id}, this)">
+        ${(m.theme.banners && m.theme.banners.length)
+          ? `<div class="banner-slides-edit">${m.theme.banners.map((b, i) => `<div class="banner-slide-thumb"><img src="${imgSrc(b)}"><span onclick="removeThemeBannerAt(${m.id}, ${i})" aria-label="حذف">✕</span></div>`).join('')}</div>
+             <div class="subtitle" style="margin-top:4px;">لما تضيف صورتين أو أكثر يتحول الغلاف لسلايدر يتقلب لحاله ويقدر الزبون يسحبه</div>`
+          : ''}
+      </div>
+      <div class="card">
+        <div class="card-title">رسالة ترحيبية ونبذة عنك (اختياري)</div>
+        <div class="subtitle" style="margin-bottom:8px;">الرسالة الترحيبية تظهر بمنتصف صفحة متجرك للزبون، والنبذة تظهر تحت اسم متجرك — اتركهن فاضيات لو ما تريد تستخدمهن</div>
+        <label>رسالة ترحيبية</label>
+        <textarea id="welcome-msg-${m.id}" placeholder="مثلاً: أهلاً بيكم بمتجرنا! كل منتجاتنا أصلية ومضمونة 100%" onchange="setWelcomeMessage(${m.id}, this.value)">${esc(m.welcomeMessage)}</textarea>
+        <label>نبذة عني</label>
+        <textarea id="bio-${m.id}" placeholder="مثلاً: متجر متخصص بالملابس الرجالية، شغالين من 2022" onchange="setBio(${m.id}, this.value)">${esc(m.bio)}</textarea>
+      </div>
+      <div class="card">
+        <div class="card-title">روابط التواصل الاجتماعي (اختياري)</div>
+        <div class="subtitle" style="margin-bottom:8px;">أضف روابط حساباتك، وتكدر تخفي أي واحد بدون ما تحذف رابطه — يظهر بصفحة متجرك بس اللي مفعّل وعنده رابط</div>
+        ${SOCIAL_PLATFORMS.map(p => {
+          const s = m.theme.social[p.key];
+          return `
+          <div class="social-edit-row">
+            <input id="social-url-${p.key}-${m.id}" placeholder="رابط ${esc(p.label)}" value="${esc(s.url)}" onchange="setSocialLink(${m.id}, '${p.key}', this.value)">
+            <button type="button" class="social-visibility-btn ${s.visible ? 'visible' : ''}" onclick="toggleSocialVisible(${m.id}, '${p.key}')">${s.visible ? 'ظاهر' : 'مخفي'}</button>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">شروط وأحكام خاصة بمتجرك (اختياري)</div>
+        <div class="subtitle" style="margin-bottom:8px;">اكتب هنا سياسة الاستبدال/الإرجاع أو أي شروط تخص محلك بالتحديد. تنعرض للزبون كرابط بصفحة متجرك — بس إذا فعّلتها وكتبت نص فيها. تكدر تخفيها بأي وقت بدون ما يضيع النص المكتوب.</div>
+        <textarea id="merchant-terms-input-${m.id}" placeholder="مثلاً: يحق للزبون استبدال المنتج خلال ٣ أيام من الاستلام بشرط عدم الاستخدام..." onchange="setMerchantCustomTerms(${m.id}, this.value)">${esc(m.theme.customTerms.text)}</textarea>
+        <button type="button" class="social-visibility-btn ${m.theme.customTerms.visible ? 'visible' : ''}" style="margin-top:6px;" onclick="toggleMerchantCustomTermsVisible(${m.id})">${m.theme.customTerms.visible ? 'ظاهرة للزبون' : 'مخفية عن الزبون'}</button>
+      </div>
+      <div class="card" style="border:1px solid var(--accent); background:linear-gradient(135deg,#fff,var(--accent-soft));">
+        <div class="card-title">تصميم ذكي بالذكاء الاصطناعي</div>
+        <div class="subtitle" style="margin-bottom:8px;">ارفع شعار محلك وخل الذكاء الاصطناعي يحلل ألوانه ويصمملك لون رئيسي وصورة غلاف تناسب هويتك تلقائياً — اقتراح فقط، ما ينطبق إلا إذا وافقت، وما يغير أي شي من إعداداتك الحالية</div>
+        <label>شعار المحل ${m.theme.logo ? '(عندك وحدة محفوظة — تكدر ترفع وحدة جديدة أو تحلل الحالية)' : '(ارفعه هنا)'}</label>
+        <input type="file" accept="image/*" id="ai-logo-${m.id}" onchange="runAiDesign(${m.id}, this)">
+        ${m.theme.logo && !(aiDesignSuggestion && aiDesignSuggestion.merchantId === m.id)
+          ? `<button class="btn secondary small" style="margin-top:8px;" onclick="runAiDesign(${m.id})">حلّل شعاري الحالي وصمملي الألوان</button>`
+          : ''}
+        ${aiDesignSuggestion && aiDesignSuggestion.merchantId === m.id ? `
+          <div style="margin-top:12px; padding:10px; border-radius:10px; background:#fff; border:1px dashed var(--accent);">
+            <div style="font-size:12px; color:#475569; margin-bottom:8px;">اقتراح الذكاء الاصطناعي — استوحيناه من ألوان شعارك:</div>
+            <img src="${imgSrc(aiDesignSuggestion.banner)}" style="width:100%; height:110px; object-fit:cover; border-radius:8px;">
+            <div class="theme-row">
+              <span style="width:30px; height:30px; border-radius:6px; display:inline-block; background:${safeColor(aiDesignSuggestion.primaryColor)}; border:1px solid #ddd;"></span>
+              <span style="font-size:12px; color:#475569;">اللون الرئيسي المقترح للمتجر</span>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+              <button class="btn small" onclick="applyAiDesign(${m.id})">تطبيق هذا التصميم</button>
+              <button class="btn small secondary" onclick="dismissAiDesign()">تجاهل الاقتراح</button>
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="earnings">
+      <div class="card">
+        <div class="card-title">أرباحي</div>
+        <div class="grid3">
+          <div class="stat"><div class="stat-num">${m.salesCount}</div><div class="stat-label">عمليات بيع</div></div>
+          <div class="stat"><div class="stat-num">${fmtNum(m.balance)}</div><div class="stat-label">رصيدي (د)</div></div>
+          <div class="stat"><div class="stat-num">${m.visits || 0}</div><div class="stat-label">زيارات متجرك</div></div>
+        </div>
+        ${m.feeExemptMaxPrice > 0 ? `<div class="subtitle" style="margin-top:8px;">أي قطعة سعرها ${fmtNum(m.feeExemptMaxPrice)} د أو أقل — الأدمن أعفاها من عمولة المنصة بالكامل</div>` : ''}
+      </div>
+      ${merchantAgentStatementHtml(m.id)}
+      <div class="card">
+        <div class="card-title">سجل حساباتي اليومي</div>
+        <div class="subtitle" style="margin-bottom:8px;">كل يوم صفحة لحاله — تصفحها بالأسهم من غير ما تحدد أي تاريخ، وبآخر كل صفحة تلاقي المبلغ المستحق لك والمستحق للمنصة من هذا اليوم بالضبط</div>
+        <div id="macc-ledger-nav-${m.id}" style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;"></div>
+        <div id="macc-ledger-${m.id}"><div class="empty">جاري التحميل...</div></div>
+        <div id="macc-ledger-total-${m.id}" style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">حساباتي الدقيقة (فلترة بتاريخ مخصص)</div>
+        <div class="subtitle" style="margin-bottom:8px;">كل أموالك، الرسوم المستقطعة منك لصالح المنصة، وصافي أرباحك — هذي بياناتك انت بس ولا تظهر أي حساب لتاجر ثاني أو للأدمن</div>
+        <div class="row2">
+          <div><label>من تاريخ</label><input type="date" id="macc-from-${m.id}" onchange="renderMerchantAccounting(${m.id})"></div>
+          <div><label>إلى تاريخ</label><input type="date" id="macc-to-${m.id}" onchange="renderMerchantAccounting(${m.id})"></div>
+        </div>
+        <button class="btn secondary small" onclick="resetMerchantAccountingFilters(${m.id})">إعادة تعيين الفلاتر</button>
+        <div class="grid3" id="macc-summary-${m.id}" style="margin-top:10px;"></div>
+        <div class="grid3" id="macc-summary2-${m.id}"></div>
+        <div style="margin-top:6px;">
+          <button class="btn small" onclick="exportMerchantAccountingExcel(${m.id})">تحميل تقرير Excel</button>
+          <button class="btn small secondary" onclick="exportMerchantAccountingPDF(${m.id})">تحميل تقرير PDF</button>
+        </div>
+        <div class="card-title" style="margin-top:14px;">فواتير طلباتي بالتفصيل</div>
+        <div id="macc-orders-${m.id}"></div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="charts">
+      <div class="card">
+        <div class="card-title">مبيعاتي آخر 7 أيام</div>
+        <div class="chart-wrap"><canvas id="chart-merchant-sales"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">الأكثر مبيعاً</div>
+        <div class="chart-wrap"><canvas id="chart-merchant-products"></canvas></div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="messages">
+      <div class="card">
+        <div class="card-title">رسائل الإدارة</div>
+        <div class="subtitle" style="margin-bottom:8px;">رسائل يرسلها لك الأدمن — إعلانات، تنبيهات، أو تعليمات عامة</div>
+        <div id="merchant-announcements-${m.id}">${renderMerchantAnnouncements(m)}</div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="employees">
+      <div class="card">
+        <div class="card-title">موظفيني</div>
+        <div class="subtitle" style="margin-bottom:8px;">ضيف موظف يساعدك بالشغل وحدد الصلاحيات اللي تريده يشتغل بيها بس — طلبك يروح للأدمن يجهز للموظف يوزر نيم وباسورد دخول</div>
+        <button class="btn" onclick="openAddEmployeeModal()">إضافة موظف</button>
+        <div style="margin-top:10px;">${renderMerchantEmployeesList(m.id)}</div>
+      </div>
+    </div>
+  `;
+  renderMerchantCharts(m);
+  renderMerchantLedger(m.id);
+  renderMerchantAccounting(m.id);
+  applyEmployeeGating();
+  applyMerchantDashTab();
+  maybeShowLowStockToast(m);
+}
+
