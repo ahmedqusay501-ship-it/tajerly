@@ -38,7 +38,7 @@ function applyEmployeeGating() {
     // 'employees' stays owner-only. 'messages' (admin announcements inbox) is shown to
     // everyone with access to the merchant panel — it's read-only, so there's nothing an
     // employee could misuse there, and the merchant would want their team to see it too.
-    const visible = id === 'employees' ? allowed === null : (id === 'messages' ? true : (allowed === null || allowed.includes(id)));
+    const visible = id === 'employees' ? allowed === null : ((id === 'messages' || id === 'faq') ? true : (allowed === null || allowed.includes(id)));
     btn.style.display = visible ? '' : 'none';
   });
   // If the tab that would open by default isn't one this viewer is allowed to see

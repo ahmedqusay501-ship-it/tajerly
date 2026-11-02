@@ -1665,6 +1665,7 @@ function renderMerchantPanel() {
       <div class="toggle" data-mdashtab="charts" onclick="showMerchantDashTab('charts')">الرسوم البيانية</div>
       <div class="toggle" data-mdashtab="messages" onclick="showMerchantDashTab('messages')">${unreadAnnouncementsBadgeHtml(m)}رسائل الإدارة</div>
       <div class="toggle" data-mdashtab="employees" onclick="showMerchantDashTab('employees')">الموظفين</div>
+      <div class="toggle" data-mdashtab="faq" onclick="showMerchantDashTab('faq')">الأسئلة الشائعة</div>
     </div>
 
     <div class="dash-tab" data-mdashtab-content="store">
@@ -1983,6 +1984,14 @@ function renderMerchantPanel() {
         <div class="subtitle" style="margin-bottom:8px;">ضيف موظف يساعدك بالشغل وحدد الصلاحيات اللي تريده يشتغل بيها بس — طلبك يروح للأدمن يجهز للموظف يوزر نيم وباسورد دخول</div>
         <button class="btn" onclick="openAddEmployeeModal()">إضافة موظف</button>
         <div style="margin-top:10px;">${renderMerchantEmployeesList(m.id)}</div>
+      </div>
+    </div>
+
+    <div class="dash-tab" data-mdashtab-content="faq">
+      <div class="card">
+        <div class="card-title">الأسئلة الشائعة</div>
+        <div class="subtitle" style="margin-bottom:8px;">إجابات سريعة عن طريقة استخدام لوحة التاجر ومميزات المنصة — اضغط على أي سؤال لتشوف الجواب</div>
+        <div class="faq-list">${renderMerchantFaqHtml()}</div>
       </div>
     </div>
   `;

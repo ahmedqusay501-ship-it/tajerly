@@ -5,7 +5,7 @@
 (function () {
   // أيقونات تبويبات التاجر والمندوب بالقائمة الجانبية (تستخدم نفس مكتبة الأيقونات بـ 07-nav-auth.js)
   const TAB_ICON = {
-    merchant: { store: 'store', orders: 'bag', earnings: 'wallet', products: 'package', appearance: 'palette', charts: 'chart', messages: 'mail', employees: 'users' },
+    merchant: { store: 'store', orders: 'bag', earnings: 'wallet', products: 'package', appearance: 'palette', charts: 'chart', messages: 'mail', employees: 'users', faq: 'help' },
     agent: { active: 'package', history: 'clock', accounts: 'wallet', employees: 'users' }
   };
   let observers = [];
