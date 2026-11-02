@@ -1000,10 +1000,11 @@ function orderStatusLabel(status) {
 // cancelled order matters more than whatever its earlier status was.
 function orderFullStatusLabel(o) {
   if (o.cancelled) return 'ملغي';
-  if (o.deliveryStatus === 'delivered') return 'واصل';
+  const hasAgent = o.deliveryAgentId != null;
+  if (o.deliveryStatus === 'delivered') return hasAgent ? 'تم التوصيل' : 'واصل';
   if (o.deliveryStatus === 'returned') return 'مرجّع';
-  if (o.deliveryStatus === 'received_by_shipping') return 'مستلم من قبل شركة الشحن';
-  if (o.deliveryStatus === 'with_shipping') return 'جاهز للتوصيل';
+  if (o.deliveryStatus === 'received_by_shipping') return hasAgent ? 'تم استلام الطلب بواسطة المندوب' : 'مستلم من قبل شركة الشحن';
+  if (o.deliveryStatus === 'with_shipping') return hasAgent ? 'بانتظار استلام المندوب' : 'جاهز للتوصيل';
   if (o.cancelStage === 'merchant_approved') return 'إلغاء بانتظار موافقة الإدارة';
   if (o.cancelStage === 'customer_requested') return 'الزبون طلب الإلغاء — بانتظار تأكيد المحل';
   return orderStatusLabel(o.status);

@@ -168,10 +168,11 @@ function orderFinanceLine(o) {
   </div>`;
 }
 
-function deliveryStatusLabel(status) {
-  if (status === 'with_shipping') return 'جاهز للتوصيل';
-  if (status === 'received_by_shipping') return 'مستلم من قبل شركة الشحن';
-  if (status === 'delivered') return 'تم التسليم';
+function deliveryStatusLabel(status, o) {
+  const hasAgent = !!(o && o.deliveryAgentId != null);
+  if (status === 'with_shipping') return hasAgent ? 'بانتظار استلام المندوب' : 'جاهز للتوصيل';
+  if (status === 'received_by_shipping') return hasAgent ? 'تم استلام الطلب بواسطة المندوب' : 'مستلم من قبل شركة الشحن';
+  if (status === 'delivered') return hasAgent ? 'تم التوصيل' : 'تم التسليم';
   if (status === 'returned') return 'مرجّع';
   return '';
 }
@@ -573,7 +574,7 @@ function renderMerchantOrders(m) {
     return `<div class="list-item" style="align-items:flex-start;">
       <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د${orderCustomerLine(o)}${orderFinanceLine(o)}${cancelReasonLine(o)}${returnReasonLine(o)}<br>
       <span style="color:var(--text-mute); font-size:11px;">${dateLabel} — رقم الطلب #${o.orderGroupId || o.id}</span></span>
-      <span>${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span> ${o.deliveryStatus && o.deliveryStatus !== 'none' ? `<span class="badge ${deliveryStatusBadgeClass(o.deliveryStatus)}">${deliveryStatusLabel(o.deliveryStatus)}</span>` : ''}`}</span>
+      <span>${o.cancelled ? '<span class="badge rejected">ملغي</span>' : `<span class="badge ${o.status}">${orderStatusLabel(o.status)}</span> ${o.deliveryStatus && o.deliveryStatus !== 'none' ? `<span class="badge ${deliveryStatusBadgeClass(o.deliveryStatus)}">${deliveryStatusLabel(o.deliveryStatus, o)}</span>` : ''}`}</span>
     </div>`;
   }).join('');
 
@@ -837,7 +838,7 @@ function renderAdminShippingControl() {
     <div class="list-item" style="align-items:flex-start; flex-direction:column; gap:8px;">
       <div style="width:100%;">
         <b>${m ? esc(m.shop) : '—'}${items.length > 1 ? ' (' + items.length + ' قطع)' : ''}</b>
-        <span class="badge ${deliveryStatusBadgeClass(first.deliveryStatus)}" style="margin-right:6px;">${deliveryStatusLabel(first.deliveryStatus)}</span>
+        <span class="badge ${deliveryStatusBadgeClass(first.deliveryStatus)}" style="margin-right:6px;">${deliveryStatusLabel(first.deliveryStatus, first)}</span>
         ${(() => { const ag = first.deliveryAgentId != null ? data.employees.find(e => e.id === first.deliveryAgentId) : null; return ag ? `<span class="badge" style="margin-right:4px; background:#EEF2FF; color:#3730A3;">مندوب: ${esc(ag.name)}</span>` : ''; })()}
         ${isReturned ? `<div style="font-size:11px; color:#B3261E; margin-top:4px;">الشحنة رجعت — لازم تسويلها "إرجاع للتاجر" يجهزها من جديد، أو "إلغاء" لو ما راح يعاد إرسالها (يرجّع رصيد التاجر والمخزون تلقائياً).</div>${returnReasonLine(first)}` : ''}
         ${merchantLine}
@@ -852,8 +853,8 @@ function renderAdminShippingControl() {
         </div>` : ''}
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
-        ${(!isReturned && first.deliveryStatus === 'with_shipping') ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId})">مستلم من قبل شركة الشحن</button>` : ''}
-        ${!isReturned ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId})">واصل</button>` : ''}
+        ${(!isReturned && first.deliveryStatus === 'with_shipping') ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId})">${first.deliveryAgentId != null ? 'تم استلام الطلب بواسطة المندوب' : 'مستلم من قبل شركة الشحن'}</button>` : ''}
+        ${(!isReturned && !(first.deliveryAgentId != null && first.deliveryStatus === 'with_shipping')) ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId})">${first.deliveryAgentId != null ? 'تم التوصيل' : 'واصل'}</button>` : ''}
         ${!isReturned ? `<button class="btn secondary small" onclick="openReturnReasonModal(${g.groupId})">غير واصل</button>` : ''}
         <button class="btn secondary small" onclick="returnOrderGroupToMerchant(${g.groupId})">إرجاع للتاجر يجهزها من جديد</button>
         <button class="btn danger small" onclick="openCancelReasonModal(${g.groupId}, 'admin', 'الأدمن')">إلغاء</button>
@@ -881,6 +882,11 @@ function markInvoiceReceivedByShipping(groupId) {
 function markInvoiceDelivered(groupId) {
   const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping'));
   if (items.length === 0) return;
+  // طلب مربوط بمندوب: لازم أول شي يتسجّل "تم استلام الطلب بواسطة المندوب" وبعدها "تم التوصيل".
+  if (items.some(o => o.deliveryAgentId != null && o.deliveryStatus === 'with_shipping')) {
+    showToast('سجّل أولاً "تم استلام الطلب بواسطة المندوب" وبعدها "تم التوصيل"');
+    return;
+  }
   items.forEach(o => { o.deliveryStatus = 'delivered'; });
   saveData();
   const m = data.merchants.find(x => x.id === items[0].merchantId);
@@ -1145,7 +1151,7 @@ function renderAgentActiveOrders(agent) {
     <div class="list-item" style="align-items:flex-start; flex-direction:column; gap:8px; ${overdue ? 'border-right:3px solid #B3261E;' : ''}">
       <div style="width:100%;">
         <b>${m ? esc(m.shop) : '—'}${items.length > 1 ? ' (' + items.length + ' قطع)' : ''}</b>
-        <span class="badge ${deliveryStatusBadgeClass(first.deliveryStatus)}" style="margin-right:6px;">${deliveryStatusLabel(first.deliveryStatus)}</span>
+        <span class="badge ${deliveryStatusBadgeClass(first.deliveryStatus)}" style="margin-right:6px;">${deliveryStatusLabel(first.deliveryStatus, first)}</span>
         ${overdue ? '<span class="badge rejected" style="margin-right:6px;">متأخرة — أكثر من 24 ساعة بعهدتك</span>' : ''}
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
@@ -1154,8 +1160,8 @@ function renderAgentActiveOrders(agent) {
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
-        ${first.deliveryStatus === 'with_shipping' ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId}); renderAgentOrders();">استلمتها</button>` : ''}
-        <button class="btn small" onclick="markInvoiceDelivered(${g.groupId}); renderAgentOrders();">واصل</button>
+        ${first.deliveryStatus === 'with_shipping' ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId}); renderAgentOrders();">تم استلام الطلب بواسطة المندوب</button>` : ''}
+        ${first.deliveryStatus === 'received_by_shipping' ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId}); renderAgentOrders();">تم التوصيل</button>` : ''}
         <button class="btn secondary small" onclick="openReturnReasonModal(${g.groupId})">غير واصل</button>
       </div>
     </div>`;
