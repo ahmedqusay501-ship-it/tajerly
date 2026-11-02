@@ -238,6 +238,7 @@ function openCheckoutFromCart() {
   if (cart.length === 0) return;
   const merchantId = cart[0].merchantId;
   const m = data.merchants.find(x => x.id === merchantId);
+  if (m && m.isDemo) { showToast('هذا متجر تجريبي — الطلبات غير مفعّلة هنا'); return; }
 
   // Re-check the restaurant's working hours right before checkout — same idea as the stock
   // re-validation right below: the customer might have sat in the product list past closing

@@ -368,6 +368,16 @@ service cloud.firestore {
     // ---------------------------------------------------------------------------------
     // join_requests/{id} — طلبات انضمام تجار جدد (من زوار غير مسجلين)
     // ---------------------------------------------------------------------------------
+    // رموز إشعارات Push — كل مستخدم (تاجر/موظف) يقرأ ويكتب وثيقته هو بس (المعرّف = UID). الإرسال يتم من
+    // دالة السيرفر بصلاحيات Admin SDK فما تحتاج قاعدة قراءة لها.
+    match /push_tokens/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['tokens', 'updatedAt']) &&
+        request.resource.data.tokens is list && request.resource.data.tokens.size() <= 8;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
     match /join_requests/{id} {
       // مقيّدة للأدمن بس — ولا حتى التاجر نفسه يقدر يتحقق من حالة طلبه هنا (ما عنده
       // حساب دخول أصلاً بهذي المرحلة)، فما فيه أي وظيفة بالتطبيق تنكسر بهذا التقييد.

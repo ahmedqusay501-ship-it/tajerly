@@ -56,3 +56,23 @@ self.addEventListener('notificationclick', (e) => {
     })
   );
 });
+
+// إشعارات Push (FCM): يوصل الـ payload كـ JSON — إما {notification:{title,body}} أو {data:{title,body,url}}.
+self.addEventListener('push', (e) => {
+  let p = {};
+  try { p = e.data ? e.data.json() : {}; } catch (err) { p = {}; }
+  const n = p.notification || {};
+  const d = p.data || {};
+  const title = n.title || d.title || 'تاجرلي';
+  const body = n.body || d.body || 'عندك طلب جديد';
+  e.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    dir: 'rtl',
+    lang: 'ar',
+    tag: d.tag || 'tajerly-order',
+    renotify: true,
+    data: { url: d.url || '/' }
+  }));
+});

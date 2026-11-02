@@ -639,7 +639,78 @@ function setMerchantType(id, type) {
   renderAll();
 }
 
+// ---------- المتجر التجريبي (للعرض على التجار) ----------
+// متجر جاهز بمنتجات نموذجية تفتحه للتاجر بالموبايل وتوريه شلون يصير متجره. يختلف عن التجار الحقيقيين:
+// ما يظهر بالسوق العام، ما يقبل طلبات حقيقية (الشيك أوت مقفول عليه)، والأدمن يحذفه بأي وقت بزر "حذف المتجر التجريبي".
+const DEMO_MERCHANT_UID = 'demo-tajerly';
+const DEMO_MERCHANT_ID = 9000000000001;
+function demoProductImage(emoji, c1, c2) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="400" height="400" fill="url(#g)"/><text x="200" y="245" font-size="150" text-anchor="middle">${emoji}</text></svg>`;
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+}
+function findDemoMerchant() { return data.merchants.find(m => m.isDemo || m.authUid === DEMO_MERCHANT_UID); }
+async function createDemoStore() {
+  if (findDemoMerchant()) { showToast('المتجر التجريبي موجود مسبقاً'); return; }
+  if (!window.authApi) { showToast('الاتصال بقاعدة البيانات غير جاهز'); return; }
+  const mk = (n, name, price, desc, emoji, c1, c2, catId) => ({
+    id: DEMO_MERCHANT_ID + n, name, price, description: desc,
+    image: demoProductImage(emoji, c1, c2), images: [demoProductImage(emoji, c1, c2)],
+    sizes: [], colors: [], stock: 50, categoryId: catId
+  });
+  const s = data.settings;
+  const m = {
+    id: DEMO_MERCHANT_ID,
+    name: 'تاجرلي', shop: 'متجر تاجرلي التجريبي', phone: '', governorate: 'بغداد', area: '',
+    category: (typeof STORE_CATEGORIES !== 'undefined' && STORE_CATEGORIES[0]) || '',
+    type: 'market',
+    description: 'متجر تجريبي لعرض شكل المتجر وطريقة الطلب — الطلبات من هنا غير مفعّلة.',
+    status: 'active', isDemo: true, hiddenFromMarket: true,
+    username: '', products: [],
+    categories: [{ id: 1, name: 'ملابس' }, { id: 2, name: 'إكسسوارات' }, { id: 3, name: 'عطور' }],
+    theme: { primaryColor: '#10B981', logo: null, banner: null, themeId: 'classic' },
+    dashboardColor: '#10B981', visits: 0,
+    linkSlug: 'demo', shortSlug: 'demo',
+    feeSource: s.feeSource, feeType: s.feeType || 'fixed', feeAmount: s.feeAmount,
+    feeCustomer: s.feeCustomer, feeMerchant: s.feeMerchant,
+    itemDeduction: 0, itemDeductionPercent: 0, shippingAmount: s.shippingAmount,
+    deliverySpeeds: ['fast', 'slow'], ownDelivery: true, deliveryPriceSource: 'merchant',
+    ownDeliveryPrice: 0, ownDeliveryDays: '', ownDeliveryGovernorates: [], ownDeliveryAreaPrices: {}
+  };
+  m.products = [
+    mk(1, 'تيشيرت قطن', 15000, 'تيشيرت قطن مريح، مثال لمنتج بصورة وسعر ووصف.', '👕', '#D1FAE5', '#6EE7B7', 1),
+    mk(2, 'جاكيت شتوي', 45000, 'جاكيت دافئ للشتاء — مثال لمنتج بسعر أعلى.', '🧥', '#DBEAFE', '#93C5FD', 1),
+    mk(3, 'ساعة يد', 35000, 'ساعة أنيقة بحزام جلدي.', '⌚', '#FEF3C7', '#FCD34D', 2),
+    mk(4, 'نظارة شمسية', 20000, 'نظارة شمسية بتصميم عصري.', '🕶️', '#FCE7F3', '#F9A8D4', 2),
+    mk(5, 'عطر رجالي', 30000, 'عطر بنفحات خشبية، مثال لقسم العطور.', '🧴', '#EDE9FE', '#C4B5FD', 3),
+    mk(6, 'حقيبة يد', 40000, 'حقيبة يد عملية للاستخدام اليومي.', '👜', '#FFEDD5', '#FDBA74', 2)
+  ];
+  try {
+    const { password: _p, balance: _b, salesCount: _s, authUid: _a, ...pub } = m;
+    await window.authApi.saveDoc('merchants', DEMO_MERCHANT_UID, pub);
+  } catch (e) { console.error('Demo store save failed:', e); showToast('تعذّر إنشاء المتجر التجريبي (صلاحيات أو اتصال)'); return; }
+  m.authUid = DEMO_MERCHANT_UID; m.balance = 0; m.salesCount = 0;
+  data.merchants.push(m);
+  logAudit('إنشاء متجر تجريبي', m.shop);
+  showToast('تم إنشاء المتجر التجريبي ✅ — الرابط: ?s=demo');
+  renderAll();
+}
+function deleteDemoStore() {
+  const m = findDemoMerchant();
+  if (!m) { showToast('ما فيه متجر تجريبي'); return; }
+  deleteMerchant(m.id);
+}
+function renderDemoStoreCard() {
+  const box = document.getElementById('demo-store-box');
+  if (!box) return;
+  const m = findDemoMerchant();
+  box.innerHTML = m
+    ? `<div style="font-size:12px; margin-bottom:8px;">الرابط: <a href="${location.origin}${location.pathname}?s=demo" target="_blank" rel="noopener">${esc(location.origin)}${esc(location.pathname)}?s=demo</a><br>مخفي من السوق العام، والطلبات منه مقفولة.</div>
+       <button class="btn danger small" onclick="deleteDemoStore()">حذف المتجر التجريبي</button>`
+    : `<div style="font-size:12px; margin-bottom:8px;">متجر جاهز بمنتجات نموذجية تعرضه على التجار بالموبايل.</div>
+       <button class="btn small" onclick="createDemoStore()">إنشاء المتجر التجريبي</button>`;
+}
 function renderMerchantActions() {
+  renderDemoStoreCard();
   const list = document.getElementById('merchant-actions-list');
   const active = activeMerchants();
   if (active.length === 0) { list.innerHTML = '<div class="empty">ما فيه تجار مسجلين</div>'; return; }

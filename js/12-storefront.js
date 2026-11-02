@@ -385,6 +385,46 @@ function renderStoreProducts(m, color) {
 let openProductDetailId = null; // { merchantId, productId } of whichever detail view is open, so re-renders (after picking a size/color, or a live data refresh) can redraw the same one.
 let productDetailFullPageActive = false; // true only while the single-store full-page detail (not the modal) is showing
 
+// ---------- SEO: بيانات المنتج المنظمة (schema.org / JSON-LD) ----------
+// تنحقن لما يُفتح منتج (تفاصيل أو لاندنج) وتنشال لما يُغلق. جوجل يقرأ JSON-LD المحقون بالجافاسكربت،
+// فيقدر يعرض السعر والتوفر والتقييم بنتائج البحث. الصور تنضاف بس لو رابط http(s) حقيقي (مو base64).
+function setProductJsonLd(m, p) {
+  try {
+    clearProductJsonLd();
+    if (!m || !p) return;
+    const imgs = (p.images || []).map(i => String(i || '')).filter(i => /^https?:\/\//i.test(i));
+    const avg = typeof productAvgRating === 'function' ? productAvgRating(p) : null;
+    const ld = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: String(p.name || ''),
+      description: String(p.description || p.name || ''),
+      brand: { '@type': 'Brand', name: String(m.shop || 'تاجرلي') },
+      offers: {
+        '@type': 'Offer',
+        url: productShareLink(m, p),
+        priceCurrency: 'IQD',
+        price: String(Number(p.price) || 0),
+        availability: productOutOfStock(p) ? 'https://schema.org/OutOfStock' : 'https://schema.org/InStock',
+        seller: { '@type': 'Organization', name: String(m.shop || 'تاجرلي') }
+      }
+    };
+    if (imgs.length) ld.image = imgs;
+    if (avg !== null && p.reviews && p.reviews.length) {
+      ld.aggregateRating = { '@type': 'AggregateRating', ratingValue: String(avg), reviewCount: String(p.reviews.length) };
+    }
+    const el = document.createElement('script');
+    el.type = 'application/ld+json';
+    el.id = 'product-jsonld';
+    el.textContent = JSON.stringify(ld).replace(/</g, '\\u003c');
+    document.head.appendChild(el);
+  } catch (e) { /* SEO فقط — لا نكسر المتجر لو فشل */ }
+}
+function clearProductJsonLd() {
+  const old = document.getElementById('product-jsonld');
+  if (old) old.remove();
+}
+
 function renderProductDetailContent(p, color, m) {
   ensureProductImages(p);
   ensureProductVariants(p);
@@ -392,6 +432,7 @@ function renderProductDetailContent(p, color, m) {
   const shownIndex = selectedProductImage[p.id] || 0;
   const mainImg = p.images[shownIndex] || p.images[0];
   ensureProductSelection(p);
+  setProductJsonLd(m, p);
   return `
     <div class="product-detail-main-img-wrap">
       ${mainImg ? `<img id="store-img-${p.id}" src="${imgSrc(mainImg)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
@@ -630,10 +671,12 @@ function openProductDetail(merchantId, productId) {
 }
 function closeProductDetail() {
   openProductDetailId = null;
+  clearProductJsonLd();
   document.getElementById('product-detail-modal').classList.remove('show');
 }
 // الرجوع من التفاصيل بملء الصفحة لقائمة المتجر — عكس فتحها بـ openProductDetail أعلاه.
 function closeStoreProductDetailFullPage() {
+  clearProductJsonLd();
   productLandingActive = false;
   productDetailFullPageActive = false;
   openProductDetailId = null;
@@ -776,6 +819,7 @@ function openProductLanding(merchantId, productId) {
   productLandingIds = { merchantId, productId };
   openProductDetailId = { merchantId, productId };
   if (typeof trackEvent === 'function') trackEvent('view', { id: productId, name: p.name, price: p.price, shop: m.shop });
+  setProductJsonLd(m, p);
   productDetailFullPageActive = true; // hides the list-view toggle button, keeps refreshStorefrontView from redrawing the list
   const content = document.getElementById('public-storefront-content');
   if (content) content.innerHTML = '<div id="product-landing-root"></div>';
