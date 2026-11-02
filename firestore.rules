@@ -473,6 +473,11 @@ service cloud.firestore {
       // [أمان] إنشاء الطلب مفتوح للزوار، لكن بشكل ضيّق: أرقام صحيحة بحدود معقولة، نصوص بأطوال محدودة،
       // وبدون أي حقل يخص التوصيل/النزاهة (deliveryAgentId، integrityFlags...). السعر والرسوم والكوبون
       // يعاد حسابها سيرفرياً فور الإنشاء بدالة validateNewOrder (functions/index.js) فلا قيمة للقيم المزوّرة.
+      // مفتاح وثيقة كود التسليم = رقم الفاتورة (orderGroupId، أو id الطلب نفسه للطلبات القديمة).
+      function orderGroupKey(d) {
+        return d.get('orderGroupId', null) != null ? string(d.orderGroupId) : string(d.id);
+      }
+
       function orderCreateShapeOk() {
         let d = request.resource.data;
         return d.price is number && d.price >= 0 && d.price <= 1000000000
@@ -517,14 +522,18 @@ service cloud.firestore {
           // ما يقدر يلمس السعر ولا بيانات الزبون ولا يحوّل الطلب لمندوب/تاجر ثاني.
           isAssignedAgentForOrder(resource.data) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
-          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
+          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId &&
+          // [كود التسليم] المندوب ما يقدر يسجّل "واصل" يدوياً — يتسجّل بكود المستلم من الزبون
+          // (الفرع الأخير بهذي القاعدة) أو يدوياً من الأدمن فقط.
+          request.resource.data.deliveryStatus != 'delivered'
         ) ||
         (
           // موظف تابع لمندوب وعنده صلاحية "orders" بس: نفس الشي بالضبط — يقدر يضغط
           // نفس أزرار (واصل/استلمتها/غير واصل) اللي يضغطها المندوب نفسه.
           isAssignedAgentEmployeeForOrder(resource.data, ['orders']) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
-          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
+          request.resource.data.deliveryAgentId == resource.data.deliveryAgentId &&
+          request.resource.data.deliveryStatus != 'delivered'
         ) ||
         (
           // توصيل المحل الخاص (ownDelivery): تاجر عنده التوصيل الخاص (قرار أدمن) وطلبه بدون مندوب منصة
@@ -587,6 +596,24 @@ service cloud.firestore {
           request.resource.data.customerAddress == resource.data.customerAddress
         ) ||
         (
+          // [كود التسليم] زبون غير مسجل (صفحة "تتبع طلبي") يؤكد استلام طلبه بكود المستلم اللي
+          // يعطيه له مندوب التوصيل. الكود نفسه سرّي (delivery_codes/{groupId} — ما يقرأه إلا الأدمن
+          // والمندوب المخصص)، والقاعدة تقارن اللي كتبه الزبون مع المخزّن بدون ما تكشفه لأحد:
+          //   • فقط received_by_shipping -> delivered، وفقط لطلب مقبول غير ملغي مربوط بمندوب منصة.
+          //   • فقط هذي الحقول الثلاثة تتغيّر (السعر وبيانات الزبون ثابتة).
+          //   • الطلب بمحل توصيله خاص (بدون مندوب) ما ينطبق عليه — يبقى يدوي.
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'deliveryCodeEntered', 'deliveredVia']) &&
+          resource.data.deliveryStatus == 'received_by_shipping' &&
+          request.resource.data.deliveryStatus == 'delivered' &&
+          request.resource.data.deliveredVia == 'customer_code' &&
+          resource.data.status == 'accepted' &&
+          resource.data.get('cancelled', false) != true &&
+          resource.data.get('deliveryAgentId', null) != null &&
+          request.resource.data.deliveryCodeEntered is string &&
+          exists(/databases/$(database)/documents/delivery_codes/$(orderGroupKey(resource.data))) &&
+          get(/databases/$(database)/documents/delivery_codes/$(orderGroupKey(resource.data))).data.code == request.resource.data.deliveryCodeEntered
+        ) ||
+        (
           // زبون غير مسجل دخول (صفحة "تتبع طلبي" العامة) يطلب إلغاء طلبه هو. نفس مبدأ
           // الثقة الممنوح أصلاً لإنشاء orders من متصفح غير موثوق — ما فيه طريقة تحقق
           // "ملكية" حقيقية للطلب إلا معرفة رقمه (متل رقم تتبع شحنة عادي)، فهذا الفرع
@@ -637,6 +664,51 @@ service cloud.firestore {
     // متزامنة مع الحقيقة وتعرض حالة قديمة للزبون.
     // ---------------------------------------------------------------------------------
     // fn_events/{id} — سجل معالجة أحداث دالة syncMerchantBalance (منع التطبيق المزدوج). للسيرفر فقط.
+    // ---------------------------------------------------------------------------------
+    // delivery_codes/{groupId} — كود التسليم السرّي لفاتورة مربوطة بمندوب توصيل منصة (6 أرقام).
+    // يُنشأ لحظة تسجيل "تم استلام الطلب بواسطة المندوب". يقرأه الأدمن/موظف الشحن، والمندوب
+    // المخصص (agentId == معرّفه المحلي)، وموظفو المندوب بصلاحية orders. التاجر ما يقرأه أبداً.
+    // لا list إطلاقاً. التعديل (مثلاً بعد إعادة توجيه الطلب لمندوب ثاني) للأدمن فقط.
+    // المندوب يعطي الكود لسائق التوصيل، والسائق يعطيه للزبون، والزبون يكتبه بصفحة "تتبع طلبي"
+    // فتقارنه قاعدة orders (فرع الزبون) بهذي الوثيقة.
+    // ---------------------------------------------------------------------------------
+    match /delivery_codes/{groupId} {
+      allow get: if isAdmin() || isAdminEmployee('shipping') || isAdminEmployee('orders') ||
+        (isDeliveryAgent() && resource.data.agentId == employeeDoc().id) ||
+        (isAgentEmployeeWithAny(['orders']) && resource.data.agentId == employeeDoc().agentId);
+      allow list: if false;
+      allow create: if groupId == string(request.resource.data.groupId) &&
+        request.resource.data.code is string && request.resource.data.code.matches('^[0-9]{6}$') &&
+        (isAdmin() || isAdminEmployee('shipping') || isAdminEmployee('orders') ||
+          (isDeliveryAgent() && request.resource.data.agentId == employeeDoc().id) ||
+          (isAgentEmployeeWithAny(['orders']) && request.resource.data.agentId == employeeDoc().agentId));
+      allow update: if isAdmin() || isAdminEmployee('shipping') || isAdminEmployee('orders');
+      allow delete: if isAdmin();
+    }
+
+    // delivery_confirm/{groupId} — علَم عام (get فقط) يخلّي صفحة "تتبع طلبي" تعرف إن فيه كود
+    // بانتظار الزبون بدون ما تعرف الكود نفسه. ينشئه نفس اللي ينشئ الكود. الزبون (بدون تسجيل دخول)
+    // يقدر يحوّله confirmed=true بشرط إن الكود اللي كتبه يطابق delivery_codes — وهذا للعرض فقط؛
+    // التسليم الفعلي يصير على orders نفسها (قواعد أعلاه).
+    match /delivery_confirm/{groupId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if groupId == string(request.resource.data.groupId) &&
+        request.resource.data.required == true && request.resource.data.confirmed == false &&
+        (isAdmin() || isAdminEmployee('shipping') || isAdminEmployee('orders') ||
+          (isDeliveryAgent() && request.resource.data.agentId == employeeDoc().id) ||
+          (isAgentEmployeeWithAny(['orders']) && request.resource.data.agentId == employeeDoc().agentId));
+      allow update: if isAdmin() || isAdminEmployee('shipping') || isAdminEmployee('orders') ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['confirmed', 'confirmedAt', 'confirmCode']) &&
+          request.resource.data.confirmed == true &&
+          resource.data.get('confirmed', false) != true &&
+          exists(/databases/$(database)/documents/delivery_codes/$(groupId)) &&
+          get(/databases/$(database)/documents/delivery_codes/$(groupId)).data.code == request.resource.data.confirmCode
+        );
+      allow delete: if isAdmin();
+    }
+
     match /fn_events/{id} {
       allow read, write: if false;
     }
