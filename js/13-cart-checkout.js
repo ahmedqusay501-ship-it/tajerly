@@ -95,6 +95,7 @@ function addToCart(merchantId, productId) {
 
   if (existing) existing.qty += 1;
   else cart.push({ merchantId, productId, productName: p.name, price: p.price, size, color: colorVal, qty: 1 });
+  if (typeof trackEvent === 'function') trackEvent('addToCart', { id: productId, name: p.name, price: p.price, qty: 1, shop: m.shop });
 
   showToast('تمت الإضافة للسلة ');
   refreshStorefrontView();
@@ -264,6 +265,7 @@ function openCheckoutFromCart() {
     items: cart.map(i => ({ productId: i.productId, productName: i.productName, price: i.price, size: i.size, color: i.color, qty: i.qty }))
   };
   checkoutSpeed = 'fast';
+  if (typeof trackEvent === 'function') trackEvent('checkout', { ids: cart.map(i => i.productId), value: cartSubtotal(), numItems: cartCount() });
 
   document.getElementById('co-name').value = '';
   document.getElementById('co-phone').value = '';
@@ -602,6 +604,7 @@ document.getElementById('checkout-confirm-btn').addEventListener('click', async 
   // once per checkout, the moment the merchant actually approves this invoice.
   if (couponForOrder) couponForOrder.usedCount = (couponForOrder.usedCount || 0) + 1;
 
+  if (typeof trackEvent === 'function') trackEvent('purchase', { orderId: groupId, ids: c.items.map(i => i.productId), numItems: c.items.reduce((s, i) => s + i.qty, 0), value: Math.max(0, (c.subtotal || 0) - (c.couponDiscount || 0) + (c.deliveryFee || 0)) });
   cart = [];
   appliedCoupon = null;
   updateCartFab();

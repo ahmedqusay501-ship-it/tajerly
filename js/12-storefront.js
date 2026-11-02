@@ -555,6 +555,7 @@ function openProductDetail(merchantId, productId) {
   const p = m && m.products.find(x => x.id === productId);
   if (!m || !p) return;
   openProductDetailId = { merchantId, productId };
+  if (typeof trackEvent === 'function') trackEvent('view', { id: productId, name: p.name, price: p.price, shop: m.shop });
   const color = safeColor(m.theme && m.theme.primaryColor);
   // على صفحة المتجر الفردي بس (مو السوق العام ولا صفحة المطاعم — هذولا يبقون بنفس نافذة
   // التفاصيل المنبثقة القديمة): التفاصيل تفتح بملء الصفحة، بمعنى تستبدل محتوى المتجر نفسه
@@ -724,6 +725,7 @@ function openProductLanding(merchantId, productId) {
   productLandingActive = true;
   productLandingIds = { merchantId, productId };
   openProductDetailId = { merchantId, productId };
+  if (typeof trackEvent === 'function') trackEvent('view', { id: productId, name: p.name, price: p.price, shop: m.shop });
   productDetailFullPageActive = true; // hides the list-view toggle button, keeps refreshStorefrontView from redrawing the list
   const content = document.getElementById('public-storefront-content');
   if (content) content.innerHTML = '<div id="product-landing-root"></div>';

@@ -1207,11 +1207,13 @@ async function fetchRemoteData() {
     }
   } catch (e) { /* permission-denied متوقع لأي هوية ما لها صلاحية */ }
   if (!Array.isArray(data.agentAdjustments)) data.agentAdjustments = [];
+  if (!data.settings.tracking || typeof data.settings.tracking !== 'object') data.settings.tracking = { fbPixelId: '', tiktokPixelId: '', ga4Id: '' };
   if (typeof data.settings.agentDueAlertThreshold !== 'number') data.settings.agentDueAlertThreshold = 0; // 0 = التنبيه معطّل
 }
 
 async function loadData() {
   await fetchRemoteData();
+  if (typeof initTracking === 'function') initTracking(); // after settings are loaded, before routing so the first page view is captured
   routeOnLoad();
 }
 

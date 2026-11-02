@@ -170,6 +170,7 @@ function openPublicStore(slug) {
   saveData();
   renderStorefrontInto(m.id, content);
   updateCartFab();
+  if (typeof trackEvent === 'function') trackEvent('page');
   // رابط مشاركة منتج معيّن (شوف shareProduct بـ 12-storefront.js) يجي بصيغة
   // ?s=CODE&product=ID — نفتح تفاصيل هذا المنتج مباشرة بدل ما نوقف بقائمة المتجر
   // ونخلي الشخص يدور عليه بنفسه.

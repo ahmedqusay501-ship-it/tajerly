@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <!-- [أمان] CSP: يمنع تحميل سكربتات من نطاقات غير المعروفة، ويقيّد الاتصالات الخارجية (يصعّب سرقة الجلسة عبر XSS). 'unsafe-inline' مطلوب حالياً بسبب onclick="..." الكثيرة بالواجهة. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' data: blob: https://*.googleapis.com https://*.cloudfunctions.net https://www.google.com https://www.recaptcha.net https://jrii849.app.n8n.cloud; frame-src https://www.google.com https://www.recaptcha.net; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://cdnjs.cloudflare.com https://www.google.com https://www.recaptcha.net https://connect.facebook.net https://analytics.tiktok.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' data: blob: https://*.facebook.com https://*.facebook.net https://analytics.tiktok.com https://*.tiktok.com https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://*.googleapis.com https://*.cloudfunctions.net https://www.google.com https://www.recaptcha.net https://jrii849.app.n8n.cloud; frame-src https://www.google.com https://www.recaptcha.net; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>تاجرلي — افتح متجرك الإلكتروني مجاناً في العراق</title>
 <meta name="description" content="تاجرلي منصة عراقية تتيح لك فتح متجرك الإلكتروني مجاناً وخلال دقائق بدون اشتراك شهري. أدر منتجاتك وطلباتك وحساباتك والشحن من مكان واحد.">
@@ -935,6 +935,19 @@
       <span class="toggle" onclick="setShippingAmount(1000)">1000</span>
     </div>
     <input type="number" id="shipping-amount" onchange="saveSettings()">
+  </div>
+
+  <div class="card">
+    <div class="card-title">التتبّع والإعلانات (بكسل فيسبوك / تيك توك / Google Analytics)</div>
+    <div class="subtitle">اترك الحقل فارغاً لتعطيل المنصة. التتبّع يشمل الزبائن فقط (زيارة المتجر، عرض المنتج، الإضافة للسلة، بدء الطلب، إتمام الطلب) ولا يُرسل أي اسم أو هاتف أو عنوان.</div>
+    <label>معرّف بكسل فيسبوك (Pixel ID — أرقام فقط)</label>
+    <input type="text" id="trk-fb" inputmode="numeric" placeholder="123456789012345" dir="ltr" autocomplete="off">
+    <label>معرّف بكسل تيك توك (Pixel ID)</label>
+    <input type="text" id="trk-tt" placeholder="C1A2B3C4D5E6F7G8H9" dir="ltr" autocomplete="off">
+    <label>معرّف Google Analytics 4 (Measurement ID)</label>
+    <input type="text" id="trk-ga" placeholder="G-XXXXXXXXXX" dir="ltr" autocomplete="off">
+    <div id="trk-error" style="color:#DC2626;font-size:13px;margin-top:6px;"></div>
+    <button class="btn" style="margin-top:10px;" onclick="saveTrackingSettings()">حفظ إعدادات التتبّع</button>
   </div>
 
   <div class="card">
@@ -1977,6 +1990,7 @@
 <script src="js/20-restaurants-market.js"></script>
 <script src="js/21-agent-settlements.js"></script>
 <script src="js/22-subscriptions.js"></script>
+<script src="js/23-tracking.js"></script>
 <script src="js/17-live-refresh-boot.js"></script>
 </body>
 </html>

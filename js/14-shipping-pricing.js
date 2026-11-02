@@ -33,6 +33,7 @@ function renderSettings() {
 
   renderZonesList();
   renderAdminAreaGovernorateSelect();
+  if (typeof renderTrackingSettings === 'function') renderTrackingSettings();
 
   const previewPrice = 20000; // sample item price, just to show the admin what the fee looks like
   const fee = calcFee(null, previewPrice);
