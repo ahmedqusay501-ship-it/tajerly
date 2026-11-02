@@ -378,6 +378,21 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
+    // عدّاد زيارات المتاجر (يومي): الزائر غير المسجّل يزيد visits/uniques بمقدار 0 أو 1 فقط لكل كتابة،
+    // والتاجر نفسه (UID = بادئة معرّف الوثيقة) والأدمن يقرؤون. معرّف الوثيقة = {merchantAuthUid}_{YYYYMMDD}.
+    match /store_visits/{docId} {
+      allow read: if signedIn() && (isAdmin() || docId.matches(request.auth.uid + '_[0-9]{8}'));
+      allow create: if request.resource.data.keys().hasOnly(['m', 'day', 'visits', 'uniques']) &&
+        request.resource.data.m is string && request.resource.data.m.size() > 0 && request.resource.data.m.size() <= 128 &&
+        request.resource.data.day is string && request.resource.data.day.matches('[0-9]{8}') &&
+        docId == request.resource.data.m + '_' + request.resource.data.day &&
+        request.resource.data.visits in [0, 1] && request.resource.data.uniques in [0, 1];
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visits', 'uniques']) &&
+        (request.resource.data.visits - resource.data.visits) in [0, 1] &&
+        (request.resource.data.uniques - resource.data.uniques) in [0, 1];
+      allow delete: if false;
+    }
+
     match /join_requests/{id} {
       // مقيّدة للأدمن بس — ولا حتى التاجر نفسه يقدر يتحقق من حالة طلبه هنا (ما عنده
       // حساب دخول أصلاً بهذي المرحلة)، فما فيه أي وظيفة بالتطبيق تنكسر بهذا التقييد.

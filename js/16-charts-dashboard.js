@@ -96,6 +96,7 @@ function renderDashboardCharts() {
   });
 }
 function renderMerchantCharts(m) {
+  if (typeof renderMerchantVisitStats === 'function') renderMerchantVisitStats(m);
   if (typeof Chart === 'undefined') return;
   const days = last7Days();
   const labels = days.map(d => d.label);

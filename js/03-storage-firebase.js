@@ -31,7 +31,7 @@ async function initStorage() {
       import("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js")
     ]);
     const { initializeApp } = _fbApp;
-    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where } = _fbStore;
+    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, increment } = _fbStore;
     const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut: authSignOut, updatePassword } = _fbAuth;
     const { getFunctions, httpsCallable } = _fbFns;
     const firebaseApp = initializeApp(firebaseConfig);
@@ -186,6 +186,13 @@ async function initStorage() {
         // other field on the document. Every other caller in this file always sends its
         // full known object anyway, so this is a no-op change for them.
         await setDoc(doc(db, collectionName, uid), payload, { merge: true });
+      },
+      // عدّاد زيارات المتاجر: زائر غير مسجّل يزيد حقول رقمية (visits/uniques) بمقدار 1 كحد أقصى —
+      // القاعدة بـ firestore.rules (store_visits) تفرض ذلك، فما يقدر يكتب أي قيمة ثانية.
+      async bumpCounter(collectionName, docId, base, incs) {
+        const payload = Object.assign({}, base);
+        Object.keys(incs).forEach(k => { payload[k] = increment(incs[k]); });
+        await setDoc(doc(db, collectionName, docId), payload, { merge: true });
       },
       async deleteDoc(collectionName, uid) {
         await deleteDoc(doc(db, collectionName, uid));

@@ -1819,6 +1819,7 @@ function renderMerchantPanel() {
     </div>
 
     <div class="dash-tab" data-mdashtab-content="appearance">
+      ${merchantTrackingCardHtml(m)}
       <div class="card">
         <div class="card-title">لون لوحة تحكمك</div>
         <div class="subtitle" style="margin-bottom:8px;">هذا اللون يخص شكل لوحتك انت بس (الأزرار والعناوين هنا بلوحة التحكم) — منفصل تماماً عن شكل متجرك اللي يشوفه الزبون</div>
@@ -1955,6 +1956,11 @@ function renderMerchantPanel() {
     </div>
 
     <div class="dash-tab" data-mdashtab-content="charts">
+      <div class="card">
+        <div class="card-title">زيارات متجري آخر 7 أيام</div>
+        <div id="merchant-visit-summary"><div class="empty">جاري التحميل...</div></div>
+        <div class="chart-wrap"><canvas id="chart-merchant-visits"></canvas></div>
+      </div>
       <div class="card">
         <div class="card-title">مبيعاتي آخر 7 أيام</div>
         <div class="chart-wrap"><canvas id="chart-merchant-sales"></canvas></div>

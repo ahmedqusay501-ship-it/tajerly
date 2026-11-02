@@ -166,8 +166,9 @@ function openPublicStore(slug) {
   productDetailFullPageActive = false; // زيارة جديدة لمتجر — نضمن ما ترث حالة "تفاصيل مفتوحة" من متجر سابق
   updateBootMerchantLogo(m);
   brandEl.textContent = m.shop;
-  m.visits = (m.visits || 0) + 1;
-  saveData();
+  // عدّاد الزيارات صار يومياً بمجموعة store_visits (شوف 27-store-stats.js) — القديم ما كان يحفظ للزائر.
+  if (typeof recordStoreVisit === 'function') recordStoreVisit(m);
+  if (typeof initMerchantTracking === 'function') initMerchantTracking(m);
   renderStorefrontInto(m.id, content);
   updateCartFab();
   if (typeof trackEvent === 'function') trackEvent('page');

@@ -39,7 +39,7 @@ function trackingBlocked() {
 }
 
 function loadMetaPixel(id) {
-  if (window.fbq) return;
+  if (window.fbq) { window.fbq('init', id); trackingActive.fb = true; return; } // بكسل إضافي (بكسل التاجر) بجانب بكسل المنصة
   const n = window.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
   if (!window._fbq) window._fbq = n;
   n.push = n; n.loaded = true; n.version = '2.0'; n.queue = [];
@@ -51,19 +51,23 @@ function loadMetaPixel(id) {
 }
 
 function loadTikTokPixel(id) {
-  if (window.ttq && window.ttq._loaded) return;
   const w = window, t = 'ttq';
-  w.TiktokAnalyticsObject = t;
-  const ttq = w[t] = w[t] || [];
-  ttq._loaded = true;
-  ttq.methods = ['page', 'track', 'identify', 'instances', 'debug', 'on', 'off', 'once', 'ready', 'alias', 'group', 'enableCookie', 'disableCookie'];
-  ttq.setAndDefer = function (o, e) { o[e] = function () { o.push([e].concat(Array.prototype.slice.call(arguments, 0))); }; };
-  ttq.methods.forEach(m => ttq.setAndDefer(ttq, m));
-  ttq.instance = function (i) {
-    const inst = (ttq._i && ttq._i[i]) || [];
-    ttq.methods.forEach(m => ttq.setAndDefer(inst, m));
-    return inst;
-  };
+  if (!(w.ttq && w.ttq._loaded)) {
+    w.TiktokAnalyticsObject = t;
+    const ttq = w[t] = w[t] || [];
+    ttq._loaded = true;
+    ttq.methods = ['page', 'track', 'identify', 'instances', 'debug', 'on', 'off', 'once', 'ready', 'alias', 'group', 'enableCookie', 'disableCookie'];
+    ttq.setAndDefer = function (o, e) { o[e] = function () { o.push([e].concat(Array.prototype.slice.call(arguments, 0))); }; };
+    ttq.methods.forEach(m => ttq.setAndDefer(ttq, m));
+    ttq.instance = function (i) {
+      const inst = (ttq._i && ttq._i[i]) || [];
+      ttq.methods.forEach(m => ttq.setAndDefer(inst, m));
+      return inst;
+    };
+  }
+  // تحميل معرّف واحد (يتكرر لكل بكسل: المنصة ثم التاجر) — نفس ما يسويه ttq.load بالسنِبت الرسمي
+  const ttq = w[t];
+  if (ttq._i && ttq._i[id]) return;
   ttq._i = ttq._i || {}; ttq._i[id] = []; ttq._i[id]._u = 'https://analytics.tiktok.com/i18n/pixel/events.js';
   ttq._t = ttq._t || {}; ttq._t[id] = +new Date();
   ttq._o = ttq._o || {}; ttq._o[id] = {};
@@ -74,7 +78,7 @@ function loadTikTokPixel(id) {
 }
 
 function loadGoogleAnalytics(id) {
-  if (window.gtag) return;
+  if (window.gtag) { window.gtag('config', id, { send_page_view: false }); trackingActive.ga = true; return; } // معرّف إضافي (تاجر)
   window.dataLayer = window.dataLayer || [];
   window.gtag = function () { window.dataLayer.push(arguments); };
   const s = document.createElement('script');
@@ -180,4 +184,60 @@ function saveTrackingSettings() {
   saveData();
   renderTrackingSettings();
   showToast('تم حفظ إعدادات التتبّع (تظهر للزبائن بعد تحديث الصفحة)');
+}
+
+// ---------- بكسل خاص بكل تاجر ----------
+// التاجر يحط معرّفات بكسلاته بإعدادات متجره (m.tracking)، وتتحمّل على متجره هو بس (ما تأثر على المتاجر الثانية)
+// بجانب بكسل المنصة. نفس أحداث trackEvent (مشاهدة، سلة، شيك أوت، شراء) تنرسل للبكسلين.
+const merchantTrackingLoaded = new Set();
+function initMerchantTracking(m) {
+  try {
+    if (!m || !m.tracking || merchantTrackingLoaded.has(m.id)) return;
+    if (trackingBlocked()) return;
+    merchantTrackingLoaded.add(m.id);
+    const platform = (data && data.settings && data.settings.tracking) || {};
+    const fb = cleanTrackingId('fbPixelId', m.tracking.fbPixelId);
+    const tt = cleanTrackingId('tiktokPixelId', m.tracking.tiktokPixelId);
+    const ga = cleanTrackingId('ga4Id', m.tracking.ga4Id);
+    if (fb && fb !== cleanTrackingId('fbPixelId', platform.fbPixelId)) loadMetaPixel(fb);
+    if (tt && tt !== cleanTrackingId('tiktokPixelId', platform.tiktokPixelId)) loadTikTokPixel(tt);
+    if (ga && ga !== cleanTrackingId('ga4Id', platform.ga4Id)) loadGoogleAnalytics(ga);
+  } catch (e) { console.warn('merchant tracking init failed', e); }
+}
+function merchantTrackingCardHtml(m) {
+  const t = m.tracking || {};
+  return `<div class="card">
+    <div class="card-title">بكسل وتتبّع متجرك</div>
+    <div class="subtitle" style="margin-bottom:8px;">حط معرّفات بكسلاتك حتى تقدر تسوي إعلانات وإعادة استهداف لزبائن متجرك. تشتغل على متجرك أنت بس. اترك الحقل فاضي إذا ما عندك.</div>
+    <label style="font-size:12px;">بكسل فيسبوك (أرقام فقط)</label>
+    <input id="mtrk-fb-${m.id}" placeholder="مثال: 123456789012345" value="${esc(t.fbPixelId || '')}" style="direction:ltr;">
+    <label style="font-size:12px;">بكسل تيك توك</label>
+    <input id="mtrk-tt-${m.id}" placeholder="مثال: C1ABCDEF2GHIJ3KLMN" value="${esc(t.tiktokPixelId || '')}" style="direction:ltr;">
+    <label style="font-size:12px;">Google Analytics (G-...)</label>
+    <input id="mtrk-ga-${m.id}" placeholder="مثال: G-ABCDE12345" value="${esc(t.ga4Id || '')}" style="direction:ltr;">
+    <div id="mtrk-error-${m.id}" style="color:#DC2626; font-size:12px; min-height:16px;"></div>
+    <button class="btn small" onclick="saveMerchantTracking(${m.id})">حفظ</button>
+  </div>`;
+}
+function saveMerchantTracking(mid) {
+  const m = data.merchants.find(x => x.id === mid);
+  if (!m) return;
+  const read = (k) => (document.getElementById(`mtrk-${k}-${mid}`) || {}).value || '';
+  const raw = { fbPixelId: read('fb'), tiktokPixelId: read('tt'), ga4Id: read('ga') };
+  const next = {}; const bad = [];
+  Object.keys(raw).forEach(k => {
+    if (!raw[k].trim()) { next[k] = ''; return; }
+    const ok = cleanTrackingId(k, raw[k]);
+    if (ok) next[k] = ok; else bad.push(k);
+  });
+  const err = document.getElementById(`mtrk-error-${mid}`);
+  if (bad.length) {
+    const names = { fbPixelId: 'بكسل فيسبوك', tiktokPixelId: 'بكسل تيك توك', ga4Id: 'Google Analytics' };
+    if (err) err.textContent = 'صيغة غير صحيحة: ' + bad.map(k => names[k]).join('، ');
+    return;
+  }
+  if (err) err.textContent = '';
+  m.tracking = next;
+  saveData();
+  showToast('تم حفظ البكسل — يشتغل على متجرك بعد تحديث الصفحة');
 }
