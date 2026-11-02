@@ -1724,9 +1724,7 @@ function renderMerchantPanel() {
       </div>
       <div class="card">
         <div class="card-title">تجهيز الطلبات للتوصيل</div>
-        <div id="ready-shipping-${m.id}">${m.ownDelivery
-          ? '<div class="subtitle">متجرك مستثنى من توصيل المنصة (توصيلك خاص بيك) — الطلبات المقبولة ما تحتاج تجهيز لفريق توصيل المنصة.</div>'
-          : renderReadyForShipping(m)}</div>
+        <div id="ready-shipping-${m.id}">${m.ownDelivery ? renderOwnDeliveryOrders(m) : renderReadyForShipping(m)}</div>
       </div>
       <div class="card">
         <div class="card-title">سجل الطلبات (الكل)</div>

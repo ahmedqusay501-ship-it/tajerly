@@ -1000,7 +1000,7 @@ function orderStatusLabel(status) {
 // cancelled order matters more than whatever its earlier status was.
 function orderFullStatusLabel(o) {
   if (o.cancelled) return 'ملغي';
-  const hasAgent = o.deliveryAgentId != null;
+  const hasAgent = o.deliveryAgentId != null || (typeof isOwnDeliveryOrder === 'function' && isOwnDeliveryOrder(o));
   if (o.deliveryStatus === 'delivered') return hasAgent ? 'تم التوصيل' : 'واصل';
   if (o.deliveryStatus === 'returned') return 'مرجّع';
   if (o.deliveryStatus === 'received_by_shipping') return hasAgent ? 'تم استلام الطلب بواسطة المندوب' : 'مستلم من قبل شركة الشحن';

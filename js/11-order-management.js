@@ -168,8 +168,14 @@ function orderFinanceLine(o) {
   </div>`;
 }
 
+// طلب تاجر عنده "توصيل خاص بالمحل" (ownDelivery) وما إله مندوب منصة — مندوبه هو مندوب المحل نفسه.
+function isOwnDeliveryOrder(o) {
+  if (!o || o.deliveryAgentId != null) return false;
+  const m = data.merchants.find(x => x.id === o.merchantId);
+  return !!(m && m.ownDelivery);
+}
 function deliveryStatusLabel(status, o) {
-  const hasAgent = !!(o && o.deliveryAgentId != null);
+  const hasAgent = !!(o && (o.deliveryAgentId != null || isOwnDeliveryOrder(o)));
   if (status === 'with_shipping') return hasAgent ? 'بانتظار استلام المندوب' : 'جاهز للتوصيل';
   if (status === 'received_by_shipping') return hasAgent ? 'تم استلام الطلب بواسطة المندوب' : 'مستلم من قبل شركة الشحن';
   if (status === 'delivered') return hasAgent ? 'تم التوصيل' : 'تم التسليم';
@@ -275,6 +281,72 @@ function renderReadyForShipping(m) {
       </div>
     </div>`;
   }).join('');
+}
+
+// ---------- توصيل المحل الخاص (ownDelivery): نفس تسلسل أزرار المندوب ----------
+// الطلب المقبول → "تم استلام الطلب بواسطة المندوب" (received_by_shipping) → "تم التوصيل" (delivered).
+// التاجر/موظفه يضغطهم بنفسه (مسموح بقواعد Firestore لتاجر ownDelivery فقط وبدون مندوب منصة).
+function renderOwnDeliveryOrders(m) {
+  const mine = data.orders.filter(o => o.merchantId === m.id && o.status === 'accepted' && !o.cancelled && o.deliveryAgentId == null && (!o.cancelStage || o.cancelStage === 'none'));
+  const toReceive = mine.filter(o => o.deliveryStatus === 'none').slice().reverse();
+  const toDeliver = mine.filter(o => o.deliveryStatus === 'received_by_shipping').slice().reverse();
+  if (toReceive.length === 0 && toDeliver.length === 0) return '<div class="empty">ما فيه طلبات مقبولة بانتظار التوصيل حالياً</div>';
+  const card = (g, step) => {
+    const items = g.orders;
+    const first = items[0];
+    const itemsHtml = items.map(o => `
+      <div class="invoice-line">
+        <span>${esc(o.productName)}${o.size ? ' — مقاس ' + esc(o.size) : ''}${o.color ? ' — ' + esc(o.color) : ''} — ${fmtNum(o.price)} د</span>
+      </div>`).join('');
+    const btn = step === 'receive'
+      ? `<button class="btn small" onclick="markOwnDeliveryStep(${g.groupId}, 'none', 'received_by_shipping', this)">تم استلام الطلب بواسطة المندوب</button>`
+      : `<button class="btn small" onclick="markOwnDeliveryStep(${g.groupId}, 'received_by_shipping', 'delivered', this)">تم التوصيل</button>`;
+    return `
+    <div class="list-item" style="align-items:flex-start; flex-direction:column; gap:8px;">
+      <div style="width:100%;">
+        <b>فاتورة الزبون${items.length > 1 ? ' — ' + items.length + ' قطع' : ''}</b>
+        <span class="badge pending" style="margin-right:6px;">${step === 'receive' ? 'بانتظار استلام المندوب' : 'تم استلام الطلب بواسطة المندوب'}</span>
+        <div style="color:var(--text-mute); font-size:11px; margin-top:2px;">${orderDateTimeLabel(first.date)}</div>
+        ${orderCustomerLine(first)}
+        <div style="margin-top:6px;">${itemsHtml}</div>
+        ${items.map(o => orderFinanceLine(o)).join('')}
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
+        ${btn}
+        ${step === 'receive' ? `<button class="btn danger small" onclick="openCancelReasonModal(${g.groupId}, 'merchant', ${jsAttr(m.shop || '')})">إلغاء الطلب</button>` : ''}
+      </div>
+    </div>`;
+  };
+  let html = '';
+  if (toReceive.length) html += `<div class="subtitle" style="margin:4px 0;">بانتظار استلام المندوب</div>` + groupOrders(toReceive).map(g => card(g, 'receive')).join('');
+  if (toDeliver.length) html += `<div class="subtitle" style="margin:10px 0 4px;">مع المندوب — بانتظار التوصيل</div>` + groupOrders(toDeliver).map(g => card(g, 'deliver')).join('');
+  return html;
+}
+
+async function markOwnDeliveryStep(groupId, fromStatus, toStatus, btn) {
+  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && o.status === 'accepted' && !o.cancelled && o.deliveryAgentId == null && o.deliveryStatus === fromStatus);
+  if (items.length === 0) { showToast('هذي الفاتورة تغيّرت حالتها — جاري تحديث الشاشة'); renderAll(); return; }
+  const m = data.merchants.find(x => x.id === items[0].merchantId);
+  if (!m || !m.ownDelivery) { showToast('هذا الإجراء لتوصيل المحل الخاص فقط'); return; }
+  const oldLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'جاري الحفظ...'; }
+  items.forEach(o => { o.deliveryStatus = toStatus; });
+  saveData();
+  let ok = true;
+  if (window.authApi) {
+    try { await Promise.all(items.map(o => window.authApi.saveDoc('orders', String(o.id), orderPayloadForWrite(o)))); }
+    catch (e) { console.error('markOwnDeliveryStep: order write failed', e); ok = false; }
+  }
+  if (!ok) {
+    items.forEach(o => { o.deliveryStatus = fromStatus; });
+    showToast('فشل حفظ الحالة — تأكد من الاتصال بالإنترنت وحاول مرة ثانية');
+    if (btn) { btn.disabled = false; btn.textContent = oldLabel; }
+    renderAll();
+    return;
+  }
+  logAudit(toStatus === 'delivered' ? 'توصيل خاص — تم التوصيل' : 'توصيل خاص — استلام المندوب', `${m.shop || ''} — ${items.length} قطعة`);
+  showToast(toStatus === 'delivered' ? 'تم تسجيل الفاتورة كمُوصّلة' : 'تم تسجيل استلام الطلب بواسطة المندوب');
+  renderAll();
 }
 
 // Finds which delivery agent (an 'employees' record with ownerType 'delivery_agent') is

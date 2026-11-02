@@ -527,6 +527,30 @@ service cloud.firestore {
           request.resource.data.deliveryAgentId == resource.data.deliveryAgentId
         ) ||
         (
+          // توصيل المحل الخاص (ownDelivery): تاجر عنده التوصيل الخاص (قرار أدمن) وطلبه بدون مندوب منصة
+          // يقدر يسجّل "استلام المندوب" ثم "تم التوصيل" بنفسه. مقيّد بأضيق شكل:
+          //   • فقط none -> received_by_shipping ثم received_by_shipping -> delivered (لا returned ولا قفز).
+          //   • فقط طلب مقبول، غير ملغي، بدون طلب إلغاء جاري، وبدون deliveryAgentId.
+          //   • لا يلمس إلا deliveryStatus (و returnReason الفارغ) — السعر وبيانات الزبون ثابتة.
+          // ⚠️ هذا يسمح لتاجر التوصيل الخاص بتسجيل التسليم (الذي يحتسب الرصيد) — قرار مقصود من صاحب المنصة.
+          (isMerchantSelf(resource.data.merchantAuthUid) ||
+           isMerchantEmployee(resource.data.merchantAuthUid, 'orders')) &&
+          exists(/databases/$(database)/documents/merchants/$(resource.data.merchantAuthUid)) &&
+          get(/databases/$(database)/documents/merchants/$(resource.data.merchantAuthUid)).data.get('ownDelivery', false) == true &&
+          request.resource.data.merchantAuthUid == resource.data.merchantAuthUid &&
+          resource.data.status == 'accepted' &&
+          resource.data.get('cancelled', false) != true &&
+          resource.data.get('cancelStage', 'none') == 'none' &&
+          resource.data.get('deliveryAgentId', null) == null &&
+          request.resource.data.get('deliveryAgentId', null) == null &&
+          request.resource.data.status == resource.data.status &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveryStatus', 'returnReason']) &&
+          (
+            (resource.data.deliveryStatus == 'none' && request.resource.data.deliveryStatus == 'received_by_shipping') ||
+            (resource.data.deliveryStatus == 'received_by_shipping' && request.resource.data.deliveryStatus == 'delivered')
+          )
+        ) ||
+        (
           (isMerchantSelf(resource.data.merchantAuthUid) ||
            isMerchantEmployee(resource.data.merchantAuthUid, 'orders')) &&
           // التاجر/موظفه يقدر يغيّر حالة الطلب والشحن فقط — مو السعر ولا بيانات
