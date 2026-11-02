@@ -1891,3 +1891,4 @@
   .faq-a { margin: 0 14px; padding: 10px 0 14px; border-top: 1px dashed var(--border); font-size: 13px; line-height: 1.95; color: var(--text); }
   .faq-a b { color: var(--accent-dark); }
   @media (max-width: 520px) { .faq-section { padding: 18px 14px; } .faq-item summary { font-size: 13px; padding: 11px 12px; } }
+  .faq-a-green { color: var(--accent-dark); font-weight: 700; }
