@@ -1,6 +1,6 @@
 // ---------- الأسئلة الشائعة (FAQ) ----------
 // قسمين منفصلين:
-//  1) LOGIN_FAQ    — أسئلة عن المنصة لأي زائر/تاجر جديد، تظهر بصفحة تسجيل الدخول (خارج المنصة).
+//  1) LOGIN_FAQ    — أسئلة عن المنصة لأي زائر/تاجر جديد، تظهر بالصفحة الرئيسية (خارج المنصة).
 //  2) MERCHANT_FAQ — أسئلة عن طريقة الاستخدام والمميزات، تظهر داخل لوحة التاجر بتبويب مستقل.
 // المحتوى نصوص ثابتة (مو مدخلات مستخدم)، فيصير نسمح بوسوم بسيطة مثل <b> و<br>.
 
@@ -73,7 +73,7 @@ const MERCHANT_FAQ = [
 
 // حالة فتح/غلق الأسئلة تنحفظ هنا لأن لوحة التاجر تنبنى من جديد كل فترة (تحديث تلقائي)
 // وكان راح يتسكّر السؤال المفتوح لو ما حفظناه.
-const faqOpenState = { login: new Set(), merchant: new Set() };
+const faqOpenState = { home: new Set(), merchant: new Set() };
 
 function faqToggled(kind, i, isOpen) {
   if (isOpen) faqOpenState[kind].add(i); else faqOpenState[kind].delete(i);
@@ -87,9 +87,9 @@ function faqListHtml(kind, list) {
     </details>`).join('');
 }
 
-function renderLoginFaq() {
-  const box = document.getElementById('login-faq-list');
-  if (box) box.innerHTML = faqListHtml('login', LOGIN_FAQ);
+function renderHomeFaq() {
+  const box = document.getElementById('home-faq-list');
+  if (box) box.innerHTML = faqListHtml('home', LOGIN_FAQ);
 }
 
 function renderMerchantFaqHtml() {
@@ -100,4 +100,4 @@ if (typeof NAV_ICON_PATHS !== 'undefined' && !NAV_ICON_PATHS.help) {
   NAV_ICON_PATHS.help = '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>';
 }
 
-renderLoginFaq();
+renderHomeFaq();
