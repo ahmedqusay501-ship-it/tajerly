@@ -1653,7 +1653,8 @@ function renderMerchantPanel() {
 
   panel.innerHTML = `
     <div id="merchant-subscription-banner">${currentRole === 'merchant' ? renderMerchantSubscriptionBanner(m) : ''}</div>
-    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+    <div style="display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+      ${installButtonHtml()}
       <button class="btn small ${newOrderSoundEnabled ? '' : 'secondary'}" onclick="toggleNewOrderSound()">${newOrderSoundEnabled ? '🔔 التنبيه الصوتي مفعّل' : '🔕 فعّل تنبيه الطلبات الصوتي'}</button>
     </div>
     <div class="toggle-group" id="merchant-dash-subnav">
