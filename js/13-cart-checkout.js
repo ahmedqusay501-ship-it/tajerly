@@ -79,8 +79,7 @@ function addToCart(merchantId, productId) {
   if (!p) return;
   ensureProductVariants(p);
   if (!isMerchantOpenNow(m)) { showToast('المطعم مغلق حالياً — جرب أوقات دوامه'); return; }
-  const size = p.sizes.length ? (selectedProductSize[productId] || p.sizes[0].value) : null;
-  const colorVal = p.colors.length ? (selectedProductColor[productId] || p.colors[0].name) : null;
+  const { size, color: colorVal } = currentSelection(p);
 
   // The cart holds items from one store at a time — switching stores starts a fresh cart
   if (cart.length && cart[0].merchantId !== merchantId) { cart = []; appliedCoupon = null; }
@@ -956,6 +955,7 @@ async function searchMyOrders(silent) {
   // Group line items back into the single checkout ("order") they were placed as part of.
   // Kept in a module-level variable (not just this function's local scope) so the
   // cancel-request modal can look the group's item ids back up without a second round-trip.
+  await attachDeliveryConfirm(groups);
   lastTrackedGroups = groups.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
   renderTrackedGroups();
 }
@@ -1016,6 +1016,7 @@ async function searchOrderByNumber(silent) {
     return;
   }
 
+  await attachDeliveryConfirm([group]);
   lastTrackedGroups = [group];
   renderTrackedGroups();
 }
@@ -1026,6 +1027,10 @@ async function searchOrderByNumber(silent) {
 function renderTrackedGroups() {
   const results = document.getElementById('order-track-results');
   if (!results) return;
+  // The 5-second silent refresh redraws this box — keep whatever the customer already typed in
+  // the delivery-code fields (and which one has focus) so it never vanishes while they type.
+  const keptCodes = {}; let focusedId = null;
+  results.querySelectorAll('input[id^="delivery-code-input-"]').forEach(inp => { keptCodes[inp.id] = inp.value; if (document.activeElement === inp) focusedId = inp.id; });
   results.innerHTML = lastTrackedGroups.map(g => {
     const items = g.items || [];
     const total = items.reduce((s, o) => s + (o.price || 0) + (o.shippingFee || 0), 0);
@@ -1045,10 +1050,97 @@ function renderTrackedGroups() {
         <div style="display:flex; justify-content:space-between; margin-top:7px; font-weight:700; font-size:12.5px;">
           <span>الإجمالي</span><span>${fmtNum(total)} د</span>
         </div>
+        ${deliveryCodeSectionHtml(g)}
         ${customerCancelSectionHtml(g.groupId, items[0])}
       </div>
     `;
   }).join('');
+  Object.keys(keptCodes).forEach(id => { const el = document.getElementById(id); if (el) el.value = keptCodes[id]; });
+  if (focusedId) { const el = document.getElementById(focusedId); if (el) el.focus(); }
+}
+
+// ---------- DELIVERY CODE CONFIRMATION (ضع كود المستلم من مندوب التوصيل) ----------
+// When a platform delivery agent has picked the order up, a code is issued (see
+// ensureDeliveryCode in 11-order-management.js). The driver gives it to the customer, and the
+// customer types it here — that registers the order as delivered. A public flag document
+// (delivery_confirm/{groupId}) tells this page a code is pending without revealing it; the
+// real check happens in firestore.rules against the private delivery_codes doc.
+let deliveryConfirmState = {}; // groupId -> { required, confirmed } | null
+
+async function attachDeliveryConfirm(groups) {
+  const outForDelivery = it => !it.cancelled && (it.deliveryStatus === 'with_shipping' || it.deliveryStatus === 'received_by_shipping');
+  const targets = groups.filter(g => (g.items || []).some(outForDelivery));
+  if (!targets.length) return;
+  if (!window.authApi) { // local-fallback mode: the real orders are right here
+    targets.forEach(g => {
+      const f = (g.items || [])[0];
+      deliveryConfirmState[g.groupId] = (f && f.deliveryAgentId != null && f.deliveryCode && f.deliveryStatus === 'received_by_shipping') ? { required: true, confirmed: false } : null;
+    });
+    return;
+  }
+  await Promise.all(targets.map(async g => {
+    try {
+      const flag = await window.authApi.getPublicDoc('delivery_confirm', String(g.groupId));
+      deliveryConfirmState[g.groupId] = flag ? { required: !!flag.required, confirmed: !!flag.confirmed } : null;
+      // The customer already confirmed with the code — the shared tracking copy may not have
+      // caught up yet, so show it as delivered right away.
+      if (flag && flag.confirmed) (g.items || []).forEach(it => { if (!it.cancelled) it.deliveryStatus = 'delivered'; });
+    } catch (e) { deliveryConfirmState[g.groupId] = null; }
+  }));
+}
+
+function deliveryCodeSectionHtml(g) {
+  const st = deliveryConfirmState[g.groupId];
+  if (!st || !st.required || st.confirmed) return '';
+  const items = (g.items || []).filter(it => !it.cancelled);
+  if (!items.length || !items.every(it => it.deliveryStatus === 'with_shipping' || it.deliveryStatus === 'received_by_shipping')) return '';
+  return `
+    <div class="delivery-code-card">
+      <label for="delivery-code-input-${g.groupId}">ضع كود المستلم من مندوب التوصيل</label>
+      <div class="delivery-code-row">
+        <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" dir="ltr" id="delivery-code-input-${g.groupId}" placeholder="------" onkeydown="if(event.key==='Enter'){event.preventDefault();submitDeliveryCode(${g.groupId});}">
+        <button class="btn small" id="delivery-code-btn-${g.groupId}" onclick="submitDeliveryCode(${g.groupId})">تأكيد الاستلام</button>
+      </div>
+      <div class="delivery-code-error" id="delivery-code-error-${g.groupId}"></div>
+    </div>`;
+}
+
+async function submitDeliveryCode(groupId) {
+  const input = document.getElementById(`delivery-code-input-${groupId}`);
+  const errEl = document.getElementById(`delivery-code-error-${groupId}`);
+  const btn = document.getElementById(`delivery-code-btn-${groupId}`);
+  const setErr = (t) => { if (errEl) errEl.textContent = t || ''; };
+  const code = normalizePhoneDigits(input ? input.value : '');
+  if (code.length !== 6) { setErr('اكتب الكود المكوّن من 6 أرقام'); return; }
+  const group = lastTrackedGroups.find(g => g.groupId === groupId);
+  const items = group ? (group.items || []).filter(it => !it.cancelled) : [];
+  if (!items.length) return;
+  setErr('');
+  if (btn) { btn.disabled = true; btn.textContent = 'جاري التأكيد...'; }
+  let okCount = 0;
+  if (window.authApi) {
+    const patch = { deliveryStatus: 'delivered', deliveryCodeEntered: code, deliveredVia: 'customer_code' };
+    const res = await Promise.allSettled(items.map(it => window.authApi.saveDoc('orders', String(it.id), patch)));
+    okCount = res.filter(r => r.status === 'fulfilled').length;
+    if (okCount > 0) {
+      // Public "confirmed" flag so the tracking page shows delivered even before the shared copy syncs.
+      try { await window.authApi.saveDoc('delivery_confirm', String(groupId), { confirmed: true, confirmedAt: new Date().toISOString(), confirmCode: code }); }
+      catch (e) { console.error('delivery_confirm update failed', e); }
+    }
+  } else {
+    const real = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && !o.cancelled);
+    if (real.length && real.every(o => o.deliveryCode === code)) {
+      real.forEach(o => { o.deliveryStatus = 'delivered'; o.deliveredVia = 'customer_code'; });
+      await saveData();
+      okCount = real.length;
+    }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'تأكيد الاستلام'; }
+  if (okCount === 0) { setErr('الكود غير صحيح — اطلبه من مندوب التوصيل وتأكد منه'); return; }
+  items.forEach(it => { it.deliveryStatus = 'delivered'; });
+  if (deliveryConfirmState[groupId]) deliveryConfirmState[groupId].confirmed = true;
+  showToast(okCount === items.length ? 'تم تأكيد استلام طلبك — شكراً لك' : 'تم تأكيد جزء من الطلب — حدّث الصفحة وتأكد من الباقي');
+  renderTrackedGroups();
 }
 
 // Decides what to show under a tracked order for cancellation purposes: the finalized

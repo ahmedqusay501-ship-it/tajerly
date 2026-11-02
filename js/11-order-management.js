@@ -671,8 +671,9 @@ async function addProduct(merchantId) {
   const name = nameInput.value.trim();
   const price = parseFloat(priceInput.value);
   const description = descInput.value.trim();
-  const sizes = (draftProductSizes[merchantId] || []).slice();
-  const colors = (draftProductColors[merchantId] || []).slice();
+  const colors = JSON.parse(JSON.stringify(draftProductColors[merchantId] || []));
+  // Sizes live inside each color; the top-level size list is only for products with no colors.
+  const sizes = colors.length ? [] : (draftProductSizes[merchantId] || []).slice();
   const stockRaw = stockInput.value.trim();
   const stock = stockRaw === '' ? null : (parseInt(stockRaw) || 0);
   const categoryId = categorySelect && categorySelect.value ? parseInt(categorySelect.value) : null;
@@ -916,6 +917,7 @@ function renderAdminShippingControl() {
         ${merchantLine}
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
+        ${deliveryCodeBoxHtml(first, g.groupId, 'admin')}
         <div style="font-size:11px; color:#64748B; margin-top:6px; border-top:1px dashed #EEE; padding-top:6px;">
           المبلغ الكامل من الزبون: <b>${fmtNum(customerTotal)} د</b>
         </div>
@@ -926,13 +928,111 @@ function renderAdminShippingControl() {
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
         ${(!isReturned && first.deliveryStatus === 'with_shipping') ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId})">${first.deliveryAgentId != null ? 'تم استلام الطلب بواسطة المندوب' : 'مستلم من قبل شركة الشحن'}</button>` : ''}
-        ${(!isReturned && !(first.deliveryAgentId != null && first.deliveryStatus === 'with_shipping')) ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId})">${first.deliveryAgentId != null ? 'تم التوصيل' : 'واصل'}</button>` : ''}
+        ${(!isReturned && !(first.deliveryAgentId != null && first.deliveryStatus === 'with_shipping')) ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId})">${first.deliveryAgentId != null ? 'تم التوصيل (يدوي)' : 'واصل'}</button>` : ''}
         ${!isReturned ? `<button class="btn secondary small" onclick="openReturnReasonModal(${g.groupId})">غير واصل</button>` : ''}
         <button class="btn secondary small" onclick="returnOrderGroupToMerchant(${g.groupId})">إرجاع للتاجر يجهزها من جديد</button>
         <button class="btn danger small" onclick="openCancelReasonModal(${g.groupId}, 'admin', 'الأدمن')">إلغاء</button>
       </div>
     </div>`;
   }).join('');
+}
+
+// ---------- DELIVERY CODE (كود المستلم) ----------
+// For orders handled by a platform delivery agent, a 6-digit code is issued the moment the order
+// is marked "تم استلام الطلب بواسطة المندوب". Only the admin and the assigned agent (and the
+// agent's own staff) can see it — never the merchant. The agent/admin gives it to the driver,
+// the driver gives it to the customer at handover, and the customer types it in "تتبع طلبي";
+// that is what registers the order as delivered. The agent can NOT mark "delivered" by hand any
+// more — only the admin can change it manually. Orders of a shop that delivers by itself
+// (ownDelivery) never get a code; the shop confirms everything manually as before.
+// Storage (see firestore.rules): delivery_codes/{groupId} is private (the secret itself);
+// delivery_confirm/{groupId} is a public flag so the customer's page knows a code is pending.
+const deliveryCodeCache = {}; // groupId -> code string, or null when no code exists yet
+
+function genDeliveryCode() {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return String(100000 + (buf[0] % 900000));
+}
+
+function isAgentSideViewer() {
+  if (currentRole !== 'employee') return false;
+  const emp = currentEmployee();
+  return !!(emp && (emp.ownerType === 'delivery_agent' || emp.ownerType === 'agent_employee'));
+}
+
+// Creates the code for an invoice if it doesn't have one yet (or fixes the stored agent if the
+// admin re-routed the order). Returns the code, or null if it couldn't be created.
+async function ensureDeliveryCode(groupId) {
+  const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId);
+  const first = items[0];
+  if (!first || first.deliveryAgentId == null) return null;
+  const agentId = first.deliveryAgentId;
+  if (!window.authApi) { // local-fallback mode: keep it on the orders themselves
+    if (!first.deliveryCode) { const c = genDeliveryCode(); items.forEach(o => { o.deliveryCode = c; }); saveData(); }
+    deliveryCodeCache[groupId] = first.deliveryCode;
+    return first.deliveryCode;
+  }
+  try {
+    let doc = null;
+    try { doc = await window.authApi.getPrivateDoc('delivery_codes', String(groupId)); } catch (e) { doc = null; }
+    let code = doc && doc.code;
+    if (!code) {
+      code = genDeliveryCode();
+      await window.authApi.saveDoc('delivery_codes', String(groupId), { groupId, merchantAuthUid: first.merchantAuthUid || null, agentId, code, createdAt: new Date().toISOString() });
+    } else if (doc.agentId !== agentId && !isAgentSideViewer()) {
+      await window.authApi.saveDoc('delivery_codes', String(groupId), { agentId });
+    }
+    // Public flag the customer's tracking page looks at to know a code is waiting.
+    try {
+      const flag = await window.authApi.getPublicDoc('delivery_confirm', String(groupId));
+      if (!flag) await window.authApi.saveDoc('delivery_confirm', String(groupId), { groupId, merchantAuthUid: first.merchantAuthUid || null, agentId, required: true, confirmed: false });
+    } catch (e) { console.error('delivery_confirm flag failed', e); }
+    deliveryCodeCache[groupId] = code;
+    return code;
+  } catch (e) {
+    console.error('ensureDeliveryCode failed for', groupId, e);
+    return null;
+  }
+}
+
+async function loadDeliveryCode(groupId) {
+  if (!window.authApi) {
+    const o = data.orders.find(x => (x.orderGroupId || x.id) === groupId && x.deliveryCode);
+    deliveryCodeCache[groupId] = o ? o.deliveryCode : null;
+    return;
+  }
+  try {
+    const doc = await window.authApi.getPrivateDoc('delivery_codes', String(groupId));
+    deliveryCodeCache[groupId] = doc && doc.code ? doc.code : null;
+  } catch (e) { deliveryCodeCache[groupId] = null; }
+  if (typeof renderAdminShippingControl === 'function') renderAdminShippingControl();
+  if (isAgentSideViewer() && typeof renderAgentOrders === 'function') renderAgentOrders();
+}
+
+async function createDeliveryCodeClick(groupId) {
+  const code = await ensureDeliveryCode(groupId);
+  if (!code) showToast('ما انعمل الكود — تأكد من الاتصال وحاول مرة ثانية');
+  if (typeof renderAdminShippingControl === 'function') renderAdminShippingControl();
+  if (isAgentSideViewer() && typeof renderAgentOrders === 'function') renderAgentOrders();
+}
+
+function copyDeliveryCode(code) {
+  try { navigator.clipboard.writeText(code); showToast('تم نسخ الكود'); } catch (e) { showToast(code); }
+}
+
+// The box shown to the admin and to the agent under an order that is with the driver.
+function deliveryCodeBoxHtml(first, groupId, viewer) {
+  if (!first || first.deliveryAgentId == null || first.deliveryStatus !== 'received_by_shipping') return '';
+  if (!(groupId in deliveryCodeCache)) { loadDeliveryCode(groupId); return `<div class="delivery-code-box">كود التسليم: جاري التحميل...</div>`; }
+  const code = deliveryCodeCache[groupId];
+  if (!code) return `<div class="delivery-code-box"><span>ما فيه كود لهذا الطلب بعد</span> <button class="btn small" onclick="createDeliveryCodeClick(${groupId})">إنشاء كود التسليم</button></div>`;
+  return `<div class="delivery-code-box">
+    <span>كود التسليم — أعطه لسائق التوصيل:</span>
+    <b dir="ltr" class="delivery-code-value">${esc(code)}</b>
+    <button class="btn secondary small" onclick="copyDeliveryCode('${esc(code)}')">نسخ</button>
+    <div class="delivery-code-hint">${viewer === 'agent' ? 'الطلب ينسجّل واصل لما الزبون يكتب هذا الكود بصفحة "تتبع طلبي". التغيير اليدوي للحالة من الأدمن فقط.' : 'الطلب ينسجّل واصل تلقائياً لما الزبون يكتب الكود، أو تكدر تسجله يدوياً من زر "تم التوصيل".'}</div>
+  </div>`;
 }
 
 // New intermediate step: the order has been physically handed over to the (external)
@@ -945,6 +1045,8 @@ function markInvoiceReceivedByShipping(groupId) {
   if (items.length === 0) return;
   items.forEach(o => { o.deliveryStatus = 'received_by_shipping'; });
   saveData();
+  // Orders with a platform agent get a delivery code right now (own-delivery shops don't).
+  if (items[0].deliveryAgentId != null) ensureDeliveryCode(groupId).then(() => { renderAdminShippingControl(); if (isAgentSideViewer()) renderAgentOrders(); });
   const m = data.merchants.find(x => x.id === items[0].merchantId);
   logAudit('استلام فاتورة من شركة الشحن', `${m ? m.shop : ''} — ${items.length} قطعة`);
   showToast('تم تسجيل الفاتورة كمستلمة من قبل شركة الشحن');
@@ -954,6 +1056,11 @@ function markInvoiceReceivedByShipping(groupId) {
 function markInvoiceDelivered(groupId) {
   const items = data.orders.filter(o => (o.orderGroupId || o.id) === groupId && (o.deliveryStatus === 'with_shipping' || o.deliveryStatus === 'received_by_shipping'));
   if (items.length === 0) return;
+  // التغيير اليدوي إلى "واصل" للأدمن فقط. المندوب وموظفوه يعتمدون على كود المستلم من الزبون.
+  if (isAgentSideViewer() && items.some(o => o.deliveryAgentId != null)) {
+    showToast('تسجيل التوصيل يتم بكود المستلم من الزبون — أو يدوياً من الأدمن فقط');
+    return;
+  }
   // طلب مربوط بمندوب: لازم أول شي يتسجّل "تم استلام الطلب بواسطة المندوب" وبعدها "تم التوصيل".
   if (items.some(o => o.deliveryAgentId != null && o.deliveryStatus === 'with_shipping')) {
     showToast('سجّل أولاً "تم استلام الطلب بواسطة المندوب" وبعدها "تم التوصيل"');
@@ -1227,13 +1334,13 @@ function renderAgentActiveOrders(agent) {
         ${overdue ? '<span class="badge rejected" style="margin-right:6px;">متأخرة — أكثر من 24 ساعة بعهدتك</span>' : ''}
         ${orderCustomerLine(first)}
         <div style="margin-top:6px;">${itemsHtml}</div>
+        ${deliveryCodeBoxHtml(first, g.groupId, 'agent')}
         <div style="font-size:11px; color:#64748B; margin-top:6px; border-top:1px dashed #EEE; padding-top:6px;">
           مبلغ التاجر (المنتجات): <b>${fmtNum(subtotal)} د</b> — أجرة التوصيل: <b>${fmtNum(shipping)} د</b>
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:8px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
         ${first.deliveryStatus === 'with_shipping' ? `<button class="btn secondary small" onclick="markInvoiceReceivedByShipping(${g.groupId}); renderAgentOrders();">تم استلام الطلب بواسطة المندوب</button>` : ''}
-        ${first.deliveryStatus === 'received_by_shipping' ? `<button class="btn small" onclick="markInvoiceDelivered(${g.groupId}); renderAgentOrders();">تم التوصيل</button>` : ''}
         <button class="btn secondary small" onclick="openReturnReasonModal(${g.groupId})">غير واصل</button>
       </div>
     </div>`;

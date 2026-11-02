@@ -11,21 +11,25 @@ function getLowStockItems(m) {
   const threshold = getLowStockThreshold(m);
   const items = [];
   (m.products || []).forEach(p => {
-    if (p.sizes && p.sizes.length) {
+    if (p.colors && p.colors.length) {
+      p.colors.forEach(c => {
+        if (c.sizes && c.sizes.length) {
+          c.sizes.forEach(sz => {
+            if (typeof sz.stock === 'number' && sz.stock <= threshold) {
+              items.push({ productName: p.name, label: `${c.name} — مقاس ${sz.value}`, stock: sz.stock });
+            }
+          });
+        } else if (typeof c.stock === 'number' && c.stock <= threshold) {
+          items.push({ productName: p.name, label: c.name, stock: c.stock });
+        }
+      });
+    } else if (p.sizes && p.sizes.length) {
       p.sizes.forEach(s => {
         if (typeof s.stock === 'number' && s.stock <= threshold) {
           items.push({ productName: p.name, label: `مقاس ${s.value}`, stock: s.stock });
         }
       });
-    }
-    if (p.colors && p.colors.length) {
-      p.colors.forEach(c => {
-        if (typeof c.stock === 'number' && c.stock <= threshold) {
-          items.push({ productName: p.name, label: c.name, stock: c.stock });
-        }
-      });
-    }
-    if ((!p.sizes || !p.sizes.length) && (!p.colors || !p.colors.length) && typeof p.stock === 'number' && p.stock <= threshold) {
+    } else if (typeof p.stock === 'number' && p.stock <= threshold) {
       items.push({ productName: p.name, label: null, stock: p.stock });
     }
   });

@@ -1783,21 +1783,15 @@ function renderMerchantPanel() {
         <label>اسم المنتج</label><input id="p-name-${m.id}" placeholder="قميص قطن">
         <label>السعر (دينار)</label><input type="number" id="p-price-${m.id}" placeholder="15000">
         <label>وصف القطعة (اختياري)</label><textarea id="p-desc-${m.id}" placeholder="مثلاً: قماش قطن 100%، صناعة تركية، مناسب لكل الفصول"></textarea>
-        <label>المقاسات المتوفرة (اختياري) — أضف أي عدد تريده، مقاسات أحذية أو ملابس أو أي شي، وحط كمية كل مقاس</label>
+        <label>الألوان والمقاسات (اختياري) — أضف كل لون مرة وحدة، وبعدها أضف مقاسات هذا اللون وكمية كل مقاس. كل لون له مقاساته وكمياته المستقلة</label>
+        ${colorVariantBuilderHtml(`d:${m.id}`)}
+        <label>مقاسات بدون ألوان (اختياري — فقط لو المنتج ما بيه ألوان، مثلاً حذاء بلون واحد)</label>
         <div class="size-chip-add-row">
           <input id="p-size-input-${m.id}" placeholder="مثلاً: 42 أو L أو XL" onkeydown="if(event.key==='Enter'){event.preventDefault();addSizeChipDraft(${m.id});}">
           <input type="number" id="p-size-stock-input-${m.id}" placeholder="الكمية (اختياري)" style="max-width:120px;">
           <button type="button" class="btn secondary small" onclick="addSizeChipDraft(${m.id})">إضافة</button>
         </div>
         <div class="size-chip-row" id="p-sizes-chips-${m.id}">${sizeChipsHtml(draftProductSizes[m.id] || [], (i) => `removeSizeChipDraft(${m.id}, ${i})`)}</div>
-        <label>الألوان المتوفرة (اختياري) — اختر لون، اكتب اسمه، وحط كمية كل لون</label>
-        <div class="color-chip-add-row">
-          <input type="color" id="p-color-hex-${m.id}" value="#10B981">
-          <input type="text" id="p-color-name-${m.id}" placeholder="مثلاً: أحمر" onkeydown="if(event.key==='Enter'){event.preventDefault();addColorChipDraft(${m.id});}">
-          <input type="number" id="p-color-stock-${m.id}" placeholder="الكمية (اختياري)">
-          <button type="button" class="btn secondary small" onclick="addColorChipDraft(${m.id})">إضافة</button>
-        </div>
-        <div class="color-chip-row" id="p-colors-chips-${m.id}">${colorChipsHtml(draftProductColors[m.id] || [], (i) => `removeColorChipDraft(${m.id}, ${i})`)}</div>
         <label>الكمية المتوفرة الإجمالية (اختياري — تُستخدم فقط لو ما أضفت مقاسات أو ألوان، اتركها فارغة لو غير محدودة)</label><input type="number" id="p-stock-${m.id}" placeholder="مثلاً: 20">
         ${m.categories.length > 0 ? `
         <label>القسم (اختياري)</label>

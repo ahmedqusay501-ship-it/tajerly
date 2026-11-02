@@ -34,6 +34,75 @@ function firstAvailableVariant(list) {
   return available || list[0];
 }
 
+// Makes sure the picked color is a real one (default: first color that still has stock) and the
+// picked size belongs to THAT color (default: first size of it that still has stock).
+function ensureProductSelection(p) {
+  if (p.colors && p.colors.length) {
+    let c = p.colors.find(x => x.name === selectedProductColor[p.id]);
+    if (!c) { c = p.colors.find(x => !colorDepleted(x)) || p.colors[0]; selectedProductColor[p.id] = c.name; }
+  } else {
+    delete selectedProductColor[p.id];
+  }
+  const sizes = sizesForColor(p, selectedProductColor[p.id]);
+  if (sizes.length) {
+    if (!sizes.some(x => x.value === selectedProductSize[p.id])) {
+      selectedProductSize[p.id] = firstAvailableVariant(sizes).value;
+    }
+  } else {
+    delete selectedProductSize[p.id];
+  }
+}
+// The exact { size, color } the customer currently has selected for a product (null where the
+// product has no such option).
+function currentSelection(p) {
+  ensureProductVariants(p);
+  ensureProductSelection(p);
+  return {
+    size: sizesForColor(p, selectedProductColor[p.id]).length ? selectedProductSize[p.id] : null,
+    color: p.colors.length ? selectedProductColor[p.id] : null
+  };
+}
+function findProductById(productId) {
+  for (const m of data.merchants) {
+    const p = (m.products || []).find(x => x.id === productId);
+    if (p) return p;
+  }
+  return null;
+}
+
+// Color boxes first, then the sizes of the selected color (sizes differ per color, each with its
+// own stock, so changing the color redraws the size row).
+function storeSizesBlockHtml(p) {
+  const sizes = sizesForColor(p, selectedProductColor[p.id]);
+  const curSize = selectedProductSize[p.id];
+  return `<div id="size-block-${p.id}">${sizes.length ? `
+    <div class="product-sizes-label">اختر المقاس</div>
+    <div class="size-chip-row" id="size-chip-row-${p.id}">
+      ${sizes.map(s => {
+        const depleted = variantDepleted(s);
+        return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, ${jsAttr(s.value)})">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
+      }).join('')}
+    </div>` : ''}</div>`;
+}
+function storeVariantPickersHtml(p) {
+  ensureProductVariants(p);
+  ensureProductSelection(p);
+  const curColor = selectedProductColor[p.id];
+  return `
+    ${p.colors.length ? `
+      <div>
+        <div class="product-sizes-label">اختر اللون</div>
+        <div class="store-color-row" id="color-chip-row-${p.id}">
+          ${p.colors.map(c => {
+            const depleted = colorDepleted(c);
+            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, ${jsAttr(c.name)})"></span>`;
+          }).join('')}
+        </div>
+        <div class="store-color-label" id="color-selected-label-${p.id}">${curColor ? `اللون المختار: ${esc(curColor)}` : ''}</div>
+      </div>` : ''}
+    ${storeSizesBlockHtml(p)}`;
+}
+
 function pickStoreSize(productId, el, sizeVal) {
   if (el.classList.contains('disabled')) return;
   selectedProductSize[productId] = sizeVal;
@@ -48,6 +117,14 @@ function pickStoreColor(productId, el, colorName) {
   if (row) Array.from(row.children).forEach(chip => chip.classList.toggle('selected', chip === el));
   const label = document.getElementById(`color-selected-label-${productId}`);
   if (label) label.textContent = colorName ? `اللون المختار: ${colorName}` : '';
+  // Sizes belong to the color — redraw them for the newly picked color.
+  const p = findProductById(productId);
+  const block = document.getElementById(`size-block-${productId}`);
+  if (p && block) {
+    delete selectedProductSize[productId];
+    ensureProductSelection(p);
+    block.outerHTML = storeSizesBlockHtml(p);
+  }
 }
 function pickStoreImage(merchantId, productId, index) {
   const m = data.merchants.find(x => x.id === merchantId);
@@ -314,12 +391,7 @@ function renderProductDetailContent(p, color, m) {
   const outOfStock = productOutOfStock(p);
   const shownIndex = selectedProductImage[p.id] || 0;
   const mainImg = p.images[shownIndex] || p.images[0];
-  const defaultSize = firstAvailableVariant(p.sizes);
-  const defaultColor = firstAvailableVariant(p.colors);
-  if (defaultSize && selectedProductSize[p.id] === undefined) selectedProductSize[p.id] = defaultSize.value;
-  if (defaultColor && selectedProductColor[p.id] === undefined) selectedProductColor[p.id] = defaultColor.name;
-  const curSize = selectedProductSize[p.id];
-  const curColor = selectedProductColor[p.id];
+  ensureProductSelection(p);
   return `
     <div class="product-detail-main-img-wrap">
       ${mainImg ? `<img id="store-img-${p.id}" src="${imgSrc(mainImg)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
@@ -334,29 +406,7 @@ function renderProductDetailContent(p, color, m) {
     ${!isMerchantOpenNow(m) ? `<div class="empty" style="margin:6px 0;">🕓 هذا المطعم مغلق حالياً — تقدر تشوف القائمة بس ما تقدر تطلب${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ' لين يفتح'}</div>` : ''}
     ${(() => { const avg = productAvgRating(p); return avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : `<div class="store-product-card-rating">لا يوجد تقييمات بعد — كن أول من يقيّم</div>`; })()}
     ${p.description ? `<div class="product-desc">${esc(p.description)}</div>` : ''}
-    ${p.sizes.length ? `
-      <div>
-        <div class="product-sizes-label">اختر المقاس</div>
-        <div class="size-chip-row" id="size-chip-row-${p.id}">
-          ${p.sizes.map(s => {
-            const depleted = typeof s.stock === 'number' && s.stock <= 0;
-            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, ${jsAttr(s.value)})">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
-          }).join('')}
-        </div>
-      </div>
-    ` : ''}
-    ${p.colors.length ? `
-      <div>
-        <div class="product-sizes-label">اختر اللون</div>
-        <div class="store-color-row" id="color-chip-row-${p.id}">
-          ${p.colors.map(c => {
-            const depleted = typeof c.stock === 'number' && c.stock <= 0;
-            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, ${jsAttr(c.name)})"></span>`;
-          }).join('')}
-        </div>
-        <div class="store-color-label" id="color-selected-label-${p.id}">${curColor ? `اللون المختار: ${esc(curColor)}` : ''}</div>
-      </div>
-    ` : ''}
+    ${storeVariantPickersHtml(p)}
     <div style="margin-top:12px;">
       ${outOfStock
         ? `<button class="btn secondary" disabled style="width:100%;">غير متوفر</button>`
@@ -749,8 +799,7 @@ function landingOrderNow(merchantId, productId) {
   const p = m && m.products.find(x => x.id === productId);
   if (!m || !p) return;
   ensureProductVariants(p);
-  const size = p.sizes.length ? (selectedProductSize[productId] || p.sizes[0].value) : null;
-  const colorVal = p.colors.length ? (selectedProductColor[productId] || p.colors[0].name) : null;
+  const { size, color: colorVal } = currentSelection(p);
   const already = cart.length === 1 && cart[0].merchantId === merchantId && cart[0].productId === productId && cart[0].size === size && cart[0].color === colorVal;
   if (!already) {
     cart = []; appliedCoupon = null;
@@ -780,12 +829,7 @@ function renderProductLandingBody() {
   const outOfStock = productOutOfStock(p);
   const closed = !isMerchantOpenNow(m);
   const disabled = outOfStock || closed;
-  const defaultSize = firstAvailableVariant(p.sizes);
-  const defaultColor = firstAvailableVariant(p.colors);
-  if (defaultSize && selectedProductSize[p.id] === undefined) selectedProductSize[p.id] = defaultSize.value;
-  if (defaultColor && selectedProductColor[p.id] === undefined) selectedProductColor[p.id] = defaultColor.name;
-  const curSize = selectedProductSize[p.id];
-  const curColor = selectedProductColor[p.id];
+  ensureProductSelection(p);
   const avg = productAvgRating(p);
   const gallery = p.images.length
     ? (p.images.length > 1
@@ -805,23 +849,7 @@ function renderProductLandingBody() {
       ${avg !== null ? `<div class="store-product-card-rating"><span class="stars-row">${starsHtml(avg)}</span> ${avg} من 5 (${p.reviews.length} تقييم)</div>` : ''}
       <div class="landing-price" style="color:${color};">${fmtNum(p.price)} د ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}</div>
       ${closed ? `<div class="empty" style="margin:6px 0;">🕓 المتجر مغلق حالياً${nextOpenTimeLabel(m) ? ` (${nextOpenTimeLabel(m)})` : ''}</div>` : ''}
-      ${p.sizes.length ? `
-        <div class="product-sizes-label">اختر المقاس</div>
-        <div class="size-chip-row" id="size-chip-row-${p.id}">
-          ${p.sizes.map(s => {
-            const depleted = typeof s.stock === 'number' && s.stock <= 0;
-            return `<span class="size-chip-box${s.value === curSize ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="${depleted ? 'opacity:.4; cursor:not-allowed;' : ''}" onclick="pickStoreSize(${p.id}, this, ${jsAttr(s.value)})">${esc(s.value)}${depleted ? ' (نفدت)' : ''}</span>`;
-          }).join('')}
-        </div>` : ''}
-      ${p.colors.length ? `
-        <div class="product-sizes-label">اختر اللون</div>
-        <div class="store-color-row" id="color-chip-row-${p.id}">
-          ${p.colors.map(c => {
-            const depleted = typeof c.stock === 'number' && c.stock <= 0;
-            return `<span class="store-color-box${c.name === curColor ? ' selected' : ''}${depleted ? ' disabled' : ''}" style="background:${esc(c.hex)};" title="${esc(c.name)}${depleted ? ' — نفدت' : ''}" onclick="pickStoreColor(${p.id}, this, ${jsAttr(c.name)})"></span>`;
-          }).join('')}
-        </div>
-        <div class="store-color-label" id="color-selected-label-${p.id}">${curColor ? `اللون المختار: ${esc(curColor)}` : ''}</div>` : ''}
+      ${storeVariantPickersHtml(p)}
       <button class="btn landing-cta" style="background:${disabled ? '' : color};" ${disabled ? 'disabled' : ''} onclick="landingOrderNow(${m.id}, ${p.id})">${outOfStock ? 'غير متوفر' : (closed ? 'المتجر مغلق حالياً' : 'اطلب الآن')}</button>
       ${p.description ? `<div class="landing-section-title">عن المنتج</div><div class="product-desc" style="white-space:pre-wrap;">${esc(p.description)}</div>` : ''}
       <div class="store-trust-row">

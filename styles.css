@@ -1892,3 +1892,18 @@
   .faq-a b { color: var(--accent-dark); }
   @media (max-width: 520px) { .faq-section { padding: 18px 14px; } .faq-item summary { font-size: 13px; padding: 11px 12px; } }
   .faq-a-green { color: var(--accent-dark); font-weight: 700; }
+
+/* ---------- Color → sizes builder (merchant product form) ---------- */
+.variant-color-card { border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin: 8px 0; background: var(--card, #fff); }
+.variant-color-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.variant-color-head .swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(0,0,0,.15); display: inline-block; }
+
+/* ---------- Delivery code (agent/admin box + customer confirmation) ---------- */
+.delivery-code-box { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--accent, #10B981); border-radius: 10px; background: var(--accent-soft, #ECFDF5); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+.delivery-code-value { font-size: 20px; letter-spacing: 3px; color: var(--accent-dark, #047857); }
+.delivery-code-hint { flex-basis: 100%; font-size: 11px; color: var(--text-mute, #64748B); }
+.delivery-code-card { margin-top: 10px; padding: 10px; border: 1.5px solid var(--accent, #10B981); border-radius: 12px; background: var(--accent-soft, #ECFDF5); }
+.delivery-code-card label { display: block; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+.delivery-code-row { display: flex; gap: 8px; align-items: center; }
+.delivery-code-row input { flex: 1; text-align: center; font-size: 20px; letter-spacing: 6px; }
+.delivery-code-error { color: #B3261E; font-size: 12px; margin-top: 6px; min-height: 0; }

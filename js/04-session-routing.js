@@ -323,21 +323,75 @@ function ensureProductImages(p) {
   return p;
 }
 
-// Sizes used to be plain strings ("42", "L"...) with only one overall stock number for the
-// whole product. Now each size box and each color box carries its OWN stock count, so the
-// merchant can say "L: 5 left, XL: 2 left" and "أحمر: 3 left, أزرق: 0 left" instead of one
-// shared number. This upgrades any older product the first time it's loaded — a plain string
-// size becomes {value, stock:null} (unlimited, same as before) — and makes sure `colors`
-// always exists as an array so the rest of the code never has to guard for it being missing.
+// ---- Variants model ----
+// Each COLOR now carries its own list of sizes, each with its own quantity:
+//   colors: [{ name, hex, stock, sizes: [{ value, stock }] }]
+// so the merchant adds a product once and, for every color, lists the sizes it comes in and
+// how many pieces exist of that exact color+size. A color with an empty `sizes` list falls back
+// to its own `stock` number. `p.sizes` (top level) is only used by products that have NO colors.
+// Older products stored sizes and colors as two independent lists — the first time such a
+// product loads, every color receives a copy of the old sizes (quantity = the smaller of the
+// old size/color numbers, so nothing becomes more available than it was) and the old
+// top-level list is emptied.
 function ensureProductVariants(p) {
   if (!Array.isArray(p.sizes)) p.sizes = [];
   p.sizes = p.sizes.map(s => (typeof s === 'string') ? { value: s, stock: null } : s);
   if (!Array.isArray(p.colors)) p.colors = [];
+  if (p.colors.length) {
+    const legacySizes = p.sizes;
+    p.colors.forEach(c => {
+      if (!Array.isArray(c.sizes)) {
+        c.sizes = legacySizes.map(s => {
+          let stock = (typeof s.stock === 'number') ? s.stock : null;
+          if (typeof c.stock === 'number') stock = (stock === null) ? c.stock : Math.min(stock, c.stock);
+          return { value: s.value, stock };
+        });
+        if (c.sizes.length) c.stock = null;
+      }
+      c.sizes = c.sizes.map(s => (typeof s === 'string') ? { value: s, stock: null } : s);
+    });
+    p.sizes = [];
+  }
   // Ratings & reviews — each entry is { id, name, stars(1-5), comment, date }. Kept on the
   // product itself (not a separate top-level collection) since reviews always belong to,
   // and are only ever shown alongside, exactly one product.
   if (!Array.isArray(p.reviews)) p.reviews = [];
   return p;
+}
+
+// The sizes a customer can pick for the currently selected color (or the product's own sizes
+// when it has no colors at all).
+function sizesForColor(p, colorVal) {
+  if (p.colors && p.colors.length) {
+    const c = p.colors.find(x => x.name === colorVal) || p.colors[0];
+    return (c && Array.isArray(c.sizes)) ? c.sizes : [];
+  }
+  return p.sizes || [];
+}
+
+// The stock box that governs one exact color+size choice (a size box, or the color itself when
+// it has no sizes, or the product's own size box when it has no colors). null = no box at all.
+function variantBox(p, sizeVal, colorVal) {
+  if (p.colors && p.colors.length) {
+    const c = p.colors.find(x => x.name === colorVal);
+    if (!c) return null;
+    if (c.sizes && c.sizes.length) return c.sizes.find(x => x.value === sizeVal) || null;
+    return c;
+  }
+  if (p.sizes && p.sizes.length) return p.sizes.find(x => x.value === sizeVal) || null;
+  return null;
+}
+
+function variantDepleted(v) { return typeof v.stock === 'number' && v.stock <= 0; }
+function colorDepleted(c) {
+  return (c.sizes && c.sizes.length) ? c.sizes.every(variantDepleted) : variantDepleted(c);
+}
+// Total pieces left for a color (null = unlimited somewhere inside it).
+function colorTotalStock(c) {
+  if (!c.sizes || !c.sizes.length) return typeof c.stock === 'number' ? c.stock : null;
+  let total = 0;
+  for (const s of c.sizes) { if (typeof s.stock !== 'number') return null; total += s.stock; }
+  return total;
 }
 
 // Average star rating for a product, rounded to 1 decimal — null when it has no reviews yet
@@ -357,71 +411,41 @@ function starsHtml(rating) {
   return out;
 }
 
-// Available stock for a specific size/color combination a customer picked. When the product
-// has size or color boxes, each box's own stock is the limiting factor (the smaller of the
-// two, if both are set); a box with stock === null means "unlimited" for that dimension.
-// Products with no size/color boxes at all fall back to the product's overall stock field,
-// exactly like before this feature existed.
+// Available stock for the exact color+size combination a customer picked (null = unlimited).
+// Products with no colors/sizes at all fall back to the product's overall stock field.
 function variantStock(p, sizeVal, colorVal) {
-  let limit = null;
-  if (p.sizes && p.sizes.length && sizeVal != null) {
-    const s = p.sizes.find(x => x.value === sizeVal);
-    if (s && typeof s.stock === 'number') limit = (limit === null) ? s.stock : Math.min(limit, s.stock);
-  }
-  if (p.colors && p.colors.length && colorVal != null) {
-    const c = p.colors.find(x => x.name === colorVal);
-    if (c && typeof c.stock === 'number') limit = (limit === null) ? c.stock : Math.min(limit, c.stock);
-  }
-  if (limit === null && (!p.sizes || !p.sizes.length) && (!p.colors || !p.colors.length) && typeof p.stock === 'number') {
-    limit = p.stock;
-  }
-  return limit; // null = unlimited
+  const hasVariants = (p.colors && p.colors.length) || (p.sizes && p.sizes.length);
+  if (!hasVariants) return typeof p.stock === 'number' ? p.stock : null;
+  const box = variantBox(p, sizeVal, colorVal);
+  return (box && typeof box.stock === 'number') ? box.stock : null;
 }
 
-// A product counts as "نفدت الكمية" when every one of its variant boxes is at 0, or (for
-// products with no size/color boxes at all) when its own overall stock is 0.
+// A product counts as "نفدت الكمية" when every color (and every size inside it) is at 0, or (for
+// products with no colors) every size is at 0, or (no variants at all) its own stock is 0.
 function productOutOfStock(p) {
-  const hasSizes = p.sizes && p.sizes.length;
-  const hasColors = p.colors && p.colors.length;
-  if (hasSizes || hasColors) {
-    const sizesDepleted = !hasSizes || p.sizes.every(s => typeof s.stock === 'number' && s.stock <= 0);
-    const colorsDepleted = !hasColors || p.colors.every(c => typeof c.stock === 'number' && c.stock <= 0);
-    return sizesDepleted && colorsDepleted;
-  }
+  if (p.colors && p.colors.length) return p.colors.every(colorDepleted);
+  if (p.sizes && p.sizes.length) return p.sizes.every(variantDepleted);
   return typeof p.stock === 'number' && p.stock <= 0;
 }
 
-// Restores stock after a rejected/cancelled/removed piece — restocks the specific size box
-// and/or color box the customer had picked (each independently), or the overall product
-// stock if the product has neither.
+// Restores one piece after a rejected/cancelled/removed order line — puts it back on the exact
+// color+size box it came from (or the overall product stock if the product has no variants).
 function restoreVariantStock(p, sizeVal, colorVal) {
-  let restoredSomething = false;
-  if (p.sizes && p.sizes.length && sizeVal != null) {
-    const s = p.sizes.find(x => x.value === sizeVal);
-    if (s && typeof s.stock === 'number') { s.stock += 1; restoredSomething = true; }
-  }
-  if (p.colors && p.colors.length && colorVal != null) {
-    const c = p.colors.find(x => x.name === colorVal);
-    if (c && typeof c.stock === 'number') { c.stock += 1; restoredSomething = true; }
-  }
-  if (!restoredSomething && typeof p.stock === 'number') p.stock += 1;
+  const hasVariants = (p.colors && p.colors.length) || (p.sizes && p.sizes.length);
+  if (!hasVariants) { if (typeof p.stock === 'number') p.stock += 1; return; }
+  const box = variantBox(p, sizeVal, colorVal);
+  if (box && typeof box.stock === 'number') box.stock += 1;
 }
 
-// Deducts stock for an order — the mirror image of restoreVariantStock above. The
+// Deducts one piece for an order — the mirror image of restoreVariantStock above. The
 // authoritative call site is acceptInvoice() (runs in the merchant's own logged-in session,
 // which has real write access to their own document) — NOT at guest checkout time, since an
 // unauthenticated visitor's browser has no write access to the merchant's document per
 // firestore.rules. See the comment where newOrders are built in the checkout flow.
 function deductVariantStock(p, sizeVal, colorVal) {
-  let deductedSomething = false;
-  if (p.sizes && p.sizes.length && sizeVal != null) {
-    const s = p.sizes.find(x => x.value === sizeVal);
-    if (s && typeof s.stock === 'number') { s.stock = Math.max(0, s.stock - 1); deductedSomething = true; }
-  }
-  if (p.colors && p.colors.length && colorVal != null) {
-    const c = p.colors.find(x => x.name === colorVal);
-    if (c && typeof c.stock === 'number') { c.stock = Math.max(0, c.stock - 1); deductedSomething = true; }
-  }
-  if (!deductedSomething && typeof p.stock === 'number') p.stock = Math.max(0, p.stock - 1);
+  const hasVariants = (p.colors && p.colors.length) || (p.sizes && p.sizes.length);
+  if (!hasVariants) { if (typeof p.stock === 'number') p.stock = Math.max(0, p.stock - 1); return; }
+  const box = variantBox(p, sizeVal, colorVal);
+  if (box && typeof box.stock === 'number') box.stock = Math.max(0, box.stock - 1);
 }
 

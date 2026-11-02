@@ -326,13 +326,6 @@ function sizeChipsHtml(sizes, removeFn, editFn) {
 }
 
 // Same idea as sizeChipsHtml but for color boxes — each one shows its swatch, name, and stock.
-function colorChipsHtml(colors, removeFn, editFn) {
-  if (!colors || colors.length === 0) return '<span class="subtitle" style="margin:0;">ما ضفت ألوان بعد</span>';
-  return colors.map((c, i) => {
-    const stockLabel = typeof c.stock === 'number' ? `<span class="size-chip-stock">(${c.stock})</span>` : '';
-    return `<span class="color-chip-box"${editFn ? ` onclick="${editFn(i)}" style="cursor:pointer;"` : ''}><span class="swatch" style="background:${esc(c.hex)};"></span>${esc(c.name)} ${stockLabel}<span class="x" onclick="event.stopPropagation();${removeFn(i)}">✕</span></span>`;
-  }).join('');
-}
 
 function addSizeChipDraft(merchantId) {
   const input = document.getElementById(`p-size-input-${merchantId}`);
@@ -356,29 +349,6 @@ function removeSizeChipDraft(merchantId, index) {
   if (row) row.innerHTML = sizeChipsHtml(draftProductSizes[merchantId], (i) => `removeSizeChipDraft(${merchantId}, ${i})`);
 }
 
-function addColorChipDraft(merchantId) {
-  const nameInput = document.getElementById(`p-color-name-${merchantId}`);
-  const hexInput = document.getElementById(`p-color-hex-${merchantId}`);
-  const stockInput = document.getElementById(`p-color-stock-${merchantId}`);
-  const name = nameInput.value.trim();
-  if (!name) { showToast('اكتب اسم اللون (مثلاً: أحمر) قبل الإضافة'); return; }
-  const hex = hexInput.value || '#10B981';
-  const stockRaw = stockInput.value.trim();
-  const stock = stockRaw === '' ? null : (parseInt(stockRaw) || 0);
-  if (!draftProductColors[merchantId]) draftProductColors[merchantId] = [];
-  if (draftProductColors[merchantId].some(c => c.name === name)) { nameInput.value = ''; return; }
-  draftProductColors[merchantId].push({ name, hex, stock });
-  nameInput.value = ''; stockInput.value = '';
-  const row = document.getElementById(`p-colors-chips-${merchantId}`);
-  if (row) row.innerHTML = colorChipsHtml(draftProductColors[merchantId], (i) => `removeColorChipDraft(${merchantId}, ${i})`);
-  nameInput.focus();
-}
-function removeColorChipDraft(merchantId, index) {
-  if (!draftProductColors[merchantId]) return;
-  draftProductColors[merchantId].splice(index, 1);
-  const row = document.getElementById(`p-colors-chips-${merchantId}`);
-  if (row) row.innerHTML = colorChipsHtml(draftProductColors[merchantId], (i) => `removeColorChipDraft(${merchantId}, ${i})`);
-}
 
 // ---- Editing an EXISTING product's sizes/colors/photos: these mutate the product directly
 // and save immediately (same pattern as addCategory/deleteCategory elsewhere in this file),
@@ -421,44 +391,6 @@ function editSizeStockOnProduct(merchantId, productId, index) {
   saveData();
   renderMerchantPanel();
 }
-function addColorChipToProduct(merchantId, productId) {
-  const nameInput = document.getElementById(`edit-color-name-${productId}`);
-  const hexInput = document.getElementById(`edit-color-hex-${productId}`);
-  const stockInput = document.getElementById(`edit-color-stock-${productId}`);
-  const name = nameInput.value.trim();
-  if (!name) { showToast('اكتب اسم اللون قبل الإضافة'); return; }
-  const m = data.merchants.find(x => x.id === merchantId);
-  const p = m && m.products.find(x => x.id === productId);
-  if (!p) return;
-  if (!Array.isArray(p.colors)) p.colors = [];
-  if (p.colors.some(c => c.name === name)) { nameInput.value = ''; return; }
-  const hex = hexInput.value || '#10B981';
-  const stockRaw = stockInput.value.trim();
-  const stock = stockRaw === '' ? null : (parseInt(stockRaw) || 0);
-  p.colors.push({ name, hex, stock });
-  saveData();
-  renderMerchantPanel();
-}
-function removeColorChipFromProduct(merchantId, productId, index) {
-  const m = data.merchants.find(x => x.id === merchantId);
-  const p = m && m.products.find(x => x.id === productId);
-  if (!p || !Array.isArray(p.colors)) return;
-  p.colors.splice(index, 1);
-  saveData();
-  renderMerchantPanel();
-}
-function editColorStockOnProduct(merchantId, productId, index) {
-  const m = data.merchants.find(x => x.id === merchantId);
-  const p = m && m.products.find(x => x.id === productId);
-  if (!p || !p.colors || !p.colors[index]) return;
-  const current = p.colors[index].stock;
-  const raw = window.prompt(`الكمية المتوفرة للون "${p.colors[index].name}" — اتركها فارغة لو غير محدودة`, current === null || current === undefined ? '' : current);
-  if (raw === null) return;
-  const trimmed = raw.trim();
-  p.colors[index].stock = trimmed === '' ? null : (parseInt(trimmed) || 0);
-  saveData();
-  renderMerchantPanel();
-}
 async function addProductImages(merchantId, productId) {
   const m = data.merchants.find(x => x.id === merchantId);
   const p = m && m.products.find(x => x.id === productId);
@@ -488,6 +420,139 @@ function removeProductImage(merchantId, productId, index) {
   renderMerchantPanel();
 }
 
+// ---------- COLOR → SIZES → QUANTITY BUILDER ----------
+// One builder used both when creating a product (scope "d:<merchantId>", staged in
+// draftProductColors) and when editing an existing one (scope "p:<merchantId>:<productId>",
+// mutates the product and saves right away). The merchant adds each color ONCE, then lists the
+// sizes that color comes in and the quantity of each — all inside the same product.
+function vbColors(scope) {
+  const parts = scope.split(':');
+  if (parts[0] === 'd') {
+    const mid = parseInt(parts[1]);
+    if (!Array.isArray(draftProductColors[mid])) draftProductColors[mid] = [];
+    return draftProductColors[mid];
+  }
+  const m = data.merchants.find(x => x.id === parseInt(parts[1]));
+  const p = m && m.products.find(x => x.id === parseInt(parts[2]));
+  if (!p) return null;
+  ensureProductVariants(p);
+  return p.colors;
+}
+function vbCommit(scope) {
+  if (scope.startsWith('d:')) {
+    const el = document.getElementById(`vb-list-${scope}`);
+    if (el) el.innerHTML = vbListHtml(scope);
+  } else {
+    saveData();
+    renderMerchantPanel();
+  }
+}
+function vbParseQty(raw) {
+  const t = (raw || '').trim();
+  return t === '' ? null : Math.max(0, parseInt(t) || 0);
+}
+function vbQtyLabel(q) { return typeof q === 'number' ? q : '∞'; }
+
+function vbListHtml(scope) {
+  const colors = vbColors(scope) || [];
+  if (!colors.length) return '<span class="subtitle" style="margin:0;">ما ضفت ألوان بعد</span>';
+  return colors.map((c, i) => {
+    const hasSizes = c.sizes && c.sizes.length;
+    const total = colorTotalStock(c);
+    return `
+    <div class="variant-color-card">
+      <div class="variant-color-head">
+        <span class="swatch" style="background:${esc(c.hex)};"></span>
+        <b>${esc(c.name)}</b>
+        <span class="size-chip-stock">${total === null ? 'كمية غير محدودة' : 'المجموع: ' + total}</span>
+        <button type="button" class="btn danger small" style="margin:0 auto 0 0;" onclick="vbRemoveColor('${scope}', ${i})">حذف اللون</button>
+      </div>
+      <div class="size-chip-add-row">
+        <input id="vb-size-${scope}-${i}" placeholder="مقاس: 42 أو L (تكدر تكتب عدة مقاسات بفاصلة: 40,41,42)" onkeydown="if(event.key==='Enter'){event.preventDefault();vbAddSize('${scope}', ${i});}">
+        <input type="number" id="vb-sq-${scope}-${i}" placeholder="الكمية" style="max-width:90px;" min="0" onkeydown="if(event.key==='Enter'){event.preventDefault();vbAddSize('${scope}', ${i});}">
+        <button type="button" class="btn secondary small" onclick="vbAddSize('${scope}', ${i})">إضافة مقاس</button>
+      </div>
+      ${hasSizes
+        ? `<div class="size-chip-row">${sizeChipsHtml(c.sizes, (j) => `vbRemoveSize('${scope}', ${i}, ${j})`, (j) => `vbEditSizeStock('${scope}', ${i}, ${j})`)}</div>`
+        : `<div class="product-sizes-label" style="cursor:pointer;" onclick="vbEditColorStock('${scope}', ${i})">بدون مقاسات — كمية هذا اللون: <b>${vbQtyLabel(c.stock)}</b> (اضغط للتعديل)</div>`}
+    </div>`;
+  }).join('');
+}
+
+function colorVariantBuilderHtml(scope) {
+  return `
+    <div class="color-chip-add-row">
+      <input type="color" id="vb-hex-${scope}" value="#10B981">
+      <input type="text" id="vb-name-${scope}" placeholder="اسم اللون: أحمر" onkeydown="if(event.key==='Enter'){event.preventDefault();vbAddColor('${scope}');}">
+      <button type="button" class="btn secondary small" onclick="vbAddColor('${scope}')">إضافة لون</button>
+    </div>
+    <div id="vb-list-${scope}">${vbListHtml(scope)}</div>`;
+}
+
+function vbAddColor(scope) {
+  const nameInput = document.getElementById(`vb-name-${scope}`);
+  const hexInput = document.getElementById(`vb-hex-${scope}`);
+  const name = nameInput.value.trim();
+  if (!name) { showToast('اكتب اسم اللون (مثلاً: أحمر) قبل الإضافة'); return; }
+  const colors = vbColors(scope);
+  if (!colors) return;
+  if (colors.some(c => c.name === name)) { showToast('هذا اللون مضاف مسبقاً'); return; }
+  colors.push({ name, hex: hexInput.value || '#10B981', stock: null, sizes: [] });
+  nameInput.value = '';
+  vbCommit(scope);
+  // Draft mode doesn't re-render the whole panel, so put the cursor in the new color's size box.
+  setTimeout(() => { const el = document.getElementById(`vb-size-${scope}-${colors.length - 1}`); if (el) el.focus(); }, 50);
+}
+function vbRemoveColor(scope, i) {
+  const colors = vbColors(scope);
+  if (!colors || !colors[i]) return;
+  if (!confirm(`حذف اللون "${colors[i].name}" بكل مقاساته؟`)) return;
+  colors.splice(i, 1);
+  vbCommit(scope);
+}
+function vbAddSize(scope, i) {
+  const colors = vbColors(scope);
+  const c = colors && colors[i];
+  if (!c) return;
+  const input = document.getElementById(`vb-size-${scope}-${i}`);
+  const qtyInput = document.getElementById(`vb-sq-${scope}-${i}`);
+  const names = input.value.split(/[,،]/).map(x => x.trim()).filter(Boolean);
+  if (!names.length) return;
+  const stock = vbParseQty(qtyInput.value);
+  if (!Array.isArray(c.sizes)) c.sizes = [];
+  names.forEach(val => {
+    if (!c.sizes.some(s => s.value === val)) c.sizes.push({ value: val, stock });
+  });
+  c.stock = null; // once a color has sizes, quantities live on the sizes
+  vbCommit(scope);
+  setTimeout(() => { const el = document.getElementById(`vb-size-${scope}-${i}`); if (el) el.focus(); }, 50);
+}
+function vbRemoveSize(scope, i, j) {
+  const colors = vbColors(scope);
+  const c = colors && colors[i];
+  if (!c || !c.sizes) return;
+  c.sizes.splice(j, 1);
+  vbCommit(scope);
+}
+function vbEditSizeStock(scope, i, j) {
+  const colors = vbColors(scope);
+  const s = colors && colors[i] && colors[i].sizes && colors[i].sizes[j];
+  if (!s) return;
+  const raw = window.prompt(`الكمية المتوفرة من اللون "${colors[i].name}" مقاس "${s.value}" — اتركها فارغة لو غير محدودة`, typeof s.stock === 'number' ? s.stock : '');
+  if (raw === null) return;
+  s.stock = vbParseQty(raw);
+  vbCommit(scope);
+}
+function vbEditColorStock(scope, i) {
+  const colors = vbColors(scope);
+  const c = colors && colors[i];
+  if (!c) return;
+  const raw = window.prompt(`الكمية المتوفرة للون "${c.name}" — اتركها فارغة لو غير محدودة`, typeof c.stock === 'number' ? c.stock : '');
+  if (raw === null) return;
+  c.stock = vbParseQty(raw);
+  vbCommit(scope);
+}
+
 function renderProductList(m) {
   if (m.products.length === 0) return '<div class="empty">ما فيه منتجات بعد</div>';
   return m.products.map(p => {
@@ -499,21 +564,16 @@ function renderProductList(m) {
         <label>اسم المنتج</label><input id="edit-name-${p.id}" value="${esc(p.name)}">
         <label>السعر (دينار)</label><input type="number" id="edit-price-${p.id}" value="${p.price}">
         <label>وصف القطعة (اختياري)</label><textarea id="edit-desc-${p.id}">${esc(p.description || '')}</textarea>
-        <label>المقاسات المتوفرة — اضغط على أي مقاس لتعديل كميته</label>
+        <label>الألوان — لكل لون أضف مقاساته وكمية كل مقاس (اضغط على أي مقاس لتعديل كميته)</label>
+        ${colorVariantBuilderHtml(`p:${m.id}:${p.id}`)}
+        ${p.colors.length ? '' : `
+        <label>مقاسات بدون ألوان (للمنتج اللي ما بيه ألوان) — اضغط على أي مقاس لتعديل كميته</label>
         <div class="size-chip-add-row">
           <input id="edit-size-input-${p.id}" placeholder="مثلاً: 42 أو L" onkeydown="if(event.key==='Enter'){event.preventDefault();addSizeChipToProduct(${m.id}, ${p.id});}">
           <input type="number" id="edit-size-stock-input-${p.id}" placeholder="الكمية (اختياري)" style="max-width:120px;">
           <button type="button" class="btn secondary small" onclick="addSizeChipToProduct(${m.id}, ${p.id})">إضافة</button>
         </div>
-        <div class="size-chip-row">${sizeChipsHtml(p.sizes, (i) => `removeSizeChipFromProduct(${m.id}, ${p.id}, ${i})`, (i) => `editSizeStockOnProduct(${m.id}, ${p.id}, ${i})`)}</div>
-        <label>الألوان المتوفرة — اضغط على أي لون لتعديل كميته</label>
-        <div class="color-chip-add-row">
-          <input type="color" id="edit-color-hex-${p.id}" value="#10B981">
-          <input type="text" id="edit-color-name-${p.id}" placeholder="مثلاً: أحمر" onkeydown="if(event.key==='Enter'){event.preventDefault();addColorChipToProduct(${m.id}, ${p.id});}">
-          <input type="number" id="edit-color-stock-${p.id}" placeholder="الكمية (اختياري)">
-          <button type="button" class="btn secondary small" onclick="addColorChipToProduct(${m.id}, ${p.id})">إضافة</button>
-        </div>
-        <div class="color-chip-row">${colorChipsHtml(p.colors, (i) => `removeColorChipFromProduct(${m.id}, ${p.id}, ${i})`, (i) => `editColorStockOnProduct(${m.id}, ${p.id}, ${i})`)}</div>
+        <div class="size-chip-row">${sizeChipsHtml(p.sizes, (i) => `removeSizeChipFromProduct(${m.id}, ${p.id}, ${i})`, (i) => `editSizeStockOnProduct(${m.id}, ${p.id}, ${i})`)}</div>`}
         <label>الكمية المتوفرة الإجمالية (تُستخدم فقط لو ما فيه مقاسات أو ألوان، اتركها فارغة لو غير محدودة)</label><input type="number" id="edit-stock-${p.id}" value="${p.stock === null || p.stock === undefined ? '' : p.stock}">
         ${m.categories.length > 0 ? `
         <label>القسم (اختياري)</label>
@@ -542,7 +602,12 @@ function renderProductList(m) {
     const outOfStock = productOutOfStock(p);
     const cat = m.categories.find(c => c.id === p.categoryId);
     const sizesLabel = p.sizes.length ? p.sizes.map(s => esc(s.value) + (typeof s.stock === 'number' ? ` (${s.stock})` : '')).join('، ') : '';
-    const colorsHtml = p.colors.length ? p.colors.map(c => `<span class="color-chip-box"><span class="swatch" style="background:${esc(c.hex)};"></span>${esc(c.name)}${typeof c.stock === 'number' ? ` <span class="size-chip-stock">(${c.stock})</span>` : ''}</span>`).join('') : '';
+    const colorsHtml = p.colors.length ? p.colors.map(c => {
+      const detail = (c.sizes && c.sizes.length)
+        ? c.sizes.map(sz => `${esc(sz.value)}: <b>${vbQtyLabel(sz.stock)}</b>`).join(' ، ')
+        : `الكمية: <b>${vbQtyLabel(c.stock)}</b>`;
+      return `<div style="margin:3px 0; font-size:12px;"><span class="swatch" style="display:inline-block; vertical-align:middle; background:${esc(c.hex)};"></span> <b>${esc(c.name)}</b> — ${detail}</div>`;
+    }).join('') : '';
     return `
     <div class="list-item" style="align-items:flex-start;">
       <span style="display:flex; align-items:flex-start; gap:8px;">
@@ -554,7 +619,7 @@ function renderProductList(m) {
           <div>${esc(p.name)} ${outOfStock ? '<span class="badge rejected">نفدت الكمية</span>' : ''}${cat ? ` <span class="badge active">${esc(cat.name)}</span>` : ''}</div>
           ${p.description ? `<div class="product-desc">${esc(p.description)}</div>` : ''}
           ${sizesLabel ? `<div class="product-sizes-label">مقاسات: ${sizesLabel}</div>` : ''}
-          ${colorsHtml ? `<div class="color-chip-row" style="margin:4px 0;">${colorsHtml}</div>` : ''}
+          ${colorsHtml ? `<div style="margin:4px 0;">${colorsHtml}</div>` : ''}
           ${(!p.sizes.length && !p.colors.length) ? `<div class="product-sizes-label">${typeof p.stock === 'number' ? 'الكمية المتبقية: ' + p.stock : 'كمية غير محدودة'}</div>` : ''}
           <div style="margin-top:4px;">${commissionExemptionRowHtml(m, p)}</div>
         </span>
