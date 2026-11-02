@@ -921,10 +921,11 @@
   .store-slider-wrap { position: relative; margin-bottom: 12px; }
   .store-slider { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; border-radius: 14px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .store-slider::-webkit-scrollbar { display: none; }
-  .store-slide { flex: 0 0 100%; scroll-snap-align: start; position: relative; overflow: hidden; aspect-ratio: 16 / 7; max-height: 360px; background: var(--surface-2); }
-  /* الصورة تظهر كاملة بدون قص (contain) فوق خلفية ضبابية من نفس الصورة — نفس الشكل بكل الأبعاد */
-  .store-slide::before { content: ''; position: absolute; inset: -24px; background: var(--bg) center / cover no-repeat; filter: blur(22px) brightness(.8); transform: scale(1.1); }
-  .store-slide img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; display: block; }
+  /* ارتفاع ثابت ومتجاوب لكل البانرات: الصورة تظهر كاملة (contain) فوق خلفية ضبابية من نفس الصورة،
+     فتتناسق مع أي مقاس (طولي/عرضي/مربع) بدون قص أو تكبير */
+  .store-slide { flex: 0 0 100%; scroll-snap-align: start; position: relative; overflow: hidden; height: clamp(140px, 24vw, 240px); background: var(--surface-2); }
+  .store-slide::before { content: ''; position: absolute; inset: -24px; background: var(--slide-bg) center / cover no-repeat; filter: blur(22px) brightness(.8); transform: scale(1.1); }
+  .store-slide img { position: relative; z-index: 1; width: 100%; height: 100%; max-width: 100%; object-fit: contain; object-position: center; display: block; }
   .store-slider-dots { position: absolute; bottom: 8px; left: 0; right: 0; display: flex; justify-content: center; gap: 5px; pointer-events: none; }
   .store-slider-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.65); transition: all .2s; }
   .store-slider-dots span.on { width: 16px; border-radius: 4px; background: var(--surface); }

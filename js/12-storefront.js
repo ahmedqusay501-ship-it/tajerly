@@ -200,13 +200,13 @@ function storeBannerList(m) {
 }
 function renderStoreBannerSlider(m, color) {
   const list = storeBannerList(m);
-  if (list.length <= 1) return null; // caller falls back to the original single-banner markup
+  if (!list.length) return null; // no banners: caller falls back to the default gradient banner
   return `
     <div class="store-slider-wrap">
       <div class="store-slider" id="store-slider-${m.id}" onscroll="onStoreSliderScroll(this)">
-        ${list.map(src => `<div class="store-slide" style="--bg:url('${esc(imgSrc(src)).replace(/'/g, '%27')}')"><img src="${imgSrc(src)}"></div>`).join('')}
+        ${list.map(src => `<div class="store-slide" style="--slide-bg:url('${esc(imgSrc(src)).replace(/'/g, '%27')}')"><img src="${imgSrc(src)}"></div>`).join('')}
       </div>
-      <div class="store-slider-dots" id="store-slider-dots-${m.id}">${list.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>
+      ${list.length > 1 ? `<div class="store-slider-dots" id="store-slider-dots-${m.id}">${list.map((_, i) => `<span class="${i === 0 ? 'on' : ''}"></span>`).join('')}</div>` : ''}
     </div>`;
 }
 function onStoreSliderScroll(el) {
