@@ -151,7 +151,7 @@ function renderStoreProductCardGrid(p, color, m) {
   return `
     <div class="store-product-card" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-card-img">
-        ${img ? `<img src="${imgSrc(img)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+        ${img ? `<img src="${imgSrc(img)}" loading="lazy" decoding="async">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
         ${closed ? `<span class="badge rejected">مغلق الآن</span>` : (outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : '')}
       </div>
       <div class="store-product-card-info">
@@ -176,7 +176,7 @@ function renderStoreProductCardList(p, color, m) {
   return `
     <div class="store-product-row" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-row-img">
-        ${img ? `<img src="${imgSrc(img)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+        ${img ? `<img src="${imgSrc(img)}" loading="lazy" decoding="async">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
       </div>
       <div class="store-product-row-name">${esc(p.name)}<div class="store-product-row-price">${fmtNum(p.price)} د</div></div>
       <button class="btn small ${disabled ? 'secondary' : ''}" ${disabled ? 'disabled' : ''} onclick="event.stopPropagation(); addToCart(${m.id}, ${p.id})">${disabled ? (closed ? 'مغلق حالياً' : 'غير متوفر') : 'أضف للسلة'}</button>
@@ -259,7 +259,7 @@ function renderStoreFilterChips(m) {
     const sel = String(f.categoryId) === String(id);
     const arg = typeof id === 'number' ? id : jsAttr(id);
     return `<div class="store-cat-icon${sel ? ' selected' : ''}" onclick="setStoreFilterCategory(${m.id}, ${arg})">
-      <div class="store-cat-icon-circle">${img ? `<img src="${imgSrc(img)}">` : `<span>${fallback}</span>`}</div>
+      <div class="store-cat-icon-circle">${img ? `<img src="${imgSrc(img)}" loading="lazy" decoding="async">` : `<span>${fallback}</span>`}</div>
       <div class="store-cat-icon-label">${esc(label)}</div>
     </div>`;
   };
@@ -366,7 +366,7 @@ function renderStoreProducts(m, color) {
   m.categories.forEach(c => {
     const catItems = items.filter(p => p.categoryId === c.id);
     if (catItems.length === 0) return;
-    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${imgSrc(c.image)}" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}<span style="flex:1;">${esc(c.name)}</span><a class="store-see-all" onclick="setStoreFilterCategory(${m.id}, ${typeof c.id === 'number' ? c.id : `'${c.id}'`})">عرض الكل ›</a></div>`;
+    html += `<div class="store-section-title" style="display:flex; align-items:center; gap:8px;">${c.image ? `<img src="${imgSrc(c.image)}" loading="lazy" decoding="async" style="width:28px; height:28px; border-radius:8px; object-fit:cover;">` : ''}<span style="flex:1;">${esc(c.name)}</span><a class="store-see-all" onclick="setStoreFilterCategory(${m.id}, ${typeof c.id === 'number' ? c.id : `'${c.id}'`})">عرض الكل ›</a></div>`;
     html += shelf(catItems);
   });
   const catIds = new Set(m.categories.map(c => c.id));
@@ -439,7 +439,7 @@ function renderProductDetailContent(p, color, m) {
     </div>
     ${p.images.length > 1 ? `
       <div class="store-photo-strip" id="store-strip-${p.id}">
-        ${p.images.map((img, i) => `<img src="${imgSrc(img)}" class="${i === shownIndex ? 'selected' : ''}" onclick="pickStoreImage(${m.id}, ${p.id}, ${i})">`).join('')}
+        ${p.images.map((img, i) => `<img src="${imgSrc(img)}" loading="lazy" decoding="async" class="${i === shownIndex ? 'selected' : ''}" onclick="pickStoreImage(${m.id}, ${p.id}, ${i})">`).join('')}
       </div>
     ` : ''}
     <div class="product-detail-name">${esc(p.name)} <button class="btn secondary small" style="padding:3px 10px; font-size:12px;" onclick="shareProduct(${m.id}, ${p.id})" aria-label="شارك المنتج">↗ شارك</button></div>

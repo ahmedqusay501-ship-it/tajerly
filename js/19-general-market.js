@@ -100,7 +100,7 @@ function renderMarketOffers() {
   return `<div class="market-offers-row" style="display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; margin-bottom:10px;">
     ${offers.map(o => `
       <div class="market-offer-card" onclick="setMarketOfferFilter('${o.id}')" style="flex:0 0 auto; width:150px; cursor:pointer; border-radius:10px; overflow:hidden; border:2px solid ${marketFilter.offerId === o.id ? 'var(--accent)' : 'var(--border)'}; background:var(--card-bg);">
-        ${o.image ? `<img src="${imgSrc(o.image)}" style="width:100%; height:70px; object-fit:cover; display:block;">` : `<div style="width:100%; height:70px; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; font-size:24px;">🎉</div>`}
+        ${o.image ? `<img src="${imgSrc(o.image)}" loading="lazy" decoding="async" style="width:100%; height:70px; object-fit:cover; display:block;">` : `<div style="width:100%; height:70px; background:var(--accent-soft); display:flex; align-items:center; justify-content:center; font-size:24px;">🎉</div>`}
         <div style="padding:6px 8px; font-size:12px; font-weight:700;">${esc(o.name)}</div>
         <div style="padding:0 8px 6px; font-size:10.5px; color:var(--text-mute);">${o.merchantIds.length} محل</div>
       </div>
@@ -159,7 +159,7 @@ function renderMarketProductCard(p, m) {
   return `
     <div class="store-product-card" onclick="openProductDetail(${m.id}, ${p.id})">
       <div class="store-product-card-img">
-        ${img ? `<img src="${imgSrc(img)}">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
+        ${img ? `<img src="${imgSrc(img)}" loading="lazy" decoding="async">` : `<div class="thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#94A3B8" stroke-width="1.6"/><circle cx="8.5" cy="9.5" r="1.5" fill="#94A3B8"/><path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L4 19" stroke="#94A3B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`}
         ${outOfStock ? `<span class="badge rejected">نفدت الكمية</span>` : ''}
       </div>
       <div class="store-product-card-info">
