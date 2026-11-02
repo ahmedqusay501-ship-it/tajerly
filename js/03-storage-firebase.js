@@ -23,10 +23,17 @@ window.__usingLocalFallback = false;
 
 async function initStorage() {
   try {
-    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
-    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
-    const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut: authSignOut, updatePassword } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
-    const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js");
+    // [أداء] الأربع مكتبات تُحمَّل بالتوازي (قبل كانت وحدة بعد الثانية = شلال بطيء)
+    const [_fbApp, _fbStore, _fbAuth, _fbFns] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js")
+    ]);
+    const { initializeApp } = _fbApp;
+    const { initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where } = _fbStore;
+    const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut: authSignOut, updatePassword } = _fbAuth;
+    const { getFunctions, httpsCallable } = _fbFns;
     const firebaseApp = initializeApp(firebaseConfig);
     // [أمان] Firebase App Check — يربط طلبات Firestore/Functions بموقعك الحقيقي فقط، فيصعّب إساءة استخدام
     // المفتاح العلني (طلبات وهمية/سبام من سكربتات خارجية). يبقى معطّلاً (لا يغيّر أي سلوك) لحين وضع مفتاح
@@ -185,6 +192,21 @@ async function initStorage() {
       },
       async listCollection(collectionName) {
         const snap = await getDocs(collection(db, collectionName));
+        return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
+      },
+      // [أداء] جلب تاجر واحد فقط بدل كل التجار (زائر رابط متجر ما يحتاج غير متجره).
+      // الرابط ?s=CODE هو shortSlug (أو linkSlug عند بعض التجار القدام).
+      async listMerchantBySlug(slug) {
+        const [a, b] = await Promise.all([
+          getDocs(query(collection(db, 'merchants'), where('shortSlug', '==', slug))),
+          getDocs(query(collection(db, 'merchants'), where('linkSlug', '==', slug)))
+        ]);
+        const seen = new Set(); const out = [];
+        [...a.docs, ...b.docs].forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); out.push({ _uid: d.id, ...d.data() }); } });
+        return out;
+      },
+      async listReviewsByMerchant(merchantAuthUid) {
+        const snap = await getDocs(query(collection(db, 'product_reviews'), where('merchantAuthUid', '==', merchantAuthUid)));
         return snap.docs.map(d => ({ _uid: d.id, ...d.data() }));
       },
       // The Firebase Auth uid of whoever is signed in right now, or null if nobody is
@@ -762,6 +784,28 @@ function isPermissionDeniedError(e) {
   return !!(e && (e.code === 'permission-denied' || /missing or insufficient permissions/i.test(e.message || '')));
 }
 
+// [أداء] وضع "متجر واحد": زائر عادي (بدون تسجيل دخول) فتح رابط متجر على الدومين الرئيسي.
+// نجيب تاجره فقط (+ تقييماته) بدل تحميل كل التجار بكل صورهم. أي شاشة تحتاج كل البيانات
+// (تسجيل دخول، السوق العام، المطاعم) تستدعي ensureFullData() أول وتنتقل للتحميل الكامل.
+function storeFastSlug() {
+  try {
+    if (window.__fastStoreMode === false) return null;
+    const p = new URLSearchParams(location.search);
+    const slug = (p.get('s') || '').trim().toLowerCase();
+    if (!/^[a-z0-9]{3,12}$/.test(slug)) return null;
+    if (p.get('market') || p.get('restaurants') || p.get('join')) return null;
+    if (!/^(www\.)?tajerly\.shop$/i.test(location.hostname)) return null; // الدومينات المخصصة تحتاج قائمة كل التجار
+    if (localStorage.getItem('platform-session')) return null;
+    return slug;
+  } catch (e) { return null; }
+}
+async function ensureFullData() {
+  if (window.__fastStoreMode !== true) return;
+  window.__fastStoreMode = false;
+  if (typeof window.loadHeavyLibs === 'function') window.loadHeavyLibs();
+  await fetchRemoteData();
+}
+
 async function fetchRemoteData() {
   try {
     // Pricing/shipping settings + the shared id counter live in one small doc — writable by
@@ -828,6 +872,10 @@ async function fetchRemoteData() {
     // orders. That's the exact bug where a merchant's page never shows any customer order.
     // Figure out, before firing the batch, whether the signed-in identity is a merchant or
     // a merchant's employee, and if so which merchant's orders to filter by.
+    const _guestNow = !window.authApi.currentUid();
+    const _fastSlug = _guestNow ? storeFastSlug() : null;
+    const _denied = () => Promise.reject({ code: 'permission-denied' });
+    const _listOrDeny = n => (_guestNow ? _denied() : window.authApi.listCollection(n));
     let ordersPromise;
     // 'employees' has the EXACT same all-or-nothing problem as 'orders' (see below) —
     // isOwningMerchantOfEmployee() in firestore.rules depends on each employee doc's
@@ -904,7 +952,7 @@ async function fetchRemoteData() {
         ? window.authApi.listOrdersByMerchant(filterAuthUid)
         : (agentOrdersFilterId != null
             ? window.authApi.listOrdersByAgent(agentOrdersFilterId)
-            : window.authApi.listCollection('orders'));
+            : _listOrDeny('orders'));
       employeesPromise = ownEmployeeDocOnly
         ? (agentStaffFilterId != null
             ? window.authApi.listEmployeesByAgent(agentStaffFilterId)
@@ -913,12 +961,12 @@ async function fetchRemoteData() {
             : Promise.resolve([ownEmployeeDocOnly]))
         : (employeeFilterMerchantId != null
             ? window.authApi.listEmployeesByMerchant(employeeFilterMerchantId)
-            : window.authApi.listCollection('employees'));
+            : _listOrDeny('employees'));
     } catch (e) {
       // Any failure while figuring this out just falls back to the old unfiltered attempt
       // — never worse than before this fix.
-      ordersPromise = window.authApi.listCollection('orders');
-      employeesPromise = window.authApi.listCollection('employees');
+      ordersPromise = _listOrDeny('orders');
+      employeesPromise = _listOrDeny('employees');
     }
 
     // Each collection is fetched independently now (Promise.allSettled instead of
@@ -927,13 +975,19 @@ async function fetchRemoteData() {
     // Before this change, one denied collection silently emptied the entire app (storefront,
     // dashboards, everything) for that visitor, because a single failed promise inside
     // Promise.all rejects the whole batch.
+    const _merchantsPromise = _fastSlug
+      ? window.authApi.listMerchantBySlug(_fastSlug).then(r => (r.length ? r : Promise.reject(new Error('fast-miss'))))
+      : window.authApi.listCollection('merchants');
+    const _reviewsPromise = _fastSlug
+      ? _merchantsPromise.then(r => window.authApi.listReviewsByMerchant(r[0]._uid))
+      : window.authApi.listCollection('product_reviews');
     const [merchantsRes, ordersRes, joinReqRes, employeesRes, employeeReqRes, supportChatsRes, offersRes, reviewsRes, exemptionsRes] = await Promise.allSettled([
-      window.authApi.listCollection('merchants'),
+      _merchantsPromise,
       ordersPromise,
-      window.authApi.listCollection('join_requests'),
+      _listOrDeny('join_requests'),
       employeesPromise,
-      window.authApi.listCollection('employee_requests'),
-      window.authApi.listCollection('support_chats'),
+      _listOrDeny('employee_requests'),
+      _listOrDeny('support_chats'),
       // offers is publicly readable (allow read: if true — see firestore.rules), so this
       // never hits the "all-or-nothing list" restriction the orders/employees fixes above
       // work around; every visitor, logged in or not, can list it the same way.
@@ -941,19 +995,26 @@ async function fetchRemoteData() {
       // product_reviews: same "publicly readable" shape as offers — any visitor, logged in
       // or not, can list every review for every merchant (see firestore.rules). Attached to
       // each product below once merchants have loaded.
-      window.authApi.listCollection('product_reviews'),
+      _reviewsPromise,
       // commission_exemptions: طلبات/موافقات إعفاء العمولة. عامة القراءة (الزبون يحتاجها لحساب الرسوم)،
       // لكن 'approved' فيها يكتبه الأدمن فقط (firestore.rules) — هذا هو مصدر الحقيقة الوحيد للإعفاء.
       window.authApi.listCollection('commission_exemptions')
     ]);
 
+    if (_fastSlug && merchantsRes.status !== 'fulfilled') {
+      // ما لقينا التاجر بالاستعلام السريع (مثلاً رابطه مشتق ولم يُحفظ) — نرجع للتحميل الكامل المعتاد
+      window.__fastStoreMode = false;
+      return fetchRemoteData();
+    }
     if (merchantsRes.status === 'fulfilled') {
+      window.__fastStoreMode = !!_fastSlug;
       const merchantPubs = merchantsRes.value;
+      if (_fastSlug) merchantPubs.forEach(m => { if (!m.shortSlug) m.shortSlug = _fastSlug; });
       // Each merchant's private balance/sales-count doc is fetched separately and on its own
       // try/catch: a visitor who isn't that merchant (or their employee/admin) is *expected*
       // to be denied here by the security rules — that must not stop the public storefront
       // (product list, shop name, theme...) from loading for everyone else.
-      const merchantPrivs = await Promise.all(merchantPubs.map(async m => {
+      const merchantPrivs = _guestNow ? merchantPubs.map(() => null) : await Promise.all(merchantPubs.map(async m => {
         try { return await window.authApi.getPrivateDoc('merchant_private', m._uid); }
         catch (e) { return null; }
       }));

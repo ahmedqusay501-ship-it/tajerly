@@ -26,7 +26,8 @@ async function getMerchantBySlug(slug) {
   const body = {
     structuredQuery: {
       from: [{ collectionId: 'merchants' }],
-      where: { fieldFilter: { field: { fieldPath: 'linkSlug' }, op: 'EQUAL', value: { stringValue: slug } } },
+      where: { compositeFilter: { op: 'OR', filters: ['shortSlug', 'linkSlug'].map(f => ({
+        fieldFilter: { field: { fieldPath: f }, op: 'EQUAL', value: { stringValue: slug } } })) } },
       limit: 1
     }
   };

@@ -118,6 +118,16 @@ function hideBootLoading() {
   if (el) el.classList.add('hide');
 }
 
+// [أداء] الشاشات اللي تحتاج كل التجار/المنصة تحمّل البيانات الكاملة أول (لو الزائر بوضع "متجر واحد").
+['showLoginScreen', 'openGeneralMarket', 'openRestaurantsMarket', 'showJoinScreen', 'platformLogin'].forEach(name => {
+  const orig = window[name];
+  if (typeof orig !== 'function') return;
+  window[name] = function (...args) {
+    if (window.__fastStoreMode !== true) return orig.apply(this, args);
+    return ensureFullData().then(() => orig.apply(this, args));
+  };
+});
+
 initLang(); // applies saved/default language + RTL/LTR + static chrome text before anything else renders
 initStorage().then(async () => {
   await loadData();

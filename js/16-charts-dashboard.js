@@ -25,6 +25,7 @@ function upsertChart(canvasId, config) {
   // call this function again, so the chart still gets created correctly the first time anyone
   // actually looks at it.
   if (canvas.offsetParent === null) return;
+  if (typeof Chart === 'undefined') { if (typeof loadHeavyLibs === 'function') loadHeavyLibs(); return; } // المكتبة لسا تتحمّل — الرسم يتكرر مع التحديث الجاي
   chartInstances[canvasId] = new Chart(canvas.getContext('2d'), config);
 }
 function last7Days() {
