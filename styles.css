@@ -15,6 +15,7 @@
     --text-mute: #64748B;
     --radius: 14px;
     --surface-2: #F8FAFC;
+    --text-2: #475569;
     --nav-1: #0F172A;
     --nav-2: #1E293B;
   }
@@ -155,7 +156,7 @@
   }
   .stat-label { font-size: 10.5px; color: var(--text-mute); margin-top: 4px; letter-spacing: .1px; }
 
-  label { display: block; font-size: 12px; color: #475569; margin: 8px 0 3px; font-weight: 500; }
+  label { display: block; font-size: 12px; color: var(--text-2); margin: 8px 0 3px; font-weight: 500; }
   input, select {
     width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px;
     font-size: 13px; background: var(--surface-2); color: var(--text);
@@ -232,7 +233,7 @@
   .toggle-group { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
   .toggle {
     padding: 7px 13px; border-radius: 7px; font-size: 12px; cursor: pointer; font-weight: 600;
-    border: 1px solid var(--border); background: #FBFAF5; color: var(--text-mute);
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-mute);
   }
   .toggle.selected { background: var(--accent); color: #FFFFFF; border-color: var(--accent); }
 
@@ -477,7 +478,7 @@
   .product-detail-main-img-wrap .thumb-placeholder { width: 100%; height: 100%; border: none; border-radius: 0; font-size: 34px; }
   .product-detail-name { font-size: 15.5px; font-weight: 800; color: var(--ink); margin-bottom: 2px; }
   .product-detail-price { font-size: 14px; font-weight: 700; color: var(--accent-dark); margin-bottom: 6px; }
-  .product-desc { font-size: 11.5px; color: #475569; line-height: 1.5; }
+  .product-desc { font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
   .product-sizes-label { font-size: 11px; color: #888; }
   .thumb {
     width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
@@ -733,7 +734,7 @@
   .cart-item-controls { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .qty-btn {
     width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--border);
-    background: #FBFAF5; color: var(--ink); font-size: 15px; font-weight: 700; cursor: pointer;
+    background: var(--surface-2); color: var(--ink); font-size: 15px; font-weight: 700; cursor: pointer;
     display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0;
   }
   .qty-btn:hover { background: var(--accent-soft); }
@@ -1667,7 +1668,7 @@
   .theme-group-tabs::-webkit-scrollbar { display: none; }
   .theme-group-tab {
     flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
-    background: var(--surface-2); color: #475569; font-size: 12.5px; font-weight: 700; border: 1px solid transparent; white-space: nowrap; transition: background .15s, color .15s;
+    background: var(--surface-2); color: var(--text-2); font-size: 12.5px; font-weight: 700; border: 1px solid transparent; white-space: nowrap; transition: background .15s, color .15s;
   }
   .theme-group-tab small { font-size: 10px; font-weight: 700; opacity: .65; }
   .theme-group-tab em { font-style: normal; color: #F59E0B; font-size: 11px; }
@@ -1766,14 +1767,14 @@
   html[data-theme="dark"] {
     color-scheme: dark;
     --bg: #0B1220; --surface: #131C2E; --surface-2: #1A2540; --border: #26324A;
-    --ink: #F1F5F9; --ink-2: #E2E8F0; --text: #E2E8F0; --text-mute: #94A3B8;
+    --ink: #F1F5F9; --ink-2: #E2E8F0; --text: #E2E8F0; --text-2: #CBD5E1; --text-mute: #94A3B8;
     --accent-soft: rgba(16,185,129,0.16); --accent-dark: #2BC48A;
   }
   /* الواجهة العامة للمتجر لها ثيماتها الخاصة (يختارها التاجر) فنرجعها للألوان الفاتحة */
   html[data-theme="dark"] #public-store-screen {
     color-scheme: light;
     --bg: #F4F6F9; --surface: #FFFFFF; --surface-2: #F8FAFC; --border: #E2E8F0;
-    --ink: #0F172A; --ink-2: #1E293B; --text: #1E293B; --text-mute: #64748B;
+    --ink: #0F172A; --ink-2: #1E293B; --text: #1E293B; --text-2: #475569; --text-mute: #64748B;
     --accent-soft: #D1FAE5; --accent-dark: #059669;
   }
   html[data-theme="dark"] body { background: var(--bg); color: var(--text); }
@@ -1852,3 +1853,7 @@
   html[data-theme="dark"] [style*="color: #111" i]:not([style*="background"]):not(#public-store-screen *) { color: #F1F5F9 !important; }
   html[data-theme="dark"] [style*="color:#111827" i]:not([style*="background"]):not(#public-store-screen *),
   html[data-theme="dark"] [style*="color: #111827" i]:not([style*="background"]):not(#public-store-screen *) { color: #F1F5F9 !important; }
+
+  html[data-theme="dark"] .join-honesty-note { color: #FBBF24; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.35); }
+  html[data-theme="dark"] .auth-error:not(:empty) { background: rgba(220,38,38,.16); border-color: rgba(220,38,38,.4); color: #FCA5A5; }
+  html[data-theme="dark"] .coupon-applied-box { background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.4); color: #6EE7B7; }
