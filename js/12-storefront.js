@@ -652,7 +652,7 @@ function renderStorefrontInto(merchantId, content, opts) {
       <div class="store-trust-row">
         <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7h11v9H3z" stroke="currentColor" stroke-width="1.6"/><path d="M14 10h4l3 3v3h-7z" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/><circle cx="17.5" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg><span>توصيل لكل المحافظات</span></div>
         <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>دفع عند الاستلام</span></div>
-        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 1 1-4-7.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M21 4v5h-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>استبدال سهل</span></div>
+        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>جودة مضمونة</span></div>
       </div>
       ${m.theme.customTerms && m.theme.customTerms.visible && m.theme.customTerms.text ? `
         <div style="margin-top:6px;"><a onclick="openMerchantTermsModal(${m.id})" style="font-size:11.5px; text-decoration:underline; cursor:pointer; color:var(--text-mute);">شروط وأحكام المتجر</a></div>
@@ -827,7 +827,7 @@ function renderProductLandingBody() {
       <div class="store-trust-row">
         <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7h11v9H3z" stroke="currentColor" stroke-width="1.6"/><path d="M14 10h4l3 3v3h-7z" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/><circle cx="17.5" cy="18" r="1.8" stroke="currentColor" stroke-width="1.6"/></svg><span>توصيل لكل المحافظات</span></div>
         <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>دفع عند الاستلام</span></div>
-        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.5 8.5 0 1 1-4-7.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M21 4v5h-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>استبدال سهل</span></div>
+        <div class="store-trust-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>جودة مضمونة</span></div>
       </div>
       ${renderProductReviewsSection(p, m)}
     </div>
