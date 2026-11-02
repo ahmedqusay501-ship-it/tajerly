@@ -3,6 +3,11 @@
 // على القائمة الجانبية ونخفي شريط التبويبات الأفقي، والنقر على عنصر بالقائمة يضغط التبويب الأصلي
 // (فكل منطق الصلاحيات والعدّادات والعرض يبقى مثل ما هو بدون أي تغيير).
 (function () {
+  // أيقونات تبويبات التاجر والمندوب بالقائمة الجانبية (تستخدم نفس مكتبة الأيقونات بـ 07-nav-auth.js)
+  const TAB_ICON = {
+    merchant: { store: 'store', orders: 'bag', earnings: 'wallet', products: 'package', appearance: 'palette', charts: 'chart', messages: 'mail', employees: 'users' },
+    agent: { active: 'package', history: 'clock', accounts: 'wallet', employees: 'users' }
+  };
   let observers = [];
   let kind = null; // 'merchant' | 'agent' | null
 
@@ -33,7 +38,7 @@
     nav.innerHTML = tabs.map((b, i) => {
       const id = b.dataset.agenttab || b.dataset.mdashtab;
       const view = kind === 'agent' && i === 0 ? ' data-view="delivery_agent"' : '';
-      return `<button data-tab="${id}"${view} class="${b.classList.contains('selected') ? 'active' : ''}">${b.innerHTML}</button>`;
+      return `<button data-tab="${id}"${view} class="${b.classList.contains('selected') ? 'active' : ''}">${navIconSvg((TAB_ICON[kind] || {})[id])}<span class="nav-label">${b.innerHTML}</span></button>`;
     }).join('');
     nav.querySelectorAll('button[data-tab]').forEach(btn => {
       btn.onclick = () => {
