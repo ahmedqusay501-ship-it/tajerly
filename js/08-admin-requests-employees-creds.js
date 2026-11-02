@@ -1898,7 +1898,7 @@ function renderMerchantPanel() {
         <textarea id="merchant-terms-input-${m.id}" placeholder="مثلاً: يحق للزبون استبدال المنتج خلال ٣ أيام من الاستلام بشرط عدم الاستخدام..." onchange="setMerchantCustomTerms(${m.id}, this.value)">${esc(m.theme.customTerms.text)}</textarea>
         <button type="button" class="social-visibility-btn ${m.theme.customTerms.visible ? 'visible' : ''}" style="margin-top:6px;" onclick="toggleMerchantCustomTermsVisible(${m.id})">${m.theme.customTerms.visible ? 'ظاهرة للزبون' : 'مخفية عن الزبون'}</button>
       </div>
-      <div class="card" style="border:1px solid var(--accent); background:linear-gradient(135deg,#fff,var(--accent-soft));">
+      <div class="card" style="border:1px solid var(--accent); background:linear-gradient(135deg,var(--surface),var(--accent-soft));">
         <div class="card-title">تصميم ذكي بالذكاء الاصطناعي</div>
         <div class="subtitle" style="margin-bottom:8px;">ارفع شعار محلك وخل الذكاء الاصطناعي يحلل ألوانه ويصمملك لون رئيسي وصورة غلاف تناسب هويتك تلقائياً — اقتراح فقط، ما ينطبق إلا إذا وافقت، وما يغير أي شي من إعداداتك الحالية</div>
         <label>شعار المحل ${m.theme.logo ? '(عندك وحدة محفوظة — تكدر ترفع وحدة جديدة أو تحلل الحالية)' : '(ارفعه هنا)'}</label>

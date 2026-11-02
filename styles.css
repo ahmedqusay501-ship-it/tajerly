@@ -627,7 +627,7 @@
   }
   .modal-overlay.show { display: flex; }
   .modal-box {
-    background: white; border-radius: 12px; padding: 20px; width: 90%; max-width: 340px;
+    background: var(--surface); color: var(--text); border-radius: 12px; padding: 20px; width: 90%; max-width: 340px;
     box-shadow: 0 20px 50px rgba(0,0,0,0.3);
     /* Every modal used to overflow off-screen on short viewports (phone landscape, a small
        laptop window, or just a modal with a lot of fields — permissions list, checkout form,
@@ -1857,3 +1857,13 @@
   html[data-theme="dark"] .join-honesty-note { color: #FBBF24; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.35); }
   html[data-theme="dark"] .auth-error:not(:empty) { background: rgba(220,38,38,.16); border-color: rgba(220,38,38,.4); color: #FCA5A5; }
   html[data-theme="dark"] .coupon-applied-box { background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.4); color: #6EE7B7; }
+
+  /* ===== Dark mode: إضافات (مودالات + شارات ملونة بخلفيات فاتحة) ===== */
+  html[data-theme="dark"] .modal-box { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  html[data-theme="dark"] [style*="background:#eef2ff" i]:not(#public-store-screen *),
+  html[data-theme="dark"] [style*="background: #eef2ff" i]:not(#public-store-screen *) { background: rgba(99,102,241,.2) !important; color: #A5B4FC !important; }
+  html[data-theme="dark"] [style*="background:#fef3c7" i]:not(#public-store-screen *),
+  html[data-theme="dark"] [style*="background: #fef3c7" i]:not(#public-store-screen *) { background: rgba(245,158,11,.18) !important; color: #FBBF24 !important; }
+  html[data-theme="dark"] [style*="background:#fff7ed" i]:not(#public-store-screen *) { background: rgba(249,115,22,.18) !important; color: #FDBA74 !important; }
+  html[data-theme="dark"] [style*="background:#fef2f2" i]:not(#public-store-screen *) { background: rgba(220,38,38,.16) !important; color: #FCA5A5 !important; }
+  html[data-theme="dark"] [style*="color:#64748b" i]:not([style*="background"]):not(#public-store-screen *) { color: var(--text-mute) !important; }
