@@ -1,6 +1,8 @@
 // Cloudflare Worker — معاينة رابط خاصة بكل متجر (Telegram / WhatsApp / Facebook ...)
 // يعمل أمام tajerly.shop: لو الرابط فيه ?s=CODE يجيب بيانات التاجر من Firestore (قراءة عامة)
 // ويبدّل وسوم العنوان والوصف والصورة داخل HTML قبل ما يوصل للزاحف. باقي الصفحات تمر بدون تغيير.
+// يدعم كذلك روابط المنتجات (?s=CODE&product=ID): اسم المنتج وسعره ووصفه وصورته.
+// الصور مخزنة base64 بالقاعدة وما تصلح مباشرة كـ og:image، فالـ Worker نفسه يقدّمها من /_og/img (يفكّ base64 ويرجّعها كصورة حقيقية).
 
 const PROJECT_ID = 'billionaire-e8b22';
 const SITE_NAME = 'تاجرلي';
@@ -68,12 +70,61 @@ export function buildPreview(m) {
   return { title, description, image };
 }
 
+// ---- المنتجات والصور ----
+function findProduct(m, id) {
+  const list = Array.isArray(m.products) ? m.products : [];
+  return list.find(p => p && String(p.id) === String(id)) || null;
+}
+function firstImage(p) {
+  if (!p) return null;
+  const imgs = Array.isArray(p.images) && p.images.length ? p.images : [p.image];
+  return imgs.find(i => typeof i === 'string' && i) || null;
+}
+function storeImage(m) {
+  const t = m.theme || {};
+  return [t.logo, t.banner].find(i => typeof i === 'string' && i) || null;
+}
+const IMG_DATA_RE = /^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+\/=\s]+)$/;
+const canServe = src => typeof src === 'string' && (/^https:\/\//.test(src) || IMG_DATA_RE.test(src));
+
+export function buildProductPreview(m, p) {
+  const shop = clean(m.shop) || 'متجر';
+  const price = Number(p.price) > 0 ? Number(p.price).toLocaleString('en-US') + ' د.ع' : '';
+  const own = clean(p.description);
+  const head = clean(p.name) + (price ? ` — ${price}` : '');
+  const body = own ? cut(own, 120) : `متوفر في ${shop}`;
+  return {
+    title: `${head} | ${shop}`,
+    description: `${cut(body, 150)}\n\n${SIGNATURE}`
+  };
+}
+
+async function serveImage(url) {
+  const slug = url.searchParams.get('s');
+  if (!slug || !/^[A-Za-z0-9_-]{3,40}$/.test(slug)) return new Response('bad request', { status: 400 });
+  let m = null;
+  try { m = await getMerchantBySlug(slug); } catch (e) { /* 404 تحت */ }
+  if (!m || m.status !== 'active') return new Response('not found', { status: 404 });
+  const pid = url.searchParams.get('product');
+  const src = (pid && firstImage(findProduct(m, pid))) || storeImage(m);
+  if (!src) return new Response('no image', { status: 404 });
+  if (/^https:\/\//.test(src)) return Response.redirect(src, 302);
+  const hit = IMG_DATA_RE.exec(src);
+  if (!hit) return new Response('unsupported image', { status: 404 });
+  const bin = atob(hit[2].replace(/\s+/g, ''));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Response(bytes, { headers: { 'Content-Type': hit[1], 'Cache-Control': 'public, max-age=86400' } });
+}
+
 // ---- HTMLRewriter ----
 const esc = s => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === '/_og/img') return serveImage(url);
+
     const slug = url.searchParams.get('s');
     const res = await fetch(request);
     if (!slug || !/^[A-Za-z0-9_-]{3,40}$/.test(slug)) return res;
@@ -83,16 +134,28 @@ export default {
     try { m = await getMerchantBySlug(slug); } catch (e) { /* نرجع الصفحة العادية */ }
     if (!m || m.status !== 'active') return res;
 
-    const { title, description, image } = buildPreview(m);
+    const pid = url.searchParams.get('product');
+    const product = pid && /^\d{1,20}$/.test(pid) ? findProduct(m, pid) : null;
+    const { title, description } = product ? buildProductPreview(m, product) : buildPreview(m);
+
+    // الصورة: صورة المنتج أولاً ثم لوغو/بانر المتجر — عبر /_og/img (يدعم base64)
+    const imgSrc = (product && firstImage(product)) || storeImage(m);
+    const image = canServe(imgSrc)
+      ? `${url.origin}/_og/img?s=${encodeURIComponent(slug)}${product ? '&product=' + encodeURIComponent(pid) : ''}`
+      : null;
+    const pageUrl = `${url.origin}/?s=${encodeURIComponent(slug)}${product ? '&product=' + encodeURIComponent(pid) : ''}`;
+
     const setContent = v => ({ element(el) { el.setAttribute('content', v); } });
     let rw = new HTMLRewriter()
       .on('title', { element(el) { el.setInnerContent(title); } })
       .on('meta[name="description"]', setContent(description))
       .on('meta[property="og:title"]', setContent(title))
       .on('meta[property="og:description"]', setContent(description))
-      .on('meta[property="og:url"]', setContent(url.origin + '/?s=' + encodeURIComponent(slug)))
+      .on('meta[property="og:url"]', setContent(pageUrl))
+      .on('meta[property="og:type"]', setContent(product ? 'product' : 'website'))
       .on('meta[name="twitter:title"]', setContent(title))
-      .on('link[rel="canonical"]', { element(el) { el.setAttribute('href', url.origin + '/?s=' + encodeURIComponent(slug)); } });
+      .on('meta[name="twitter:card"]', setContent(image ? 'summary_large_image' : 'summary'))
+      .on('link[rel="canonical"]', { element(el) { el.setAttribute('href', pageUrl); } });
     if (image) {
       rw = rw.on('head', { element(el) {
         el.append(`<meta property="og:image" content="${esc(image)}"><meta name="twitter:image" content="${esc(image)}">`, { html: true });
