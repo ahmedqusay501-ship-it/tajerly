@@ -598,6 +598,13 @@ let data = {
     // وهي معطّلة.
     marketPageEnabled: true,
     restaurantsPageEnabled: true,
+    // إخفاء رابط "سوق تاجرلي" من تذييل صفحات كل المتاجر دفعة وحدة (الأدمن) — صفحة السوق نفسها تبقى شغالة
+    hideMarketLinkInStores: false,
+    // إخفاء زر "تصفح كل المنتجات" (السوق العام) من الصفحة الأولى/تسجيل الدخول (الأدمن)
+    hideMarketBtnOnHome: false,
+    // نفس الشي لصفحة المطاعم: رابط تذييل المتاجر + زر الصفحة الأولى
+    hideRestaurantsLinkInStores: false,
+    hideRestaurantsBtnOnHome: false,
     marketVisits: 0,
     restaurantsVisits: 0
   },

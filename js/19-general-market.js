@@ -23,10 +23,25 @@ function applyMarketPagesVisibility() {
   const restaurantsBtn = document.getElementById('home-restaurants-btn');
   const marketFooter = document.getElementById('market-footer-link-wrap');
   const restaurantsFooter = document.getElementById('restaurants-footer-link-wrap');
-  if (marketBtn) marketBtn.style.display = marketOn ? '' : 'none';
-  if (restaurantsBtn) restaurantsBtn.style.display = restaurantsOn ? '' : 'none';
+  if (marketBtn) marketBtn.style.display = (marketOn && data.settings.hideMarketBtnOnHome !== true) ? '' : 'none';
+  if (restaurantsBtn) restaurantsBtn.style.display = (restaurantsOn && data.settings.hideRestaurantsBtnOnHome !== true) ? '' : 'none';
   if (marketFooter) marketFooter.style.display = marketOn ? '' : 'none';
   if (restaurantsFooter) restaurantsFooter.style.display = restaurantsOn ? '' : 'none';
+}
+
+// يخفي/يظهر رابط السوق العام بتذييل صفحة متجر تاجر معيّن حسب اختياره (m.hideMarketLink) أو زر الأدمن العام (settings.hideMarketLinkInStores)،
+// مع احترام إيقاف الأدمن الكامل للصفحة (marketPageEnabled) — إذا الأدمن موقفها يبقى مخفي دائماً.
+function applyStoreMarketLinkVisibility(m) {
+  const wrap = document.getElementById('market-footer-link-wrap');
+  const rWrap = document.getElementById('restaurants-footer-link-wrap');
+  if (rWrap) {
+    const rOn = data.settings.restaurantsPageEnabled !== false;
+    rWrap.style.display = (rOn && data.settings.hideRestaurantsLinkInStores !== true && !(m && m.hideRestaurantsLink)) ? '' : 'none';
+  }
+  if (!wrap) return;
+  const marketOn = data.settings.marketPageEnabled !== false;
+  const hiddenForAll = data.settings.hideMarketLinkInStores === true;
+  wrap.style.display = (marketOn && !hiddenForAll && !(m && m.hideMarketLink)) ? '' : 'none';
 }
 
 // Offers whose admin-set active flag is on AND (if it has dates at all) today falls inside

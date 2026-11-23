@@ -811,6 +811,38 @@ function toggleRestaurantsPageEnabled() {
   showToast(data.settings.restaurantsPageEnabled ? 'صفحة المطاعم فعّالة الآن' : 'تم تعطيل صفحة المطاعم كاملة');
   renderAll();
 }
+// زر الأدمن: إخفاء رابط السوق العام من صفحات كل المتاجر دفعة وحدة (بدون ما نعطّل صفحة السوق نفسها).
+function toggleHideMarketLinkInStores() {
+  data.settings.hideMarketLinkInStores = !data.settings.hideMarketLinkInStores;
+  saveData();
+  logAudit(data.settings.hideMarketLinkInStores ? 'إخفاء رابط السوق العام من كل المتاجر' : 'إظهار رابط السوق العام بكل المتاجر', '');
+  showToast(data.settings.hideMarketLinkInStores ? 'تم إخفاء رابط السوق العام من صفحات كل المتاجر' : 'تم إظهار رابط السوق العام بصفحات المتاجر');
+  renderAll();
+}
+// زر الأدمن: إخفاء زر السوق العام ("تصفح كل المنتجات") من الصفحة الأولى/تسجيل الدخول.
+function toggleHideMarketBtnOnHome() {
+  data.settings.hideMarketBtnOnHome = !data.settings.hideMarketBtnOnHome;
+  saveData();
+  logAudit(data.settings.hideMarketBtnOnHome ? 'إخفاء زر السوق العام من الصفحة الأولى' : 'إظهار زر السوق العام بالصفحة الأولى', '');
+  showToast(data.settings.hideMarketBtnOnHome ? 'تم إخفاء زر السوق العام من الصفحة الأولى' : 'تم إظهار زر السوق العام بالصفحة الأولى');
+  if (typeof applyMarketPagesVisibility === 'function') applyMarketPagesVisibility();
+  renderAll();
+}
+function toggleHideRestaurantsLinkInStores() {
+  data.settings.hideRestaurantsLinkInStores = !data.settings.hideRestaurantsLinkInStores;
+  saveData();
+  logAudit(data.settings.hideRestaurantsLinkInStores ? 'إخفاء رابط المطاعم من كل المتاجر' : 'إظهار رابط المطاعم بكل المتاجر', '');
+  showToast(data.settings.hideRestaurantsLinkInStores ? 'تم إخفاء رابط المطاعم من صفحات كل المتاجر' : 'تم إظهار رابط المطاعم بصفحات المتاجر');
+  renderAll();
+}
+function toggleHideRestaurantsBtnOnHome() {
+  data.settings.hideRestaurantsBtnOnHome = !data.settings.hideRestaurantsBtnOnHome;
+  saveData();
+  logAudit(data.settings.hideRestaurantsBtnOnHome ? 'إخفاء زر المطاعم من الصفحة الأولى' : 'إظهار زر المطاعم بالصفحة الأولى', '');
+  showToast(data.settings.hideRestaurantsBtnOnHome ? 'تم إخفاء زر المطاعم من الصفحة الأولى' : 'تم إظهار زر المطاعم بالصفحة الأولى');
+  if (typeof applyMarketPagesVisibility === 'function') applyMarketPagesVisibility();
+  renderAll();
+}
 function resetMarketVisits() {
   data.settings.marketVisits = 0;
   saveData();
@@ -841,6 +873,19 @@ function renderMarketPagesCard() {
   box.innerHTML = `<div style="display:flex; gap:12px; flex-wrap:wrap;">
     ${block('السوق العام', '🛒', data.settings.marketPageEnabled !== false, data.settings.marketVisits, marketMerchants, 'toggleMarketPageEnabled', 'resetMarketVisits', '?market=1')}
     ${block('صفحة المطاعم', '🍽️', data.settings.restaurantsPageEnabled !== false, data.settings.restaurantsVisits, restaurantMerchants, 'toggleRestaurantsPageEnabled', 'resetRestaurantsVisits', '?restaurants=1')}
+  </div>
+  <div class="card" style="margin-top:12px;">
+    <div class="card-title">🔗 إخفاء السوق العام وصفحة المطاعم (المتاجر + الصفحة الأولى)</div>
+    <div class="subtitle" style="margin:6px 0;">يتحكم برابط "سوق تاجرلي — تصفح كل المتاجر" اللي بأسفل صفحة متجر كل تاجر، لكل المتاجر دفعة وحدة. صفحة السوق نفسها تبقى شغالة.</div>
+    <div class="badge ${data.settings.hideMarketLinkInStores ? 'disabled' : 'active'}" style="margin-bottom:8px;">${data.settings.hideMarketLinkInStores ? 'الرابط مخفي بكل المتاجر' : 'الرابط ظاهر (حسب اختيار كل تاجر)'}</div><br>
+    <button class="btn ${data.settings.hideMarketLinkInStores ? '' : 'warn'} small" onclick="toggleHideMarketLinkInStores()">${data.settings.hideMarketLinkInStores ? '👁️ إظهار الرابط بكل المتاجر' : '🙈 إخفاء الرابط من كل المتاجر'}</button>
+    <div class="badge ${data.settings.hideMarketBtnOnHome ? 'disabled' : 'active'}" style="margin:10px 0 8px;">${data.settings.hideMarketBtnOnHome ? 'زر السوق مخفي بالصفحة الأولى' : 'زر السوق ظاهر بالصفحة الأولى'}</div><br>
+    <button class="btn ${data.settings.hideMarketBtnOnHome ? '' : 'warn'} small" onclick="toggleHideMarketBtnOnHome()">${data.settings.hideMarketBtnOnHome ? '👁️ إظهار زر السوق بالصفحة الأولى' : '🙈 إخفاء زر السوق من الصفحة الأولى'}</button>
+    <hr style="border:0; border-top:1px solid #E2E8F0; margin:12px 0;">
+    <div class="badge ${data.settings.hideRestaurantsLinkInStores ? 'disabled' : 'active'}" style="margin-bottom:8px;">${data.settings.hideRestaurantsLinkInStores ? 'رابط المطاعم مخفي بكل المتاجر' : 'رابط المطاعم ظاهر بالمتاجر'}</div><br>
+    <button class="btn ${data.settings.hideRestaurantsLinkInStores ? '' : 'warn'} small" onclick="toggleHideRestaurantsLinkInStores()">${data.settings.hideRestaurantsLinkInStores ? '👁️ إظهار رابط المطاعم بكل المتاجر' : '🙈 إخفاء رابط المطاعم من كل المتاجر'}</button>
+    <div class="badge ${data.settings.hideRestaurantsBtnOnHome ? 'disabled' : 'active'}" style="margin:10px 0 8px;">${data.settings.hideRestaurantsBtnOnHome ? 'زر المطاعم مخفي بالصفحة الأولى' : 'زر المطاعم ظاهر بالصفحة الأولى'}</div><br>
+    <button class="btn ${data.settings.hideRestaurantsBtnOnHome ? '' : 'warn'} small" onclick="toggleHideRestaurantsBtnOnHome()">${data.settings.hideRestaurantsBtnOnHome ? '👁️ إظهار زر المطاعم بالصفحة الأولى' : '🙈 إخفاء زر المطاعم من الصفحة الأولى'}</button>
   </div>`;
 }
 

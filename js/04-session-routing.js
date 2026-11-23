@@ -166,6 +166,7 @@ function openPublicStore(slug) {
   productDetailFullPageActive = false; // زيارة جديدة لمتجر — نضمن ما ترث حالة "تفاصيل مفتوحة" من متجر سابق
   updateBootMerchantLogo(m);
   brandEl.textContent = m.shop;
+  applyStoreMarketLinkVisibility(m);
   // عدّاد الزيارات صار يومياً بمجموعة store_visits (شوف 27-store-stats.js) — القديم ما كان يحفظ للزائر.
   if (typeof recordStoreVisit === 'function') recordStoreVisit(m);
   if (typeof initMerchantTracking === 'function') initMerchantTracking(m);
@@ -266,6 +267,9 @@ function ensureMerchantTheme(m) {
   // requestCommissionExemption() / approveCommissionRequest() / isProductCommissionExempt().
   if (!Array.isArray(m.commissionRequests)) m.commissionRequests = [];
   if (!m.dashboardColor) m.dashboardColor = '#10B981';
+  // إخفاء رابط "سوق تاجرلي" من صفحة متجر هذا التاجر (قراره هو، شوف toggleHideMarketLink بـ 09-merchant-store-products.js)
+  if (typeof m.hideMarketLink !== 'boolean') m.hideMarketLink = false;
+  if (typeof m.hideRestaurantsLink !== 'boolean') m.hideRestaurantsLink = false;
   if (typeof m.visits !== 'number') m.visits = 0;
   // Social links: each platform has its own URL + an independent show/hide toggle, so the
   // merchant can keep a link saved without it necessarily being visible on the storefront.
