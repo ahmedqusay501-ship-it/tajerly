@@ -2,7 +2,7 @@
 // الاستراتيجية: "الشبكة أولاً" لملفات الموقع نفسه (حتى أي تحديث ينزل فوراً ولا يعلق التاجر على نسخة قديمة)،
 // والكاش فقط احتياط لو انقطع النت. ما نلمس أي طلب لجهة خارجية (Firestore / Firebase / n8n ...)
 // ولا أي طلب غير GET، فالبيانات دايماً حيّة.
-const CACHE = 'tajerly-shell-v1';
+const CACHE = 'tajerly-shell-v2';
 const SHELL = ['/', '/index.html', '/styles.css', '/manifest.webmanifest', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
