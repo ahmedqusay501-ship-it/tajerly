@@ -17,6 +17,16 @@ exports.notifyMerchantOnOrder = onDocumentCreated('orders/{id}', async (event) =
   if (!order || !order.merchantAuthUid) return;
 
   const db = admin.firestore();
+
+  // الطلب الواحد بالموقع ينحفظ كوثيقة لكل قطعة (كلها بنفس orderGroupId)، فبدون هذا القفل طلب من
+  // 3 قطع يرسل 3 إشعارات. create() يفشل لو الوثيقة موجودة، فأول قطعة بس تكمل والباقي يطلع بصمت.
+  const groupId = String(order.orderGroupId || event.params.id);
+  try {
+    await db.collection('push_sent').doc(groupId).create({ at: Date.now(), merchantAuthUid: String(order.merchantAuthUid) });
+  } catch (e) {
+    return; // أُرسل إشعار هذا الطلب مسبقاً
+  }
+
   const snap = await db.collection('push_tokens').doc(String(order.merchantAuthUid)).get();
   const tokens = snap.exists && Array.isArray(snap.data().tokens) ? snap.data().tokens : [];
   if (!tokens.length) return;
@@ -26,9 +36,9 @@ exports.notifyMerchantOnOrder = onDocumentCreated('orders/{id}', async (event) =
     // data فقط (بدون notification) حتى يعرضه sw.js بنفسه بنفس الشكل بكل المتصفحات
     data: {
       title: 'طلب جديد 🛍️',
-      body: 'وصلك طلب جديد على متجرك — افتح لوحة التاجر لمراجعته',
+      body: (order.customerName ? 'من ' + String(order.customerName).slice(0, 40) + ' — ' : '') + 'وصلك طلب جديد على متجرك، افتح لوحة التاجر لمراجعته',
       url: '/',
-      tag: 'order-' + event.params.id
+      tag: 'order-' + groupId
     },
     webpush: { headers: { Urgency: 'high', TTL: '3600' } }
   });
