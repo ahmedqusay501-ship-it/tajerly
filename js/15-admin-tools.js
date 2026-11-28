@@ -625,6 +625,25 @@ function toggleMerchantMarketVisibility(id) {
   renderAll();
 }
 
+// أدمن فقط: إخفاء/إظهار رابط "سوق تاجرلي" ورابط صفحة المطاعم من تذييل صفحة متجر تاجر معيّن.
+// كان زر عند التاجر نفسه؛ صار حصرياً للأدمن (والحقلين مقفولين على التاجر بـ firestore.rules).
+function _adminOnlyLinkToggle(id, field, label, onMsg, offMsg) {
+  if (currentRole !== 'admin') return;
+  const m = data.merchants.find(x => x.id === id);
+  if (!m) return;
+  m[field] = !m[field];
+  saveData();
+  logAudit(m[field] ? 'إخفاء ' + label + ' من متجر' : 'إظهار ' + label + ' بمتجر', m.shop);
+  showToast(m[field] ? onMsg : offMsg);
+  renderAll();
+}
+function toggleHideMarketLink(id) {
+  _adminOnlyLinkToggle(id, 'hideMarketLink', 'رابط السوق العام', 'تم إخفاء رابط السوق العام من صفحة المتجر', 'تم إظهار رابط السوق العام بصفحة المتجر');
+}
+function toggleHideRestaurantsLink(id) {
+  _adminOnlyLinkToggle(id, 'hideRestaurantsLink', 'رابط صفحة المطاعم', 'تم إخفاء رابط صفحة المطاعم من صفحة المتجر', 'تم إظهار رابط صفحة المطاعم بصفحة المتجر');
+}
+
 // Admin-only: تصنيف التاجر كـ "ماركت" عادي أو "مطعم" — يقرر أي صفحة سوق عام (السوق
 // العام أو صفحة المطاعم) يظهر منتجاته بها لاحقاً. مقفولة بـ firestore.rules بنفس منطق
 // hiddenFromMarket فوق — التاجر ما يقدر يبدّل نفسه بنفسه.
@@ -754,6 +773,8 @@ function renderMerchantActions() {
         <button class="btn secondary small" onclick="openResetPasswordModal('merchant', ${m.id})">تصفير الباسورد</button>
         <button class="btn ${missingAgentForPricing ? 'danger' : 'secondary'} small" onclick="openOwnDeliveryModal(${m.id})">تعديل مصدر سعر التوصيل</button>
         <button class="btn ${m.customDomain ? 'secondary' : 'warn'} small" onclick="openCustomDomainModal(${m.id})">${m.customDomain ? 'تعديل الدومين' : 'إضافة دومين مخصص'}</button>
+        <button class="btn ${m.hideMarketLink ? 'warn' : 'secondary'} small" onclick="toggleHideMarketLink(${m.id})" title="رابط سوق تاجرلي بتذييل صفحة متجره">${m.hideMarketLink ? '👁️ إظهار رابط السوق بمتجره' : '🙈 إخفاء رابط السوق من متجره'}</button>
+        <button class="btn ${m.hideRestaurantsLink ? 'warn' : 'secondary'} small" onclick="toggleHideRestaurantsLink(${m.id})" title="رابط صفحة المطاعم بتذييل صفحة متجره">${m.hideRestaurantsLink ? '👁️ إظهار رابط المطاعم بمتجره' : '🙈 إخفاء رابط المطاعم من متجره'}</button>
         <button class="btn ${m.hiddenFromMarket ? 'warn' : 'secondary'} small" onclick="toggleMerchantMarketVisibility(${m.id})" title="يتحكم بظهور منتجات هذا التاجر بالصفحة العامة (السوق العام أو صفحة المطاعم حسب نوعه) فقط — لا يأثر على متجره الخاص">${m.hiddenFromMarket ? `إظهار بـ ${m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام'}` : `إخفاء من ${m.type === 'restaurant' ? 'صفحة المطاعم' : 'السوق العام'}`}</button>
         <button class="btn warn small" onclick="toggleMerchantStatus(${m.id})">${m.status==='active'?'تعطيل':'تفعيل'}</button>
         <button class="btn danger small" onclick="resetMerchantMoney(${m.id})">تصفير الأموال</button>

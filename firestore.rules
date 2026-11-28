@@ -290,6 +290,9 @@ service cloud.firestore {
         merchantFieldUnchanged('subscriptionDays', 30) &&
         merchantFieldUnchanged('subscriptionEndsAt', 0) &&
         merchantFieldUnchanged('hiddenFromMarket', false) &&
+        // إخفاء رابط السوق العام/المطاعم بصفحة متجر التاجر قرار أدمن فقط.
+        merchantFieldUnchanged('hideMarketLink', false) &&
+        merchantFieldUnchanged('hideRestaurantsLink', false) &&
         // تصنيف "ماركت / مطعم" (type) يقرر أي صفحة سوق عام يظهر بها التاجر — نفس مستوى
         // حساسية hiddenFromMarket فوق، فقفلها أدمن بس بنفس المنطق (تاجر ما يقدر يحوّل
         // نفسه من ماركت لمطعم أو العكس بنفسه).

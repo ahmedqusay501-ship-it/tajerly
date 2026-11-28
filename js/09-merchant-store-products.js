@@ -103,25 +103,7 @@ function setDashboardColor(id, color) {
   applyMerchantDashboardColor(m);
 }
 
-// زر التاجر: إخفاء/إظهار رابط "سوق تاجرلي — تصفح كل المتاجر" من صفحة متجره العامة.
-// يأثر على تذييل متجره بس — ما يغيّر ظهور منتجاته داخل السوق العام (هذا قرار الأدمن: hiddenFromMarket).
-function toggleHideMarketLink(id) {
-  const m = data.merchants.find(x => x.id === id);
-  if (!m) return;
-  m.hideMarketLink = !m.hideMarketLink;
-  saveData();
-  showToast(m.hideMarketLink ? 'تم إخفاء السوق العام من صفحة متجرك' : 'تم إظهار السوق العام بصفحة متجرك');
-  renderMerchantPanel();
-}
-
-function toggleHideRestaurantsLink(id) {
-  const m = data.merchants.find(x => x.id === id);
-  if (!m) return;
-  m.hideRestaurantsLink = !m.hideRestaurantsLink;
-  saveData();
-  showToast(m.hideRestaurantsLink ? 'تم إخفاء صفحة المطاعم من صفحة متجرك' : 'تم إظهار صفحة المطاعم بصفحة متجرك');
-  renderMerchantPanel();
-}
+// ملاحظة: إخفاء/إظهار رابط السوق العام وصفحة المطاعم بصفحة متجر التاجر صار قرار الأدمن فقط (toggleHideMarketLink / toggleHideRestaurantsLink بـ 15-admin-tools.js).
 
 // ---------- MERCHANT THEME (color / logo / banner) ----------
 function setThemeColor(id, color) {

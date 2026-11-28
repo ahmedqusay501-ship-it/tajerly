@@ -1829,14 +1829,6 @@ function renderMerchantPanel() {
         </div>
       </div>
       <div class="card">
-        <div class="card-title">رابط السوق العام بمتجرك</div>
-        <div class="subtitle" style="margin-bottom:8px;">يظهر بأسفل صفحة متجرك رابط "سوق تاجرلي — تصفح كل المتاجر" يودّي الزبون لمتاجر ثانية. تكدر تخفيه من هنا — منتجاتك تبقى ظاهرة بالسوق العام حسب قرار الإدارة.</div>
-        <button class="btn ${m.hideMarketLink ? '' : 'secondary'} small" onclick="toggleHideMarketLink(${m.id})">${m.hideMarketLink ? '👁️ إظهار السوق العام بصفحة متجري' : '🙈 إخفاء السوق العام من صفحة متجري'}</button>
-        <div style="font-size:12px; color:#64748B; margin-top:6px;">الحالة الحالية: ${m.hideMarketLink ? 'مخفي' : 'ظاهر'}</div>
-        <button class="btn ${m.hideRestaurantsLink ? '' : 'secondary'} small" style="margin-top:10px;" onclick="toggleHideRestaurantsLink(${m.id})">${m.hideRestaurantsLink ? '👁️ إظهار صفحة المطاعم بصفحة متجري' : '🙈 إخفاء صفحة المطاعم من صفحة متجري'}</button>
-        <div style="font-size:12px; color:#64748B; margin-top:6px;">الحالة الحالية: ${m.hideRestaurantsLink ? 'مخفي' : 'ظاهر'}</div>
-      </div>
-      <div class="card">
         <div class="card-title">ثيم المتجر</div>
         <div class="subtitle" style="margin-bottom:10px;">اختر شكل جاهز لمتجرك — تكدر تغيّره بأي وقت</div>
         ${renderStoreThemePicker(m)}
